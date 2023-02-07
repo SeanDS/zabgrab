@@ -1,0 +1,7 @@
+[server]
+host = "http://zabbix.mydomain.org"
+api_token = ""
+
+[template.particles]
+itemids = [1, 2, 3]
+history = 0

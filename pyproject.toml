@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61", "setuptools_scm[toml]>=3.4.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zabgrab"
+description = "Zabbix data retrieval"
+readme = "README.md"
+authors = [{name = "Sean Leavey", email = "sean.leavey@stfc.ac.uk"}]
+license = {text = "GPL-3.0-or-later"}
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+]
+
+# Requirements.
+requires-python = ">=3.8"
+dependencies = [
+  "click >=8.0.0",
+  "dateparser >=1.0.0",
+  "tomli >=2.0.0",
+  "pyzabbix >=1.2.1",
+  "numpy >=1.20",
+  "scipy >=1.6",
+]
+
+# Dynamic properties set by tools.
+dynamic = ["version"]
+
+[project.optional-dependencies]
+# Development.
+dev = ["black", "pre-commit", "flake8"]
+
+[project.scripts]
+zabgrab = "zabgrab.__main__:zabgrab"
+
+[project.urls]
+"Source Code" = "https://github.com/SeanDS/zabgrab"
+
+[tool.setuptools]
+license-files = ["LICENSE"]
+
+[tool.setuptools_scm]
+write_to = "zabgrab/_version.py"
