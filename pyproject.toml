@@ -24,7 +24,7 @@ classifiers = [
 requires-python = ">=3.8"
 dependencies = [
   "click >=8.0.0",
-  "dateparser >=1.0.0",
+  "dateparser >=1.1.7",
   "tomli >=2.0.0",
   "pyzabbix >=1.2.1",
   "numpy >=1.20",

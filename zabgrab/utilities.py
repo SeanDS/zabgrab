@@ -1,6 +1,7 @@
 """Utilities."""
 
 import locale
+import warnings
 import dateparser
 
 
@@ -18,4 +19,13 @@ def parse_date(datestr, base=None):
     if lang == "en_US":
         settings = {"DATE_ORDER": "MDY"}
 
-    return dateparser.parse(datestr, settings=settings)
+    # https://github.com/scrapinghub/dateparser/issues/1089
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=(
+                "The localize method is no longer necessary, as this time zone "
+                "supports the fold attribute"
+            ),
+        )
+        return dateparser.parse(datestr, settings=settings)
