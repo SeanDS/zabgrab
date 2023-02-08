@@ -1,0 +1,64 @@
+## GitLab CI configuration.
+
+stages:
+  - build
+  - test
+
+###############
+# Build stage #
+###############
+
+build/any:
+  stage: build
+  image: python:3.8
+  before_script:
+    - pip install build
+  script:
+    - python -m build
+  artifacts:
+    paths:
+      - dist
+
+##############
+# Test stage #
+##############
+
+test/py38:
+  stage: test
+  image: python:3.8
+  needs:
+    - build/any
+  before_script:
+    - pip install dist/zabgrab-*-py3-none-any.whl
+  script:
+    - python -m zabgrab --version
+
+test/py39:
+  stage: test
+  image: python:3.9
+  needs:
+    - build/any
+  before_script:
+    - pip install dist/zabgrab-*-py3-none-any.whl
+  script:
+    - python -m zabgrab --version
+
+test/py310:
+  stage: test
+  image: python:3.10
+  needs:
+    - build/any
+  before_script:
+    - pip install dist/zabgrab-*-py3-none-any.whl
+  script:
+    - python -m zabgrab --version
+
+test/py311:
+  stage: test
+  image: python:3.11
+  needs:
+    - build/any
+  before_script:
+    - pip install dist/zabgrab-*-py3-none-any.whl
+  script:
+    - python -m zabgrab --version
