@@ -28,4 +28,10 @@ def parse_date(datestr, base=None):
                 "supports the fold attribute"
             ),
         )
-        return dateparser.parse(datestr, settings=settings)
+
+        date = dateparser.parse(datestr, settings=settings)
+
+    if date is None:
+        raise ValueError(f"Unable to parse {repr(datestr)}.")
+
+    return date

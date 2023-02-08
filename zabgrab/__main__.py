@@ -10,7 +10,7 @@ import numpy as np
 from scipy.io import savemat
 import click
 import tomli
-from pyzabbix import ZabbixAPI
+from pyzabbix import ZabbixAPI, ZabbixAPIException
 from . import __version__, PROGRAM
 from .utilities import parse_date
 
@@ -160,9 +160,12 @@ class _ZabgrabHandler:
         self._echo(msg, *args, err=True, **kwargs)
 
     def echo_exception(self, exception, *args, **kwargs):
+        # Assume the message is the first argument.
+        msg = str(exception.args[0])
+
         if not self.debug:
             # Just echo the error string, not the traceback.
-            return self.echo_error(str(exception), *args, **kwargs)
+            return self.echo_error(msg, *args, **kwargs)
 
         import traceback
 
@@ -170,7 +173,7 @@ class _ZabgrabHandler:
 
         tb = "".join(traceback.format_tb(exception.__traceback__))
         self._echo(tb, *args, err=True, exit_=False, **kwargs)
-        msg = click.style(str(exception), fg="red")
+        msg = click.style(msg, fg="red")
         self._echo(msg, *args, err=True, exit_=should_exit, **kwargs)
 
     def echo_warning(self, msg, *args, **kwargs):
@@ -197,15 +200,40 @@ class _ZabgrabHandler:
         self.echo(value)
 
     @property
+    def zabbix_host(self):
+        host = self.config("server", "host")
+        if host is None:
+            raise ValueError("No server host specified.")
+        return host
+
+    @property
+    def zabbix_api_token(self):
+        token = self.config("server", "api_token")
+        if token is None:
+            raise ValueError("No server API token specified.")
+        return token
+
+    @property
     def zabbix_api(self):
         if self._zabbix_api is None:
-            self._zabbix_api = ZabbixAPI(self.config("server", "host"))
-            self._zabbix_api.login(api_token=self.config("server", "api_token"))
+            self._zabbix_api = ZabbixAPI(self.zabbix_host)
+
+            try:
+                self._zabbix_api.login(api_token=self.zabbix_api_token)
+            except ZabbixAPIException as exc:
+                # Make the error message a bit nicer.
+                msg = f"Error logging in to Zabbix API: {exc.args[0]}"
+                raise ZabbixAPIException(msg, *exc.args[1:]) from exc
 
         return self._zabbix_api
 
     def fetch_zabbix_history(self, itemids, **kwargs):
-        data = self.zabbix_api.history.get(itemids=itemids, **kwargs)
+        try:
+            data = self.zabbix_api.history.get(itemids=itemids, **kwargs)
+        except ZabbixAPIException as exc:
+            # Make the error message a bit nicer.
+            msg = f"Error fetching data from Zabbix API: {exc.args[0]}"
+            raise ZabbixAPIException(msg, *exc.args[1:]) from exc
 
         # Regroup data into individual itemid arrays.
         timeseries = defaultdict(list)
@@ -292,46 +320,23 @@ def _parse_date(ctx, _, value):
     return parse_date(value, base=handler.now)
 
 
-config_file_option = click.option(
-    "-c",
-    "--config-file",
-    type=click.File(mode="r"),
-    envvar="ZABGRAB_CONFIG",
-    callback=_set_config_path,
-    expose_value=False,
-    help=(
-        "Path to zabgrab config file. If not specified, the environment variable "
-        "ZABGRAB_CONFIG is used, otherwise the system default configuration directory."
-    ),
-)
-config_set_option = click.option(
-    "-o",
-    "--option",
-    type=str,
-    callback=_set_config_value,
-    expose_value=False,
-    multiple=True,
-    help=(
-        "Set configuration key in the form 'key1.key2=value', e.g. "
-        "'server.host=http://example.org'."
-    ),
-)
-config_edit_option = click.option(
-    "--edit-config",
-    is_flag=True,
-    callback=_edit_config,
-    expose_value=False,
-    is_eager=True,
-    help="Open the user configuration file for editing.",
-)
-list_templates_option = click.option(
-    "--list-templates",
-    is_flag=True,
-    callback=_list_templates,
-    expose_value=False,
-    is_eager=True,
-    help="List configured templates then exit.",
-)
+class DateParamType(click.ParamType):
+    """Date parameter support for Click."""
+
+    name = "date"
+
+    def convert(self, value, param, ctx):
+        if value is None:
+            return None
+
+        handler = ctx.ensure_object(_ZabgrabHandler)
+
+        try:
+            return parse_date(value, base=handler.now)
+        except ValueError:
+            self.fail(f"{repr(value)} is not a valid date", param, ctx)
+
+
 verbose_option = click.option(
     "-v",
     "--verbose",
@@ -380,63 +385,118 @@ version_option = click.version_option(version=__version__, prog_name=PROGRAM)
     type=(click.IntRange(min=0), click.Choice(("0", "1", "2", "3", "4"))),
     multiple=True,
     help=(
-        "Item id and history type to retrieve. Supported history types are: 0 = "
-        "numeric float; 1 = character; 2 = log; 3 = numeric unsigned; 4 = text."
+        "Item ID and history type to retrieve, separated by whitespace; e.g. "
+        "'12345 3'. Supported history types are: 0 = numeric float; 1 = character; 2 = "
+        "log; 3 = numeric unsigned; 4 = text."
     ),
 )
 @click.option(
     "--from",
     "start",
-    type=str,
+    type=DateParamType(),
     default="1 hour ago",
     show_default=True,
-    callback=_parse_date,
-    help="Start date.",
+    help=(
+        "Start date. Most standard datetime formats as well as natural language are "
+        "supported."
+    ),
 )
 @click.option(
     "--to",
     "end",
-    type=str,
+    type=DateParamType(),
     default="now",
     show_default=True,
-    callback=_parse_date,
-    help="End date.",
+    help=(
+        "End date. Most standard datetime formats as well as natural language are "
+        "supported."
+    ),
+)
+@click.option(
+    "--print/--no-print",
+    "print_",
+    is_flag=True,
+    default=False,
+    help="Print data to stdout.",
 )
 @click.option(
     "--output",
+    "output_path",
     type=click.Path(
         file_okay=True,
         dir_okay=False,
         writable=True,
         resolve_path=True,
-        allow_dash=True,
         path_type=Path,
     ),
-    default="-",
     help=(
-        "Path to print the retrieved data to. Supported extensions are: 'mat' = "
-        "MATLAB; 'txt' (or anything else) = tab separated values. Specify '-' to print "
-        "to stdout."
+        "Path to save the retrieved data to. Supported extensions are: 'mat' = "
+        "MATLAB; 'txt' (or anything else) = tab separated values."
     ),
 )
-@config_file_option
-@config_set_option
-@config_edit_option
-@list_templates_option
+@click.option(
+    "-c",
+    "--config-file",
+    type=click.File(mode="r"),
+    envvar="ZABGRAB_CONFIG",
+    callback=_set_config_path,
+    expose_value=False,
+    help=(
+        "Path to zabgrab config file. If not specified, the environment variable "
+        "ZABGRAB_CONFIG is used, otherwise the system default configuration directory."
+    ),
+)
+@click.option(
+    "-o",
+    "--option",
+    type=str,
+    callback=_set_config_value,
+    expose_value=False,
+    multiple=True,
+    help=(
+        "Set configuration key in the form 'key1.key2=value', e.g. "
+        "'server.host=http://example.org'."
+    ),
+)
+@click.option(
+    "--edit-config",
+    is_flag=True,
+    callback=_edit_config,
+    expose_value=False,
+    is_eager=True,
+    help="Open the user configuration file for editing.",
+)
+@click.option(
+    "--list-templates",
+    is_flag=True,
+    callback=_list_templates,
+    expose_value=False,
+    is_eager=True,
+    help="List configured templates then exit.",
+)
 @verbose_option
 @quiet_option
 @debug_option
 @version_option
 @click.pass_context
-def zabgrab(ctx, template, items, start, end, output):
+def zabgrab(ctx, template, items, start, end, print_, output_path):
     """Retrieve timeseries data from Zabbix API.
 
     Sean Leavey <sean.leavey@stfc.ac.uk>
     """
     handler = ctx.ensure_object(_ZabgrabHandler)
 
-    # We might add to the items passed in.
+    # If a template is passed in, it might add to the items passed in, so we need to
+    # modify the tuple.
     items = list(items)
+
+    if start > end:
+        handler.echo_warning(
+            f"Specified from date ({start}) is later than to date ({end}) - swapping."
+        )
+        start, end = end, start
+
+    handler.echo_debug(f"Data will be fetched between {start} and {end}")
 
     if template:
         template_data = handler.template(template)
@@ -459,55 +519,60 @@ def zabgrab(ctx, template, items, start, end, output):
         for itemid, history in items:
             handler.echo_debug(f"Fetching itemid {itemid}")
 
-            # Whilst itemids are numeric, they are treated as strings in keys, comms, etc.
+            # Whilst itemids are numeric, they are treated as strings in keys, comms,
+            # etc.
             itemid = str(itemid)
 
-            _data = handler.fetch_zabbix_history(
-                itemids=[itemid],
-                output="extend",
-                time_from=round(start.timestamp()),
-                time_till=round(end.timestamp()),
-                history=history,
-            )
-
             try:
-                data[itemid] = _data[itemid]
-            except KeyError:
-                handler.echo_error(f"Server did not return data for itemid {itemid}.")
-
-        if output is not None:
-            if str(output) == "-":
-                # Print to stdout.
-                for itemid, timeseries in data.items():
-                    handler.echo_key_value("itemid", itemid)
-                    for row in timeseries:
-                        handler.echo_key_value(row[0].isoformat(), row[1])
+                _data = handler.fetch_zabbix_history(
+                    itemids=[itemid],
+                    output="extend",
+                    time_from=round(start.timestamp()),
+                    time_till=round(end.timestamp()),
+                    history=history,
+                )
+            except Exception as exc:
+                handler.echo_exception(exc)
             else:
-                # Save to a file.
-                handler.echo(f"Saving data to {output.resolve()}...")
+                try:
+                    data[itemid] = _data[itemid]
+                except KeyError:
+                    handler.echo_error(
+                        f"Server did not return data for itemid {itemid}. Check that "
+                        f"the itemid, history and from/to values are appropriate for "
+                        f"the request."
+                    )
 
-                if output.suffix == ".mat":
-                    # Convert datetimes to strings.
-                    out = {}
+        if print_:
+            for itemid, timeseries in data.items():
+                handler.echo_key_value("itemid", itemid)
+                for row in timeseries:
+                    handler.echo_key_value(row[0].isoformat(), row[1])
+
+        if output_path is not None:
+            # Save to a file.
+            handler.echo(f"Saving data to {output_path.resolve()}...")
+
+            if output_path.suffix == ".mat":
+                # Convert datetimes to strings.
+                out = {}
+                for key, timeseries in data.items():
+                    # Make data MATLAB compatble.
+                    key = f"item_{key}"
+                    for row in timeseries:
+                        row[0] = row[0].isoformat()
+
+                    out[key] = timeseries
+
+                savemat(output_path, out)
+            else:
+                # Tab separated values.
+                with output_path.open("w") as fobj:
                     for key, timeseries in data.items():
-                        # Make data MATLAB compatble.
-                        key = f"item_{key}"
+                        fobj.write(f"itemid\t{key}\n")
                         for row in timeseries:
-                            row[0] = row[0].isoformat()
-
-                        out[key] = timeseries
-
-                    savemat(output, out)
-                else:
-                    # Tab separated values.
-                    with output.open("w") as fobj:
-                        for key, timeseries in data.items():
-                            fobj.write(f"itemid\t{key}\n")
-                            for row in timeseries:
-                                line = "\t".join([str(col) for col in row])
-                                fobj.write(f"{line}\n")
-        else:
-            handler.echo("No output mode specified.")
+                            line = "\t".join([str(col) for col in row])
+                            fobj.write(f"{line}\n")
     else:
         handler.echo("No items specified.")
 
