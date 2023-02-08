@@ -296,6 +296,8 @@ def _edit_config(ctx, _, value):
         click.edit(filename=filename)
         handler.echo("Saved new config successfully.")
 
+        ctx.exit()
+
 
 def _list_templates(ctx, _, value):
     handler = ctx.ensure_object(_ZabgrabHandler)
@@ -304,20 +306,13 @@ def _list_templates(ctx, _, value):
         templates = handler.config("template")
 
         if templates:
-            handler.echo("Templates:")
+            handler.echo("Templates found in configuration:")
             for template in templates:
                 handler.echo(f"- {template}")
         else:
             handler.echo("No templates configured.")
 
-
-def _parse_date(ctx, _, value):
-    if value is None:
-        return None
-
-    handler = ctx.ensure_object(_ZabgrabHandler)
-
-    return parse_date(value, base=handler.now)
+        ctx.exit()
 
 
 class DateParamType(click.ParamType):
@@ -436,7 +431,7 @@ version_option = click.version_option(version=__version__, prog_name=PROGRAM)
 )
 @click.option(
     "-c",
-    "--config-file",
+    "--config",
     type=click.File(mode="r"),
     envvar="ZABGRAB_CONFIG",
     callback=_set_config_path,

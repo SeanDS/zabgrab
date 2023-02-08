@@ -29,8 +29,9 @@ Zabbix item ID and the history type (see below). The `--from` and `--to` options
 the dates between which to retrieve data, and support natural language queries as well
 as standard date formats.
 
-The data can be output as text to the terminal by specifying `--output -`. It can also
-be saved to file by specifying a path. The following extensions are supported:
+The data can be output as text to the terminal by specifying `--print`. It can also
+be saved to file by specifying `--output` followed by a path. The following extensions
+are supported:
 
 - `.mat`: MATLAB mat
 - `.txt` (or anything else): tab separated values
