@@ -384,8 +384,24 @@ version_option = click.version_option(version=__version__, prog_name=PROGRAM)
         "numeric float; 1 = character; 2 = log; 3 = numeric unsigned; 4 = text."
     ),
 )
-@click.option("--from", "start", type=str, callback=_parse_date, help="Start date.")
-@click.option("--to", "end", type=str, callback=_parse_date, help="End date.")
+@click.option(
+    "--from",
+    "start",
+    type=str,
+    default="1 hour ago",
+    show_default=True,
+    callback=_parse_date,
+    help="Start date.",
+)
+@click.option(
+    "--to",
+    "end",
+    type=str,
+    default="now",
+    show_default=True,
+    callback=_parse_date,
+    help="End date.",
+)
 @click.option(
     "--output",
     type=click.Path(
@@ -396,6 +412,7 @@ version_option = click.version_option(version=__version__, prog_name=PROGRAM)
         allow_dash=True,
         path_type=Path,
     ),
+    default="-",
     help=(
         "Path to print the retrieved data to. Supported extensions are: 'mat' = "
         "MATLAB; 'txt' (or anything else) = tab separated values. Specify '-' to print "
@@ -436,59 +453,63 @@ def zabgrab(ctx, template, items, start, end, output):
 
         items.extend((str(itemid), str(history)) for itemid in itemids)
 
-    data = {}
-    for itemid, history in items:
-        handler.echo_debug(f"Fetching itemid {itemid}")
+    if items:
+        data = {}
 
-        # Whilst itemids are numeric, they are treated as strings in keys, comms, etc.
-        itemid = str(itemid)
+        for itemid, history in items:
+            handler.echo_debug(f"Fetching itemid {itemid}")
 
-        _data = handler.fetch_zabbix_history(
-            itemids=[itemid],
-            output="extend",
-            time_from=round(start.timestamp()),
-            time_till=round(end.timestamp()),
-            history=history,
-        )
+            # Whilst itemids are numeric, they are treated as strings in keys, comms, etc.
+            itemid = str(itemid)
 
-        try:
-            data[itemid] = _data[itemid]
-        except KeyError:
-            handler.echo_error(f"Server did not return data for itemid {itemid}.")
+            _data = handler.fetch_zabbix_history(
+                itemids=[itemid],
+                output="extend",
+                time_from=round(start.timestamp()),
+                time_till=round(end.timestamp()),
+                history=history,
+            )
 
-    if output is not None:
-        if str(output) == "-":
-            # Print to stdout.
-            for itemid, timeseries in data.items():
-                handler.echo_key_value("itemid", itemid)
-                for row in timeseries:
-                    handler.echo_key_value(row[0].isoformat(), row[1])
-        else:
-            # Save to a file.
-            handler.echo(f"Saving data to {output.resolve()}...")
+            try:
+                data[itemid] = _data[itemid]
+            except KeyError:
+                handler.echo_error(f"Server did not return data for itemid {itemid}.")
 
-            if output.suffix == ".mat":
-                # Convert datetimes to strings.
-                out = {}
-                for key, timeseries in data.items():
-                    # Make data MATLAB compatble.
-                    key = f"item_{key}"
+        if output is not None:
+            if str(output) == "-":
+                # Print to stdout.
+                for itemid, timeseries in data.items():
+                    handler.echo_key_value("itemid", itemid)
                     for row in timeseries:
-                        row[0] = row[0].isoformat()
-
-                    out[key] = timeseries
-
-                savemat(output, out)
+                        handler.echo_key_value(row[0].isoformat(), row[1])
             else:
-                # Tab separated values.
-                with output.open("w") as fobj:
+                # Save to a file.
+                handler.echo(f"Saving data to {output.resolve()}...")
+
+                if output.suffix == ".mat":
+                    # Convert datetimes to strings.
+                    out = {}
                     for key, timeseries in data.items():
-                        fobj.write(f"itemid\t{key}\n")
+                        # Make data MATLAB compatble.
+                        key = f"item_{key}"
                         for row in timeseries:
-                            line = "\t".join([str(col) for col in row])
-                            fobj.write(f"{line}\n")
+                            row[0] = row[0].isoformat()
+
+                        out[key] = timeseries
+
+                    savemat(output, out)
+                else:
+                    # Tab separated values.
+                    with output.open("w") as fobj:
+                        for key, timeseries in data.items():
+                            fobj.write(f"itemid\t{key}\n")
+                            for row in timeseries:
+                                line = "\t".join([str(col) for col in row])
+                                fobj.write(f"{line}\n")
+        else:
+            handler.echo("No output mode specified.")
     else:
-        handler.echo("No output mode specified.")
+        handler.echo("No items specified.")
 
 
 if __name__ == "__main__":
