@@ -290,6 +290,8 @@ def _edit_config(ctx, _, value):
     if value:
         filename = handler.user_config_path
         filename.parent.mkdir(parents=True, exist_ok=True)
+        # Avoid the user's editor complaining that the file doesn't exist.
+        filename.touch(exist_ok=True)
 
         # Edit and update the config.
         handler.echo(f"Opening user config at {filename}...")
