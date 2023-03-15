@@ -5,7 +5,7 @@ Command line tool for Zabbix data retrieval.
 Zabgrab can be installed using your favourite Python package manager, e.g. `pip`:
 
 ```bash
-$ pip install git+ssh://git@github.com/SeanDS/zabgrab.git
+$ pip install zabgrab
 ```
 
 This should automatically install the latest version of Zabgrab and its dependencies.
