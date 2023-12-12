@@ -1,6 +1,7 @@
 # 0.1.2 (2023-12-12)
 - Changed CSV output format to display retrieved timeseries in parallel columns instead
   of sequentially.
+- Avoid the user's editor complaining that the config file doesn't exist.
 - Added --no-ssl-verify flag to switch off SSL certificate verification.
 
 # 0.1.1 (2023-03-15)
