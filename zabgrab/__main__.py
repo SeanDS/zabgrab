@@ -22,6 +22,7 @@ class _ZabgrabHandler:
     """Manages CLI state."""
 
     def __init__(self):
+        self.no_ssl_verify = None
         self.debug = None
         self.config_path = None
         self.user_config_path = Path(click.get_app_dir(PROGRAM)) / f"{PROGRAM}.conf"
@@ -217,6 +218,7 @@ class _ZabgrabHandler:
     def zabbix_api(self):
         if self._zabbix_api is None:
             self._zabbix_api = ZabbixAPI(self.zabbix_host)
+            self._zabbix_api.session.verify = not self.no_ssl_verify
 
             try:
                 self._zabbix_api.login(api_token=self.zabbix_api_token)
@@ -334,6 +336,15 @@ class DateParamType(click.ParamType):
             self.fail(f"{repr(value)} is not a valid date", param, ctx)
 
 
+no_ssl_verify_option = click.option(
+    "--no-ssl-verify",
+    is_flag=True,
+    default=False,
+    callback=partial(_set_state_flag, flag="no_ssl_verify"),
+    expose_value=False,
+    is_eager=True,
+    help="Disable SSL certificate verification.",
+)
 verbose_option = click.option(
     "-v",
     "--verbose",
@@ -471,6 +482,7 @@ version_option = click.version_option(version=__version__, prog_name=PROGRAM)
     is_eager=True,
     help="List configured templates then exit.",
 )
+@no_ssl_verify_option
 @verbose_option
 @quiet_option
 @debug_option
