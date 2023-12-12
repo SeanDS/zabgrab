@@ -4,6 +4,7 @@ import sys
 import logging
 from datetime import datetime
 from functools import partial
+from itertools import chain, zip_longest
 from collections import defaultdict
 from pathlib import Path
 import numpy as np
@@ -575,13 +576,30 @@ def zabgrab(ctx, template, items, start, end, print_, output_path):
 
                 savemat(output_path, out)
             else:
-                # Tab separated values.
+                # Tab separated values. Write the rows of each timeseries together into
+                # one table.
+
+                # Determine ID and number of columns of data for each item to create the
+                # header.
+                header_info = [
+                    (key, len(timeseries[0])) for key, timeseries in data.items()
+                ]
+                header = "\t".join(
+                    [f"item_{key}" + "\t"*(ncol-1) for key, ncol in header_info]
+                )
+                # Create iterators for each timeseries' rows. As the timeseries don't
+                # necessarily have the same number of rows, fill in blanks on shorter
+                # timeseries with empty strings.
+                tsiters = zip_longest(*data.values(), fillvalue="")
+
                 with output_path.open("w") as fobj:
-                    for key, timeseries in data.items():
-                        fobj.write(f"itemid\t{key}\n")
-                        for row in timeseries:
-                            line = "\t".join([str(col) for col in row])
-                            fobj.write(f"{line}\n")
+                    # Write header.
+                    fobj.write(header + "\n")
+                    # Concatenate each timeseries's next row.
+                    for rowiters in tsiters:
+                        cols = chain.from_iterable(rowiters)
+                        line = "\t".join([str(col) for col in cols])
+                        fobj.write(f"{line}\n")
     else:
         handler.echo("No items specified.")
 
