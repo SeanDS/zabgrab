@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from datetime import datetime, tzinfo
-from functools import partial
+from typing import Any
 from urllib.parse import urlsplit
 
 import click
@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from ..adapters.configfiles import format_validation_errors
 from ..adapters.dates import EXAMPLES, parse_time
+from ..adapters.formats import hdf5
 from ..adapters.formats.delimited import write_delimited
 from ..errors import EXIT_PARTIAL, ZabgrabError
 from ..model.config import Agg, FetchSettings, Format, Resolution
@@ -21,18 +22,20 @@ from ..model.query import Query
 from ..model.series import FetchResult
 from ..model.server import Server
 from ..services.collect import collect
-from ..services.fetch import fetch
+from ..services.fetch import fetch, stored_end
 from ..services.metadata import build_metadata
-from ..services.output import auto_name, targets
+from ..services.output import (
+    STRUCTURED,
+    SaveOptions,
+    Target,
+    auto_name,
+    guard_large_text,
+    targets,
+)
 from ..services.resolve import CliRequest, resolve_query
 from ..ui.render import explain_table, format_time, plan_table, requests_table
 from .app import AppContext, global_options, pass_app
 from .discovery import ItemSpecType
-
-WRITERS = {
-    Format.TSV: partial(write_delimited, delimiter="\t"),
-    Format.CSV: partial(write_delimited, delimiter=","),
-}
 
 
 @click.command("fetch")
@@ -102,6 +105,24 @@ WRITERS = {
     help="Ask before fetching more items than this.",
 )
 @click.option("--overwrite", is_flag=True, help="Replace an existing output file.")
+@click.option(
+    "--append",
+    is_flag=True,
+    help="Add the data to an existing .mat/.h5 file as a new group.",
+)
+@click.option(
+    "--group", metavar="NAME", help="Name of the new group (default fetch_NNNN)."
+)
+@click.option(
+    "--in-place",
+    is_flag=True,
+    help="Append without the safety copy (faster for very large files).",
+)
+@click.option(
+    "--allow-large-text",
+    is_flag=True,
+    help="Don't warn about writing lots of text to a .mat file.",
+)
 @click.option("-y", "--yes", is_flag=True, help="Fetch however many items match.")
 @click.option("--dry-run", is_flag=True, help="Show what would be fetched, then stop.")
 @click.option(
@@ -128,6 +149,10 @@ def fetch_command(
     jobs: int | None,
     max_items: int | None,
     overwrite: bool,
+    append: bool,
+    group: str | None,
+    in_place: bool,
+    allow_large_text: bool,
     yes: bool,
     dry_run: bool,
     explain: bool,
@@ -154,6 +179,17 @@ def fetch_command(
         FetchSettings.model_validate(values)
     except ValidationError as exc:
         raise click.UsageError("; ".join(format_validation_errors(exc))) from None
+
+    save = SaveOptions(
+        format=Format(format_) if format_ else None,
+        overwrite=overwrite,
+        append=append,
+        group=group,
+        in_place=in_place,
+        allow_large_text=allow_large_text,
+    )
+    if not explain:
+        save.check(output)
 
     loaded = app.config()
     now = app.clock.now()
@@ -188,23 +224,26 @@ def fetch_command(
         hosts=[series.item.host for series in result.series],
         servers=[_short(server) for server in servers_used],
     )
-    chosen = targets(
-        output,
-        query,
-        app.ui,
-        name=name,
-        cli_format=Format(format_) if format_ else None,
-        overwrite=overwrite,
-    )
-    metadata = build_metadata(
-        query,
-        result,
-        templates=loaded.config.templates,
-        command=sys.argv,
-        created=now,
-    )
+    chosen = targets(output, query, app.ui, name=name, options=save)
+    saved = []
     for target in chosen:
-        WRITERS[target.format](target.path, result, metadata, tz=query.tz)
+        target, data = guard_large_text(
+            target,
+            result,
+            app.ui,
+            threshold=query.mat_text_warn_entries,
+            allow=allow_large_text,
+            existing_entries=hdf5.text_entries,
+            accepted_before=hdf5.large_text_accepted,
+        )
+        metadata = build_metadata(
+            query,
+            data,
+            templates=loaded.config.templates,
+            command=sys.argv,
+            created=now,
+        )
+        saved.append(_save(target, data, metadata, query, save))
 
     count = len(result.series)
     summary = (
@@ -212,8 +251,8 @@ def fetch_command(
         f"from {', '.join(server.display for server in servers_used)}, "
         f"{format_time(query.start, query.tz)} to {format_time(query.end, query.tz)}"
     )
-    if chosen:
-        summary += "; saved to " + ", ".join(str(t.path) for t in chosen)
+    if saved:
+        summary += "; saved to " + ", ".join(saved)
     app.ui.success(summary + ".")
 
     if result.failed:
@@ -251,6 +290,33 @@ async def _download(
         )
     finally:
         await plan.close()
+
+
+def _save(
+    target: Target,
+    result: FetchResult,
+    metadata: dict[str, Any],
+    query: Query,
+    options: SaveOptions,
+) -> str:
+    """Write the data; return a description of where it went."""
+    if target.format not in STRUCTURED:
+        delimiter = "\t" if target.format is Format.TSV else ","
+        write_delimited(target.path, result, metadata, delimiter=delimiter, tz=query.tz)
+        return str(target.path)
+    group = hdf5.write_fetch(
+        target.path,
+        result,
+        metadata,
+        mat=target.format is Format.MAT,
+        t_from=query.start.timestamp(),
+        t_to=stored_end(query),
+        append=target.append,
+        group=options.group,
+        in_place=options.in_place,
+        large_text_accepted=target.large_text_accepted,
+    )
+    return f"{target.path} (group {group})"
 
 
 def _report_problems(app: AppContext, result: FetchResult) -> None:

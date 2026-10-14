@@ -12,6 +12,7 @@ from typing import Any, TypeVar
 
 from ..errors import AuthenticationFailed, ConnectionFailed, ZabbixError
 from ..model.config import Agg, Resolution
+from ..model.query import Query
 from ..model.series import FetchResult, Series, Skipped
 from ..model.server import Server
 from ..model.zabbix import HistoryRow, Item, TrendRow, ValueType
@@ -50,6 +51,18 @@ def chunks(
     first, last = math.floor(start.timestamp()), math.floor(end.timestamp())
     size = CHUNK_SECONDS[resolution]
     return [(t, min(t + size - 1, last)) for t in range(first, last + 1, size)]
+
+
+def stored_end(query: Query) -> float:
+    """The end of a fetch's range as recorded in files, in POSIX seconds.
+
+    For hourly trends, this is the end of the last completed hour: Zabbix only
+    writes an hour's trend once it's over, so a later update must ask for it again.
+    """
+    end = query.end.timestamp()
+    if query.resolution is Resolution.HOURLY:
+        end = max(math.floor(end / 3600) * 3600 - 1, query.start.timestamp())
+    return end
 
 
 def skip_reason(item: Item, resolution: Resolution) -> str | None:

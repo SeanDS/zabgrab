@@ -355,13 +355,17 @@ class _MatCodec(_Codec):
         )
 
     def text(self, parent: h5py.Group, name: str, value: str) -> None:
+        self._char(parent, name, value)
+
+    @staticmethod
+    def _char(parent: h5py.Group, name: str, value: str) -> h5py.Dataset:
         if not value:
-            _empty(parent, name, "char", (0, 0))
-            return
+            return _empty(parent, name, "char", (0, 0))
         codes = np.frombuffer(value.encode("utf-16-le"), dtype="<u2")
         dataset = parent.create_dataset(name, data=codes.reshape(-1, 1))
         _matlab_class(dataset, "char")
         dataset.attrs.create("MATLAB_int_decode", np.int32(2))
+        return dataset
 
     def scalar(self, parent: h5py.Group, name: str, value: float) -> None:
         dataset = parent.create_dataset(
@@ -379,10 +383,12 @@ class _MatCodec(_Codec):
         if kind == "text":
             refs = self._refs(parent.file)
             data: np.ndarray = np.empty((1, len(values)), dtype=h5py.ref_dtype)
+            number = len(refs)
             for index, value in enumerate(values):
-                key = self._ref_name(refs)
-                self.text(refs, key, str(value))
-                data[0, index] = refs[key].ref
+                while f"r{number}" in refs:  # pragma: no cover - only after edits
+                    number += 1
+                data[0, index] = self._char(refs, f"r{number}", str(value)).ref
+                number += 1
             dataset = parent.create_dataset(name, data=data, dtype=h5py.ref_dtype)
         else:
             data = _numbers(values, kind).reshape(1, -1)
@@ -399,22 +405,19 @@ class _MatCodec(_Codec):
         assert isinstance(refs, h5py.Group)
         return refs
 
-    def _ref_name(self, refs: h5py.Group) -> str:
-        number = len(refs)
-        while (name := f"r{number}") in refs:  # pragma: no cover - only after edits
-            number += 1
-        return name
-
 
 def _matlab_class(obj: h5py.HLObject, name: str) -> None:
     obj.attrs.create("MATLAB_class", np.bytes_(name))
 
 
-def _empty(parent: h5py.Group, name: str, matlab: str, dims: tuple[int, int]) -> None:
+def _empty(
+    parent: h5py.Group, name: str, matlab: str, dims: tuple[int, int]
+) -> h5py.Dataset:
     # MATLAB stores an empty array's dimensions as its data.
     dataset = parent.create_dataset(name, data=np.array(dims, dtype=np.uint64))
     _matlab_class(dataset, matlab)
     dataset.attrs.create("MATLAB_empty", np.uint8(1))
+    return dataset
 
 
 # Reading.

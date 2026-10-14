@@ -11,10 +11,11 @@ from typing import Any
 import pytest
 from click.testing import Result
 
+from zabgrab.adapters.formats.hdf5 import group_names, large_text_accepted, read_fetches
 from zabgrab.errors import EXIT_ERROR, EXIT_INTERRUPTED, EXIT_PARTIAL
 
 from .cli_support import CONFIG, Servers, run, table_rows
-from .fakezabbix import TOKEN, seeded
+from .fakezabbix import T0, TOKEN, seeded
 
 TEMPLATES = """
 [templates.particles]
@@ -234,13 +235,8 @@ class TestFormat:
         ok(run("fetch", "-t", "particles", "-o", str(path)))
         assert "," in path.read_text().splitlines()[-1]
 
-    def test_not_available_yet(self, configured: Servers, tmp_path: Path) -> None:
-        result = run("fetch", "-t", "particles", "-o", str(tmp_path / "out.mat"))
-        assert result.exit_code == EXIT_ERROR
-        assert "Saving as mat isn't available yet." in result.stderr
-
     def test_asked_for(self, configured: Servers, interactive: None) -> None:
-        ok(run("fetch", "-t", "particles", "-o", input="2\n"))
+        ok(run("fetch", "-t", "particles", "-o", input="4\n"))
         assert Path(f"{NAME}.csv").exists()
 
     def test_missing_non_interactive(self, configured: Servers) -> None:
@@ -513,3 +509,188 @@ items = [
             )
         )
         assert "Showing the first 1 matches." in result.stderr
+
+
+class TestStructured:
+    @pytest.mark.parametrize("suffix", [".mat", ".h5"])
+    def test_save_and_append(
+        self, configured: Servers, tmp_path: Path, suffix: str
+    ) -> None:
+        path = tmp_path / f"data{suffix}"
+        result = ok(run("fetch", "-t", "particles", "-o", str(path)))
+        assert f"saved to {path} (group fetch_0001)." in result.stderr
+        result = ok(
+            run("fetch", "-t", "logs", "-o", str(path), "--append", "--group", "logs")
+        )
+        assert "(group logs)" in result.stderr
+        ok(run("fetch", "-t", "particles", "-o", str(path), "--append", "--in-place"))
+        groups = read_fetches(path)
+        assert [g.name for g in groups] == ["fetch_0001", "logs", "fetch_0002"]
+        assert [s.item.itemid for s in groups[1].series] == [20005, 20006]
+        assert groups[0].metadata["query"]["templates"] == ["particles"]
+        assert groups[0].t_to == groups[0].t_from + 7200
+
+    def test_trend_end_is_the_last_complete_hour(
+        self, configured: Servers, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "trends.h5"
+        ok(
+            run(
+                "fetch",
+                "-s",
+                "demo",
+                "-i",
+                "20001",
+                "--resolution",
+                "1h",
+                *TIMES,
+                "-o",
+                str(path),
+            )
+        )
+        (group,) = read_fetches(path)
+        # "now" is 08:58:20 UTC, so the last complete hour ended at 08:00:00.
+        assert group.t_to == T0 - 1
+
+    def test_existing_file_offers_append(
+        self, configured: Servers, interactive: None, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "data.h5"
+        ok(run("fetch", "-t", "particles", "-o", str(path)))
+        result = ok(run("fetch", "-t", "particles", "-o", str(path), input="\n"))
+        assert "1. Add the data to it as a new group" in result.stderr
+        assert group_names(path) == ["fetch_0001", "fetch_0002"]
+
+    def test_existing_file_non_interactive(
+        self, configured: Servers, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "data.mat"
+        ok(run("fetch", "-t", "particles", "-o", str(path)))
+        result = ok(run("fetch", "-t", "particles", "-o", str(path)))
+        assert "or --append to add to it." in result.stderr
+        assert (tmp_path / "data-2.mat").exists()
+
+    @pytest.mark.parametrize(
+        ("args", "message"),
+        [
+            (
+                ["-o", "x.tsv", "--append"],
+                "Only .mat and .h5 files can be appended to.",
+            ),
+            (["--append"], "--append, --group and --in-place need --output"),
+            (["-o", "--append"], "--append, --group and --in-place need --output"),
+            (["-o", "x.h5", "--append", "--overwrite"], "can't be used together"),
+            (["-o", "x.h5", "--group", "g"], "only apply with --append"),
+        ],
+    )
+    def test_invalid_combinations(
+        self, configured: Servers, args: list[str], message: str
+    ) -> None:
+        result = run("fetch", "-t", "particles", *args)
+        assert result.exit_code == EXIT_ERROR
+        assert message in result.stderr
+        assert configured.by_url == {}  # checked before downloading
+
+
+class TestLargeText:
+    ARGS = ("fetch", "-t", "logs")
+
+    @pytest.fixture
+    def low_threshold(self, configured: Servers, user_config: Path) -> Servers:
+        user_config.write_text(
+            CONFIG + TEMPLATES + "[defaults]\nmat_text_warn_entries = 2\n"
+        )
+        return configured
+
+    def test_non_interactive_warns_and_continues(
+        self, low_threshold: Servers, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "logs.mat"
+        result = ok(run(*self.ARGS, "-o", str(path)))
+        assert (
+            "would hold 5 text values, more than mat_text_warn_entries (2)"
+            in result.stderr
+        )
+        assert "--allow-large-text" in result.stderr
+        assert not large_text_accepted(path)
+
+    def test_allowed(self, low_threshold: Servers, tmp_path: Path) -> None:
+        path = tmp_path / "logs.mat"
+        result = ok(run(*self.ARGS, "-o", str(path), "--allow-large-text"))
+        assert "text values" not in result.stderr
+        assert large_text_accepted(path)
+        # Remembered for later appends.
+        result = ok(run(*self.ARGS, "-o", str(path), "--append"))
+        assert "text values" not in result.stderr
+
+    def test_h5_is_never_guarded(self, low_threshold: Servers, tmp_path: Path) -> None:
+        result = ok(run(*self.ARGS, "-o", str(tmp_path / "logs.h5")))
+        assert "text values" not in result.stderr
+
+    @pytest.mark.parametrize(
+        ("answer", "files", "items"),
+        [
+            ("1", ["logs.mat"], [20005, 20006]),
+            ("2", ["logs.h5"], [20005, 20006]),
+            ("3", ["logs.mat"], []),
+        ],
+    )
+    def test_interactive_choices(
+        self,
+        low_threshold: Servers,
+        interactive: None,
+        tmp_path: Path,
+        answer: str,
+        files: list[str],
+        items: list[int],
+    ) -> None:
+        result = run(
+            *self.ARGS,
+            "-t",
+            "particles",
+            "-o",
+            str(tmp_path / "logs.mat"),
+            input=f"{answer}\n",
+        )
+        assert result.exit_code == 0, result.output
+        assert sorted(p.name for p in tmp_path.glob("logs.*")) == files
+        (group,) = read_fetches(tmp_path / files[0])
+        assert [s.item.itemid for s in group.series if s.item.itemid > 20004] == items
+        if not items:
+            assert "Leaving out 2 text item(s)." in result.stderr
+
+    def test_interactive_cancel(
+        self, low_threshold: Servers, interactive: None, tmp_path: Path
+    ) -> None:
+        result = run(*self.ARGS, "-o", str(tmp_path / "logs.mat"), input="4\n")
+        assert result.exit_code == EXIT_INTERRUPTED
+        assert list(tmp_path.glob("logs.*")) == []
+
+    def test_existing_entries_count(
+        self, low_threshold: Servers, user_config: Path, tmp_path: Path
+    ) -> None:
+        user_config.write_text(
+            CONFIG + TEMPLATES + "[defaults]\nmat_text_warn_entries = 5\n"
+        )
+        path = tmp_path / "logs.mat"
+        assert "text values" not in ok(run(*self.ARGS, "-o", str(path))).stderr
+        result = ok(run(*self.ARGS, "-o", str(path), "--append"))
+        assert "would hold 10 text values" in result.stderr
+
+    def test_disabled(
+        self, configured: Servers, user_config: Path, tmp_path: Path
+    ) -> None:
+        user_config.write_text(
+            CONFIG + TEMPLATES + "[defaults]\nmat_text_warn_entries = 0\n"
+        )
+        result = ok(run(*self.ARGS, "-o", str(tmp_path / "logs.mat")))
+        assert "text values" not in result.stderr
+
+
+def test_append_with_configured_delimited_format(
+    configured: Servers, user_config: Path, tmp_path: Path
+) -> None:
+    user_config.write_text(CONFIG + TEMPLATES + '[defaults]\nformat = "tsv"\n')
+    result = run("fetch", "-t", "particles", "-o", str(tmp_path / "data"), "--append")
+    assert result.exit_code == EXIT_ERROR
+    assert "Only .mat and .h5 files can be appended to." in result.stderr
