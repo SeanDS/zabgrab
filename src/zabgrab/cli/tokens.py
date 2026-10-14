@@ -103,6 +103,7 @@ def add_command(
             secrets=app.secrets,
             env=app.env.variables,
             check=not no_check,
+            update_url=app.update_server_url,
         )
     )
 

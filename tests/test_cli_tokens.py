@@ -168,6 +168,42 @@ class TestAdd:
         assert "No such file" in result.stderr
 
 
+class TestAddRedirected:
+    HTTP = "http://demo.example.org"
+
+    @hidden_input
+    def test_literal_url_is_stored_for_the_redirect_target(
+        self, servers: Servers, interactive: None
+    ) -> None:
+        servers.redirects[self.HTTP] = DEMO
+        result = run(
+            "token", "add", self.HTTP, "-", input=TOKEN + "\ny\n", tokens=False
+        )
+        assert result.exit_code == 0, result.output
+        assert servers.secrets.tokens == {DEMO: TOKEN}
+
+    def test_configured_server_url_is_updated(
+        self, servers: Servers, interactive: None, user_config: Path
+    ) -> None:
+        user_config.write_text(CONFIG.replace(DEMO, self.HTTP))
+        servers.redirects[self.HTTP] = DEMO
+        token_file = user_config.parent / "token.txt"
+        token_file.write_text(TOKEN)
+        result = run(
+            "token", "add", "demo", str(token_file), input="y\ny\n", tokens=False
+        )
+        assert result.exit_code == 0, result.output
+        assert servers.secrets.tokens == {DEMO: TOKEN}
+        assert user_config.read_text() == CONFIG
+
+    def test_non_interactive_stops(self, servers: Servers) -> None:
+        servers.redirects[self.HTTP] = DEMO
+        result = run("token", "add", self.HTTP, "-", input=TOKEN, tokens=False)
+        assert result.exit_code == EXIT_ERROR
+        assert "redirects to" in result.stderr
+        assert servers.secrets.tokens == {}
+
+
 class TestReset:
     def test_with_yes(self, servers: Servers) -> None:
         servers.secrets.tokens |= {DEMO: TOKEN, OTHER: TOKEN}

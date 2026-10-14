@@ -19,7 +19,7 @@ from zabgrab.errors import (
 from zabgrab.model.config import AuthMethod, ServerConfig
 from zabgrab.model.server import Server
 from zabgrab.services.ports import ZabbixClient
-from zabgrab.services.session import connect
+from zabgrab.services.session import _token_login, connect
 
 from .fakes import MemorySecrets, RecordingUI
 from .fakezabbix import (
@@ -321,3 +321,57 @@ class TestRedirects:
         with pytest.raises(ConnectionFailed, match="Too many redirects"):
             harness.connect(Server("demo", ServerConfig(url=HTTP)), ui)
         assert all(transport.closed for transport in harness.transports)
+
+
+class TestTokenStoredForRedirectedUrl:
+    """A token saved for an http:// URL that turns out to redirect to https://."""
+
+    @staticmethod
+    def harness(**tokens: str) -> Harness:
+        return Harness(
+            secrets=MemorySecrets(tokens or {HTTP: TOKEN}), redirects={HTTP: URL}
+        )
+
+    def test_moved(self) -> None:
+        harness = self.harness()
+        # Follow the redirect, don't update the config, move the token.
+        ui = RecordingUI(answers=[True, False, True])
+        client = harness.connect(Server("demo", ServerConfig(url=HTTP)), ui)
+        assert hosts(client) == ["demo1", "demo2", "web01"]
+        assert ui.questions[-1] == (
+            f"The token in your keyring is stored for {HTTP}. Move it to {URL}?"
+        )
+        assert harness.secrets.tokens == {URL: TOKEN}
+        assert ui.levels("success") == [f"Moved the token to {URL}."]
+
+    def test_kept(self) -> None:
+        harness = self.harness()
+        ui = RecordingUI(answers=[True, False, False])
+        hosts(harness.connect(Server("demo", ServerConfig(url=HTTP)), ui))
+        assert harness.secrets.tokens == {HTTP: TOKEN}
+
+    def test_move_fails(self) -> None:
+        harness = self.harness()
+        harness.secrets.fail = True
+        ui = RecordingUI(answers=[True, False, True])
+        hosts(harness.connect(Server("demo", ServerConfig(url=HTTP)), ui))
+        assert ui.levels("warning") == ["Couldn't save the token. Use token_env."]
+
+    def test_token_for_new_url_wins(self) -> None:
+        harness = self.harness(**{HTTP: "old", URL: TOKEN})
+        ui = RecordingUI(answers=[True, False])
+        hosts(harness.connect(Server("demo", ServerConfig(url=HTTP)), ui))
+        assert harness.secrets.tokens == {HTTP: "old", URL: TOKEN}
+
+    def test_non_interactive_warns_and_continues(self) -> None:
+        # Redirects themselves stop non-interactive runs, so test the login step.
+        secrets = MemorySecrets({HTTP: TOKEN})
+        ui = RecordingUI(interactive=False)
+        api = ZabbixAPI(FakeTransport(seeded()))
+        server = Server("demo", ServerConfig(url=URL))
+        asyncio.run(_token_login(api, server, ui, secrets, {}, previous_url=HTTP))
+        assert hosts(api) == ["demo1", "demo2", "web01"]
+        (warning,) = ui.levels("warning")
+        assert warning.startswith(f"The token for 'demo' is stored for {HTTP}")
+        assert "`zabgrab token add demo`" in warning
+        assert secrets.tokens == {HTTP: TOKEN}

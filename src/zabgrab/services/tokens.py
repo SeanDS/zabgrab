@@ -10,7 +10,13 @@ from ..errors import AuthenticationFailed, Cancelled, ZabbixError, ZabgrabError
 from ..model.config import AuthMethod, Config, ServerConfig
 from ..model.server import Server
 from .ports import UI, ClientFactory, Option, SecretStore
-from .session import ask_for_token, find_token, non_empty
+from .session import (
+    UpdateServerUrl,
+    ask_for_token,
+    find_token,
+    non_empty,
+    open_client,
+)
 
 
 @dataclass(frozen=True)
@@ -96,9 +102,12 @@ async def add_token(
     secrets: SecretStore,
     env: Mapping[str, str],
     check: bool = True,
+    update_url: UpdateServerUrl | None = None,
 ) -> None:
     """Store a token for ``server`` in the keyring, asking for it if ``token`` is
-    ``None``. With ``check``, the server must accept the token first."""
+    ``None``. With ``check``, the server must accept the token first; if it
+    redirects, the token is stored for the URL it redirects to (see
+    :func:`zabgrab.services.session.open_client`)."""
     fix = (
         "Pass the token on standard input with '-', e.g. "
         f"`printenv MY_TOKEN | zabgrab token add {server.name or server.url} -`, or "
@@ -114,9 +123,10 @@ async def add_token(
         ui.info(f"Create an API token at {server.token_page}")
 
     if check:
-        client = factory(server.config)
+        client, server, _ = await open_client(
+            server, factory=factory, ui=ui, update_url=update_url
+        )
         try:
-            await client.check_version()
             if token is None:
                 token = await ask_for_token(client, ui, fix=fix)
             else:

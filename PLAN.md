@@ -769,6 +769,11 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   Interactive users are asked whether to use the new URL (with a warning if the host
   differs) and, for configured servers, whether to update the URL in the config file
   that defines the server. Non-interactive runs fail with the URL to use.
+- A token stored under a URL that redirects is still used after following the
+  redirect; interactive users are offered to move it to the new URL (non-interactive
+  runs would warn and continue, though they currently stop at the redirect itself).
+  `token add` follows redirects the same way when checking a token, so it's stored
+  under the final URL.
 - Search patterns use Zabbix's own semantics (substring match, `*` wildcard), so
   results match the web UI and server-side limits are exact.
 

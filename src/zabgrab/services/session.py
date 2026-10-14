@@ -90,6 +90,41 @@ async def connect(
     is none (or it's rejected), interactive users can paste a token or log in with a
     password; otherwise an error explains how to provide one.
     """
+    original_url = server.url
+    client, server, version = await open_client(
+        server, factory=factory, ui=ui, update_url=update_url
+    )
+    try:
+        ui.debug(f"Connected to {server.display} (Zabbix {version}).")
+        if server.config.auth is AuthMethod.PASSWORD:
+            await _password_login(client, server, ui)
+        else:
+            await _token_login(
+                client,
+                server,
+                ui,
+                secrets,
+                env,
+                previous_url=None if server.url == original_url else original_url,
+            )
+    except BaseException:
+        await client.close()
+        raise
+    return client
+
+
+async def open_client(
+    server: Server,
+    *,
+    factory: ClientFactory,
+    ui: UI,
+    update_url: UpdateServerUrl | None = None,
+) -> tuple[ZabbixClient, Server, str]:
+    """Connect to ``server`` (not logged in) and check its version.
+
+    Redirects are handled as described for :func:`connect`. Returns the client,
+    the server (with its new URL, if redirected) and the server's version.
+    """
     if not server.config.verify_ssl:
         ui.warning(f"SSL certificate verification is disabled for {server.display}.")
 
@@ -110,17 +145,7 @@ async def connect(
             f"Too many redirects from {server.display}.",
             hint="Check the server URL in a web browser.",
         )
-
-    try:
-        ui.debug(f"Connected to {server.display} (Zabbix {version}).")
-        if server.config.auth is AuthMethod.PASSWORD:
-            await _password_login(client, server, ui)
-        else:
-            await _token_login(client, server, ui, secrets, env)
-    except BaseException:
-        await client.close()
-        raise
-    return client
+    return client, server, version
 
 
 def _follow_redirect(
@@ -170,10 +195,16 @@ async def _token_login(
     ui: UI,
     secrets: SecretStore,
     env: Mapping[str, str],
+    *,
+    previous_url: str | None = None,
 ) -> None:
     variable = server.config.token_env
     lookup = find_token(server, secrets, env)
     token, source = lookup.token, lookup.source
+    stored_for = None
+    if not token and previous_url and (token := secrets.get_token(previous_url)):
+        # A token stored under the URL the server redirected from.
+        source, stored_for = f"your keyring (stored for {previous_url})", previous_url
     if variable and not token:
         ui.warning(f"${variable} is not set.")
 
@@ -189,6 +220,8 @@ async def _token_login(
             ui.error(f"The API token from {source} was rejected for {server.display}.")
         else:
             ui.debug(f"Logged in to {server.display} with the API token from {source}.")
+            if stored_for:
+                _move_token(token, stored_for, server, ui, secrets)
             return
 
     method = ui.choose(
@@ -211,6 +244,32 @@ async def _token_login(
             ui.warning(f"{err.message} {err.hint or ''}".strip())
         else:
             ui.success("Token saved.")
+
+
+def _move_token(
+    token: str, old_url: str, server: Server, ui: UI, secrets: SecretStore
+) -> None:
+    """Offer to move a token stored under a server's old (redirected) URL."""
+    if not ui.interactive:
+        ui.warning(
+            f"The token for {server.display} is stored for {old_url}, which "
+            f"redirects to {server.url}. Run zabgrab interactively to move it, or "
+            f"store it again with `zabgrab token add {server.name or server.url}`."
+        )
+        return
+    if not ui.confirm(
+        f"The token in your keyring is stored for {old_url}. Move it to {server.url}?",
+        fix="",
+        default=True,
+    ):
+        return
+    try:
+        secrets.set_token(server.url, token)
+        secrets.delete_token(old_url)
+    except ZabgrabError as err:
+        ui.warning(f"{err.message} {err.hint or ''}".strip())
+    else:
+        ui.success(f"Moved the token to {server.url}.")
 
 
 async def _password_login(client: ZabbixClient, server: Server, ui: UI) -> None:
