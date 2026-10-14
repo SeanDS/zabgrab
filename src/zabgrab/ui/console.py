@@ -49,6 +49,12 @@ THEME = Theme(
         "zabgrab.quoted": "bold magenta",
         "zabgrab.envvar": "bold magenta",
         "zabgrab.number": "bold",
+        # TOML (see TomlHighlighter).
+        "toml.section": "bold blue",
+        "toml.key": "cyan",
+        "toml.string": "green",
+        "toml.literal": "magenta",
+        "toml.comment": "dim",
     }
 )
 
@@ -74,6 +80,23 @@ class MessageHighlighter(RegexHighlighter):
         r"(?:^|(?<=[\s(]))(?P<path>~?/[^\s'\"]*[^\s'\".,;:!?)])",
         r"(?P<url>https?://[^\s'\"]*[^\s'\".,;:!?)])",
         r"(?P<code>`[^`]+`)",
+    ]
+
+
+class TomlHighlighter(RegexHighlighter):
+    """Highlights TOML: sections, keys, strings, numbers and booleans.
+
+    Use it on lines that aren't comments (see ``highlighted_toml``).
+
+    Later patterns take precedence, so e.g. text inside strings is only a string.
+    """
+
+    base_style = "toml."
+    highlights = [  # noqa: RUF012 - rich's API uses a mutable class attribute
+        r"(?m)(?:^|[{,]\s*)(?P<key>[A-Za-z0-9_-]+)(?=\s*=)",
+        r"(?<![\w.\"-])(?P<literal>-?\d+(?:\.\d+)?|true|false)(?![\w.\"-])",
+        r'(?P<string>"(?:[^"\\\n]|\\.)*")',
+        r"(?m)^(?P<section>\[[^\]\n]+\])\s*$",
     ]
 
 

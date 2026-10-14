@@ -15,7 +15,7 @@ from zabgrab.errors import EXIT_ERROR
 from zabgrab.model.config import ServerConfig
 
 from .cli_support import CONFIG, Servers, run, table_rows
-from .fakezabbix import TOKEN, seeded
+from .fakezabbix import TOKEN, FakeHost, FakeItem, seeded
 
 
 class TestHosts:
@@ -226,3 +226,86 @@ def test_http_client_uses_server_settings() -> None:
     assert isinstance(transport, HttpTransport)
     assert transport.endpoint == "https://x.example.org/zabbix/api_jsonrpc.php"
     assert (transport.verify_ssl, transport.timeout) == (False, 5)
+
+
+class TestDataIsNeverMarkup:
+    """Regression: an item key like vfs.fs.size[/,pfree] crashed the items table."""
+
+    @pytest.fixture
+    def awkward(self, servers: Servers) -> Servers:
+        servers.by_url["https://demo.example.org"] = zabbix = seeded()
+        zabbix.hosts.append(FakeHost(10009, "[red]host", "[bold]Host[/bold]", ["[g]"]))
+        zabbix.items.append(
+            FakeItem(
+                20099,
+                10009,
+                "Free [/] space [b]",
+                "vfs.fs.size[/,pfree]",
+                0,
+                lastvalue="[/x]",
+                lastclock=1_760_000_000,
+            )
+        )
+        return servers
+
+    def test_items(self, awkward: Servers) -> None:
+        result = run("items", "-s", "demo", "--item", "20099")
+        assert result.exit_code == 0, result.output
+        (row,) = table_rows(result.stdout)
+        assert row[:4] == [
+            "20099",
+            "[bold]Host[/bold]",
+            "Free [/] space [b]",
+            "vfs.fs.size[/,pfree]",
+        ]
+        assert row[6] == "[/x]"
+
+    def test_hosts(self, awkward: Servers) -> None:
+        result = run("hosts", "-s", "demo", "host")
+        assert result.exit_code == 0, result.output
+        assert table_rows(result.stdout)[0][1:4] == [
+            "[red]host",
+            "[bold]Host[/bold]",
+            "[g]",
+        ]
+
+    def test_fetch_dry_run(self, awkward: Servers) -> None:
+        result = run(
+            "fetch",
+            "-s",
+            "demo",
+            "-i",
+            "key=vfs.fs.size[/,pfree]",
+            "--from",
+            "1 hour ago",
+            "--to",
+            "now",
+            "--dry-run",
+        )
+        assert result.exit_code == 0, result.output
+        assert table_rows(result.stdout)[0][2] == "Free [/] space [b]"
+
+    def test_fetch_explain(self, awkward: Servers) -> None:
+        result = run(
+            "fetch",
+            "-s",
+            "demo",
+            "-i",
+            "key=vfs.fs.size[/,pfree]",
+            "--from",
+            "1 hour ago",
+            "--to",
+            "now",
+            "--explain",
+        )
+        assert result.exit_code == 0, result.output
+        assert "key=vfs.fs.size[/,pfree]" in result.stdout
+
+
+def test_token_and_layer_tables_show_urls_and_paths_literally(
+    servers: Servers, user_config: Path
+) -> None:
+    user_config.write_text('[servers.odd]\nurl = "https://x.example.org/[/b]"\n')
+    result = run("token", "list")
+    assert result.exit_code == 0, result.output
+    assert "https://x.example.org/[/b]" in result.stdout

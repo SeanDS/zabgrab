@@ -15,7 +15,12 @@ from ..adapters.configfiles import (
     user_config_path,
 )
 from ..errors import ConfigError, ZabgrabError
-from ..ui.render import config_to_toml, config_with_sources, layers_table
+from ..ui.render import (
+    config_to_toml,
+    config_with_sources,
+    highlighted_toml,
+    layers_table,
+)
 from .app import AppContext, global_options, pass_app
 
 STARTER_CONFIG = """\
@@ -67,7 +72,7 @@ def show_command(app: AppContext, sources: bool) -> None:
     if sources:
         app.ui.print_data(config_with_sources(loaded))
     else:
-        app.ui.print_data(config_to_toml(loaded))
+        app.ui.print_data(highlighted_toml(config_to_toml(loaded)))
 
 
 @config_group.command("edit")

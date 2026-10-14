@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, tzinfo
 from typing import Any
 
 import tomlkit
-from rich.markup import escape
+from rich.console import RenderableType
 from rich.table import Table
 from rich.text import Text
 from tomlkit.items import Array, InlineTable
@@ -23,11 +23,26 @@ from ..model.server import Server
 from ..model.zabbix import Host, Item
 from ..services.fetch import Job, skip_reason
 from ..services.tokens import CheckResult, CheckState, TokenStatus
+from .console import TomlHighlighter
+
+
+class DataTable(Table):
+    """A table whose string cells are always plain text, never rich markup.
+
+    Cells often hold data from servers or config (e.g. the item key
+    ``vfs.fs.size[/,pfree]``), which must be shown exactly as it is.
+    """
+
+    def add_row(self, *renderables: RenderableType | None, **kwargs: Any) -> None:
+        super().add_row(
+            *(Text(cell) if isinstance(cell, str) else cell for cell in renderables),
+            **kwargs,
+        )
 
 
 def layers_table(layers: Iterable[ConfigLayer]) -> Table:
     """Table of config layers, lowest priority first."""
-    table = Table(
+    table = DataTable(
         title="Config files (lowest to highest priority)", title_justify="left"
     )
     table.add_column("Layer", style="bold")
@@ -36,19 +51,19 @@ def layers_table(layers: Iterable[ConfigLayer]) -> Table:
 
     for layer in layers:
         if layer.kind is LayerKind.BUILTIN:
-            path, status = "-", "[green]always used[/]"
+            path, status = "-", Text("always used", style="green")
         elif layer.path is None:
-            path, status = "(no zabgrab.toml found)", "[dim]not found[/]"
+            path, status = "(no zabgrab.toml found)", Text("not found", style="dim")
         else:
             path = str(layer.path)
             if layer.skipped:
-                status = "[yellow]skipped (--isolated)[/]"
+                status = Text("skipped (--isolated)", style="yellow")
             elif layer.exists:
-                status = "[green]loaded[/]"
+                status = Text("loaded", style="green")
             elif layer.kind is LayerKind.EXPLICIT:
-                status = "[red]missing[/]"
+                status = Text("missing", style="red")
             else:
-                status = "[dim]not found[/]"
+                status = Text("not found", style="dim")
         table.add_row(str(layer.kind), path, status)
 
     return table
@@ -103,6 +118,19 @@ def config_lines(loaded: LoadedConfig) -> list[ConfigLine]:
 def config_to_toml(loaded: LoadedConfig) -> str:
     """The merged config as TOML."""
     return "".join(f"{line}\n" for _, line in config_lines(loaded))
+
+
+def highlighted_toml(text: str) -> Text:
+    """TOML with its sections, keys, values and comments highlighted."""
+    highlighter = TomlHighlighter()
+    lines = []
+    for line in text.splitlines(keepends=True):
+        if line.lstrip().startswith("#"):
+            content = line.rstrip("\n")
+            lines.append(Text.assemble((content, "toml.comment"), line[len(content) :]))
+        else:
+            lines.append(highlighter(Text(line)))
+    return Text("", end="").join(lines)
 
 
 def config_with_sources(loaded: LoadedConfig) -> Text:
@@ -166,7 +194,7 @@ def _shorten(text: str, width: int = 40) -> str:
 def hosts_table(rows: Sequence[tuple[Server, Host]]) -> Table:
     """Table of hosts, with a server column if there's more than one server."""
     multiple = len({server for server, _ in rows}) > 1
-    table = Table()
+    table = DataTable()
     if multiple:
         table.add_column("Server", style="magenta")
     table.add_column("Host ID", style="cyan", justify="right")
@@ -194,7 +222,7 @@ def hosts_table(rows: Sequence[tuple[Server, Host]]) -> Table:
 def items_table(rows: Sequence[tuple[Server, Item]], *, now: datetime) -> Table:
     """Table of items, with a server column if there's more than one server."""
     multiple = len({server for server, _ in rows}) > 1
-    table = Table()
+    table = DataTable()
     if multiple:
         table.add_column("Server", style="magenta")
     table.add_column("Item ID", style="cyan", justify="right")
@@ -237,7 +265,7 @@ def tokens_table(
     statuses: Sequence[TokenStatus], results: Sequence[CheckResult] | None = None
 ) -> Table:
     """Table of servers and where their tokens come from."""
-    table = Table()
+    table = DataTable()
     table.add_column("Server", style="bold")
     table.add_column("URL", style="cyan", overflow="fold")
     table.add_column("Keyring")
@@ -246,22 +274,22 @@ def tokens_table(
         table.add_column("Check")
 
     for index, status in enumerate(statuses):
-        if status.env_var is None:
-            environment = ""
-        elif status.env_set:
-            environment = f"[green]${status.env_var} (set)[/]"
-        else:
-            environment = f"[dim]${status.env_var} (not set)[/]"
-        cells = [
+        environment: str | Text = ""
+        if status.env_var is not None:
+            environment = Text(
+                f"${status.env_var} ({'set' if status.env_set else 'not set'})",
+                style="green" if status.env_set else "dim",
+            )
+        cells: list[str | Text] = [
             status.server.name or "",
             status.server.url,
-            "[green]stored[/]" if status.stored else "[dim]-[/]",
+            Text("stored", style="green") if status.stored else Text("-", style="dim"),
             environment,
         ]
         if results is not None:
             result = results[index]
             text = f"{result.state} {result.detail}".strip()
-            cells.append(f"[{_CHECK_STYLES[result.state]}]{escape(text)}[/]")
+            cells.append(Text(text, style=_CHECK_STYLES[result.state]))
         table.add_row(*cells)
     return table
 
@@ -273,13 +301,13 @@ def format_time(time: datetime, tz: tzinfo | None) -> str:
 
 def explain_table(query: Query) -> Table:
     """The resolved settings, and where each came from."""
-    table = Table(title="Settings", title_justify="left")
+    table = DataTable(title="Settings", title_justify="left")
     table.add_column("Setting", style="bold")
     table.add_column("Value")
     table.add_column("Source", style="magenta")
 
     def row(key: str, value: str) -> None:
-        table.add_row(key, escape(value), escape(query.sources.get(key, "")))
+        table.add_row(key, value, query.sources.get(key, ""))
 
     row("from", f"{query.from_text} ({format_time(query.start, query.tz)})")
     row("to", f"{query.to_text} ({format_time(query.end, query.tz)})")
@@ -296,7 +324,7 @@ def explain_table(query: Query) -> Table:
 
 def requests_table(query: Query) -> Table:
     """What will be fetched from where, before items are looked up."""
-    table = Table(title="Requests", title_justify="left")
+    table = DataTable(title="Requests", title_justify="left")
     table.add_column("From", style="bold")
     table.add_column("Server")
     table.add_column("Items")
@@ -309,8 +337,8 @@ def requests_table(query: Query) -> Table:
         items = [format_item_spec_safe(spec) for spec in request.items] or ["(asked)"]
         table.add_row(
             "command line" if request.label == CUSTOM else request.label,
-            escape(shown),
-            escape("\n".join(items)),
+            shown,
+            "\n".join(items),
         )
     return table
 
@@ -331,7 +359,7 @@ def format_item_spec_safe(spec: ItemSpec) -> str:
 def plan_table(jobs: Sequence[Job], resolution: Resolution) -> Table:
     """The items that would be fetched (for --dry-run)."""
     multiple = len({job.server for job in jobs}) > 1
-    table = Table()
+    table = DataTable()
     if multiple:
         table.add_column("Server", style="magenta")
     table.add_column("Item ID", style="cyan", justify="right")
@@ -351,6 +379,8 @@ def plan_table(jobs: Sequence[Job], resolution: Resolution) -> Table:
             ", ".join(
                 "command line" if label == CUSTOM else label for label in job.requests
             ),
-            f"[yellow]skip: {escape(reason)}[/]" if reason else "[green]fetch[/]",
+            Text(f"skip: {reason}", style="yellow")
+            if reason
+            else Text("fetch", style="green"),
         )
     return table

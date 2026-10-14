@@ -9,6 +9,7 @@ from rich.text import Text
 
 from zabgrab.services.ports import Option
 from zabgrab.ui.console import MessageHighlighter, RichUI
+from zabgrab.ui.render import highlighted_toml
 
 
 def highlights(message: str) -> list[tuple[str, str]]:
@@ -116,3 +117,50 @@ def test_prompts_are_highlighted_and_not_markup(
     # Shown literally (as a config-style snippet), not interpreted as markup.
     assert "[bold]\x1b[0minstead[/bold]?" in err
     assert "\x1b[2;4;36mhttps://a.org" in err
+
+
+def toml_highlights(text: str) -> list[tuple[str, str]]:
+    rendered = highlighted_toml(text)
+    return [
+        (text[span.start : span.end], str(span.style).removeprefix("toml."))
+        for span in sorted(rendered.spans, key=lambda span: span.start)
+    ]
+
+
+def test_toml_highlighting() -> None:
+    text = (
+        '# Comment = with "quotes"\n'
+        "[servers.demo]\n"
+        'url = "https://x"\n'
+        "verify_ssl = false\n"
+        "timeout = 30.0\n"
+        'items = [{host = "demo1", name = "a = b, \\"c\\""}, {itemid = 5}]\n'
+    )
+    assert toml_highlights(text) == [
+        ('# Comment = with "quotes"', "comment"),
+        ("[servers.demo]", "section"),
+        ("url", "key"),
+        ('"https://x"', "string"),
+        ("verify_ssl", "key"),
+        ("false", "literal"),
+        ("timeout", "key"),
+        ("30.0", "literal"),
+        ("items", "key"),
+        ("host", "key"),
+        ('"demo1"', "string"),
+        ("name", "key"),
+        ('"a = b, \\"c\\""', "string"),
+        ("itemid", "key"),
+        ("5", "literal"),
+    ]
+
+
+def test_config_show_is_highlighted() -> None:
+    from click.testing import CliRunner
+
+    from zabgrab.cli import cli
+
+    result = CliRunner().invoke(cli, ["--isolated", "--color", "config", "show"])
+    assert "\x1b[1;34m[defaults]\x1b[0m" in result.stdout
+    assert "\x1b[36mjobs\x1b[0m = \x1b[35m6\x1b[0m" in result.stdout
+    assert '\x1b[36mtimezone\x1b[0m = \x1b[32m"local"\x1b[0m' in result.stdout
