@@ -215,10 +215,16 @@ See "Missing and invalid input".
 
 `zabgrab fetch ... --save-template NAME [--save-to user|project|system|PATH] [--force]`
 
-- Saves only parameters whose click `ParameterSource` is the command line or an
-  environment variable, so built-in defaults are not frozen into the template.
+- Saves the settings given on the command line, by the templates used, and as
+  answers at prompts. `[defaults]` and built-in values are not frozen into the
+  template. Templates can't build on each other, so the new one is self-contained:
+  it combines the templates' items and settings (the command line winning). If the
+  templates used different servers, saving fails and says so.
 - Saves values as the user typed them: wildcard patterns rather than resolved item
-  IDs, and relative times such as `"24 hours ago"`.
+  IDs, and relative times such as `"24 hours ago"`. Items picked at a prompt are
+  saved as the search pattern if all its matches were picked, otherwise as IDs.
+- Works with `--dry-run` and `--explain` too. The name and any existing template are
+  checked before anything is fetched. `--save-to` defaults to the user config.
 - Edits only the target file, using tomlkit so comments and whitespace survive. Writes
   to a temporary file and then replaces the original.
 - Refuses to overwrite an existing template without `--force`. Prints the TOML that was
@@ -747,7 +753,7 @@ alongside the MATLAB check files.
 | 2 ✅ | Zabbix adapter, secrets adapter (env/keyring, password prompt), `FakeZabbixClient` + fake JSON-RPC server, item spec parsing, `services/discover.py`, `hosts`/`items` commands | Can list hosts/items against fake and real servers |
 | 3 ✅ | `services/resolve.py` (provenance, override logs, choices, stacked-template rules), `services/fetch.py` (async, chunked, raw + 1h trends, all value types), progress bars, summary, exit codes, TSV/CSV, auto naming, `--dry-run`/`--explain` | End-to-end fetch to TSV |
 | 4 ✅ | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
-| 5 | `--save-template` (tomlkit) | Round-trip tests pass |
+| 5 ✅ | `--save-template` (tomlkit), "Next time" hint | Round-trip tests pass |
 | 6 | `plot` extra (merged view, coverage gaps, text-item errors) | Plots from live fetch and from multi-group files |
 | 7 | Full README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
 
@@ -799,9 +805,15 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Raw downloads are chunked by day and trends by 30 days; network errors are retried
   three times with backoff; each item downloads its chunks in order, `jobs` items at
   a time.
-- Still to do from phase 3's scope (deferred): the "Next time: zabgrab fetch ..."
-  hint after interactive answers (phase 5, with `--save-template`), and a warning
-  when raw data is requested beyond an item's history retention.
+- Still to do from phase 3's scope (deferred): a warning when raw data is requested
+  beyond an item's history retention.
+- `--save-template` saves a self-contained template (the templates used, the command
+  line and prompt answers; never `[defaults]` or built-in values), rather than only
+  the command line's values, which would leave a template built on another one
+  without its items.
+- The "Next time" command is the command line as typed, with answered prompts added
+  as options (replacing any given). Answers it can't express (items narrowed from a
+  template, several formats, different servers per template) are noted instead.
 
 - `.mat`/`.h5` files are written with HDF5's earliest file format so that MATLAB's
   older HDF5 library can read them. The layout passed `tests/matlab/check_files.m`

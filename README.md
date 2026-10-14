@@ -3,7 +3,7 @@ Command line tool for Zabbix data retrieval.
 
 > **Zabgrab is being rewritten for version 1.0.0.** See [PLAN.md](PLAN.md) for the
 > design. Configuration, finding hosts/items, fetching data (MATLAB, HDF5, TSV, CSV),
-> updating and exporting files work so far. The full documentation will be written
+> saving fetches as templates, and updating and exporting files work so far. The full documentation will be written
 > before the release.
 
 ## Installation
@@ -128,7 +128,26 @@ format = "csv"
 
 Command line options override templates, which override `[defaults]`; zabgrab says
 when an option overrides a template. Stacked templates must agree on the time range,
-resolution and statistics. Anything missing (such as the time range) is asked for.
+resolution and statistics. Anything missing (such as the time range) is asked for,
+and afterwards zabgrab shows the command that would have avoided the questions
+(`Next time: zabgrab fetch ...`).
+
+### Saving a fetch as a template
+
+Add `--save-template NAME` to any fetch (including `--dry-run` and `--explain`) to
+save it as a template, then repeat it with `zabgrab fetch -t NAME`:
+
+```bash
+zabgrab fetch -s demo -i "host=demo1,name=Particles *" --from "24 hours ago" --to now \
+    --dry-run --save-template particles
+```
+
+The template gets the settings from the command line, from any templates used and
+from your answers to questions, exactly as given (patterns and relative times, not
+item IDs and dates). `[defaults]` and built-in settings aren't copied, so changing
+them later still applies. It's saved to your user config, or `--save-to project`,
+`system` or a file path; the rest of the file is left as it is. An existing template
+is only replaced with `--force`.
 
 Times can be ISO 8601 (`2026-10-14 09:00`, `2026-10-14T09:00:00Z`), natural language
 (`now`, `24 hours ago`, `yesterday`) or day-first dates (`14/10/2026`), in the

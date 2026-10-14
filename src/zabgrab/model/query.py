@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, tzinfo
 
+from .answers import Answers
 from .choice import Choice
 from .config import Agg, Format, Resolution
 from .item import ItemSpec
@@ -55,3 +56,5 @@ class Query:
     mat_text_warn_entries: int
     sources: dict[str, str] = field(default_factory=dict)
     """Where each setting came from, by config key."""
+    answers: Answers = field(default_factory=Answers, compare=False)
+    """What the user answered at prompts (filled in as the fetch goes)."""

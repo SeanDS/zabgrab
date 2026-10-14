@@ -23,6 +23,9 @@ PLAN.md for the design.
   with a warning.
 - MATLAB v7.3 (`.mat`) and HDF5 (`.h5`) output, holding one group per fetch;
   `fetch --append` adds groups to existing files.
+- `fetch --save-template NAME` saves a fetch, with any answers to questions, as a
+  template (`--save-to` picks the config file; `--force` replaces a template). After
+  questions, `fetch` shows the equivalent command for next time.
 - New `zabgrab update FILE` command to add the data since a file's last fetch.
 - New `zabgrab export FILE` command to merge a file's groups into a new file,
   optionally converting, filtering items and times.

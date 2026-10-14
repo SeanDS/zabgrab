@@ -24,6 +24,9 @@ from zabgrab.model.server import Server
 from zabgrab.model.zabbix import Item, ValueType
 from zabgrab.services.metadata import build_metadata
 from zabgrab.services.naming import format_for, output_name, unique_path
+from zabgrab.services.output import choose_formats
+
+from .fakes import RecordingUI
 
 START = datetime(2026, 10, 13, 10, 15, tzinfo=UTC)
 END = datetime(2026, 10, 14, 10, 15, tzinfo=UTC)
@@ -351,3 +354,8 @@ def test_metadata() -> None:
     assert metadata["skipped"][0]["reason"] == "binary items aren't supported"
     assert metadata["failed"][0]["reason"] == "Can't connect."
     json.dumps(metadata)
+
+
+def test_format_asked_for_without_recording_the_answer() -> None:
+    ui = RecordingUI(answers=[3])
+    assert choose_formats([], None, Path("out.dat"), ui) == (Format.CSV,)

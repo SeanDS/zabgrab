@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from unittest import mock
 
 from click.testing import CliRunner, Result
 
@@ -62,7 +64,10 @@ def run(*args: str, input: str | None = None, tokens: bool = True) -> Result:
     env = {"COLUMNS": "250"}
     if tokens:
         env |= {"DEMO_TOKEN": TOKEN, "LAB_TOKEN": TOKEN}
-    return CliRunner(env=env).invoke(cli, ["--no-color", *args], input=input)
+    args = ("--no-color", *args)
+    # As if run from a shell: the "Next time" hint repeats the command line.
+    with mock.patch.object(sys, "argv", ["zabgrab", *args]):
+        return CliRunner(env=env).invoke(cli, args, input=input)
 
 
 def table_rows(output: str) -> list[list[str]]:

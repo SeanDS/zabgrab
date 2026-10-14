@@ -14,6 +14,7 @@ from zabgrab.adapters.configfiles import (
     Environment,
     LayerKind,
     add_server,
+    add_template,
     discover_layers,
     find_project_config,
     load_config,
@@ -262,6 +263,37 @@ class TestAddServer:
         with pytest.raises(ConfigError, match="Can't write"):
             add_server(directory / "config.toml", "a", "https://b")
         assert list(directory.iterdir()) == []
+
+
+class TestAddTemplate:
+    TABLE = {"items": [{"itemid": 1}], "from": "1 day ago"}  # noqa: RUF012
+
+    def test_creates_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "new" / "config.toml"
+        written = add_template(path, "a", self.TABLE)
+        assert (
+            written
+            == '[templates.a]\nitems = [\n    {itemid = 1},\n]\nfrom = "1 day ago"'
+        )
+        assert path.read_text(encoding="utf-8") == written + "\n"
+
+    def test_existing_template(self, tmp_path: Path) -> None:
+        path = write(tmp_path / "config.toml", "[templates.a]\nfrom = 'now'\n")
+        with pytest.raises(ConfigError, match="already exists") as exc_info:
+            add_template(path, "a", self.TABLE)
+        assert exc_info.value.hint == "Pass --force to replace it."
+        add_template(path, "a", self.TABLE, replace=True)
+        assert tomllib.loads(path.read_text())["templates"]["a"] == self.TABLE
+
+    def test_templates_not_a_table(self, tmp_path: Path) -> None:
+        path = write(tmp_path / "config.toml", "templates = 1\n")
+        with pytest.raises(ConfigError, match="isn't a table"):
+            add_template(path, "a", self.TABLE)
+
+    def test_invalid_toml(self, tmp_path: Path) -> None:
+        path = write(tmp_path / "config.toml", "a = [")
+        with pytest.raises(ConfigError, match="Can't update"):
+            add_template(path, "a", self.TABLE)
 
 
 class TestSetServerUrl:

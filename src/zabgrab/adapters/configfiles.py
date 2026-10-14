@@ -367,6 +367,77 @@ def add_server(path: Path, name: str, url: str) -> None:
     write_atomically(path, tomlkit.dumps(document))
 
 
+def add_template(
+    path: Path, name: str, table: Mapping[str, Any], *, replace: bool = False
+) -> str:
+    """Add ``[templates.NAME]`` to a config file, keeping its existing formatting.
+
+    The file (and its directory) is created if needed. Returns the TOML of the
+    template as written.
+
+    Raises
+    ------
+    ConfigError
+        If the file can't be parsed or written, or already defines the template and
+        ``replace`` isn't set.
+    """
+    try:
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        document = tomlkit.parse(text)
+    except (OSError, UnicodeDecodeError, tomlkit.exceptions.ParseError) as exc:
+        raise ConfigError(
+            f"Can't update config file {path}.", path=path, details=[str(exc)]
+        ) from exc
+
+    templates = document.get("templates")
+    if templates is None:
+        templates = tomlkit.table(is_super_table=True)
+        document.add("templates", templates)
+    if not isinstance(templates, Table):
+        raise ConfigError(f"'templates' in {path} isn't a table.", path=path)
+    if name in templates and not replace:
+        raise ConfigError(
+            f"Template {name!r} already exists in {path}.",
+            path=path,
+            hint="Pass --force to replace it.",
+        )
+
+    template = _toml_table(table)
+    if name in templates:
+        templates[name] = template
+    else:
+        templates.add(name, template)
+    write_atomically(path, tomlkit.dumps(document))
+
+    shown = tomlkit.document()
+    wrapper = tomlkit.table(is_super_table=True)
+    wrapper.add(name, _toml_table(table))
+    shown.add("templates", wrapper)
+    return tomlkit.dumps(shown).strip()
+
+
+def _toml_table(values: Mapping[str, Any]) -> Table:
+    table = tomlkit.table()
+    for key, value in values.items():
+        table.add(key, _toml_value(value))
+    return table
+
+
+def _toml_value(value: Any) -> Any:
+    """Choices as inline tables; lists of tables (items) one per line."""
+    if isinstance(value, Mapping):
+        inline = tomlkit.inline_table()
+        inline.update({k: _toml_value(v) for k, v in value.items()})
+        return inline
+    if isinstance(value, list):
+        array = tomlkit.array()
+        array.extend(_toml_value(v) for v in value)
+        if any(isinstance(v, Mapping) for v in value):
+            array.multiline(True)
+        return array
+    return value
+
+
 def set_server_url(path: Path, name: str, url: str) -> None:
     """Change the URL of ``[servers.NAME]`` in a config file, keeping its formatting.
 

@@ -11,6 +11,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..errors import ZabgrabError
+from ..model.answers import Answers, config_value
 from ..model.choice import Choice, Select
 from ..model.config import Agg, Config, Format, Resolution, Template
 from ..model.item import ItemSpec
@@ -73,8 +74,9 @@ def resolve_query(
     other), then ``[defaults]`` (including built-in values). Missing times are asked
     for. Overrides of template values are logged.
     """
-    templates = [(name, find_template(name, config, ui)) for name in cli.templates]
-    resolver = _Resolver(cli, config, templates, ui, defaults_source)
+    answers = Answers()
+    templates = [find_template(name, config, ui, answers) for name in cli.templates]
+    resolver = _Resolver(cli, config, templates, ui, defaults_source, answers)
 
     timezone = resolver.setting("timezone")
     tz = None if timezone == "local" else ZoneInfo(timezone)
@@ -87,8 +89,8 @@ def resolve_query(
 
     from_text = resolver.setting("from", compare=time_key)
     to_text = resolver.setting("to", compare=time_key)
-    from_text, start = _time("from", from_text, ui, parse_time, tz)
-    to_text, end = _time("to", to_text, ui, parse_time, tz)
+    from_text, start = _time("from", from_text, ui, parse_time, tz, answers)
+    to_text, end = _time("to", to_text, ui, parse_time, tz, answers)
     if start > end:
         ui.warning(
             f"The start time ({from_text!r}) is after the end time ({to_text!r}); "
@@ -109,7 +111,7 @@ def resolve_query(
 
     return Query(
         requests=requests,
-        templates=tuple(cli.templates),
+        templates=tuple(name for name, _ in templates),
         custom=custom or server_custom,
         start=start,
         end=end,
@@ -117,7 +119,7 @@ def resolve_query(
         to_text=to_text,
         resolution=resolution,
         agg=agg,
-        formats=_formats(formats, ui),
+        formats=_formats(formats, ui, answers),
         output_dir=resolver.setting("output_dir"),
         output_pattern=resolver.setting("output_pattern"),
         timezone=timezone,
@@ -126,6 +128,7 @@ def resolve_query(
         max_items=resolver.setting("max_items"),
         mat_text_warn_entries=resolver.setting("mat_text_warn_entries"),
         sources=resolver.sources,
+        answers=answers,
     )
 
 
@@ -147,10 +150,17 @@ def _warn_agg_ignored(source: str, ui: UI) -> None:
     )
 
 
-def find_template(name: str, config: Config, ui: UI) -> Template:
-    """Look up a template, with "did you mean" for unknown names."""
+def find_template(
+    name: str, config: Config, ui: UI, answers: Answers | None = None
+) -> tuple[str, Template]:
+    """Look up a template, with "did you mean" for unknown names.
+
+    Returns the name of the template used, which differs from ``name`` if the user
+    chose another (recorded in ``answers``).
+    """
     if name in config.templates:
-        return config.templates[name]
+        return name, config.templates[name]
+    answers = Answers() if answers is None else answers
 
     names = list(config.templates)
     close = difflib.get_close_matches(name, names, n=1)
@@ -158,11 +168,13 @@ def find_template(name: str, config: Config, ui: UI) -> Template:
         if close and ui.confirm(
             f"Unknown template {name!r}. Did you mean {close[0]!r}?", fix=""
         ):
-            return config.templates[close[0]]
+            answers.templates[name] = close[0]
+            return close[0], config.templates[close[0]]
         if names:
             ui.warning(f"Unknown template {name!r}.")
             chosen = ui.choose("Which template?", [Option(n, n) for n in names], fix="")
-            return config.templates[chosen]
+            answers.templates[name] = chosen
+            return chosen, config.templates[chosen]
 
     hint = f"Did you mean {close[0]!r}? " if close else ""
     hint += (
@@ -183,12 +195,14 @@ class _Resolver:
         templates: Sequence[tuple[str, Template]],
         ui: UI,
         defaults_source: DefaultsSource,
+        answers: Answers,
     ) -> None:
         self.cli = cli
         self.config = config
         self.templates = templates
         self.ui = ui
         self.defaults_source = defaults_source
+        self.answers = answers
         self.sources: dict[str, str] = {}
 
     def setting(self, key: str, *, compare: Callable[[Any], Any] = lambda v: v) -> Any:
@@ -253,6 +267,7 @@ class _Resolver:
         self.sources[key] = (
             f"{_templates_label([n for n, _ in chosen])} (chosen at a prompt)"
         )
+        self.answers.settings[key] = config_value(chosen[0][1])
         return chosen[0][1]
 
 
@@ -285,6 +300,7 @@ def _time(
     ui: UI,
     parse_time: TimeParser,
     tz: tzinfo | None,
+    answers: Answers,
 ) -> tuple[str, datetime]:
     if text is not None:
         try:
@@ -299,15 +315,19 @@ def _time(
     def parse(answer: str) -> tuple[str, datetime]:
         return answer.strip(), parse_time(answer, tz)
 
-    return ui.prompt(
+    answered = ui.prompt(
         f"{'Start' if key == 'from' else 'End'} time ({key})",
         fix=f"Pass {flag(key)}, or set {key} in the template or in [defaults], "
         "e.g. 'now' or '24 hours ago'.",
         parse=parse,
     )
+    answers.settings[key] = answered[0]
+    return answered
 
 
-def _formats(value: Format | Choice[Format] | None, ui: UI) -> tuple[Format, ...]:
+def _formats(
+    value: Format | Choice[Format] | None, ui: UI, answers: Answers
+) -> tuple[Format, ...]:
     if value is None:
         return ()
     if not isinstance(value, Choice):
@@ -316,13 +336,15 @@ def _formats(value: Format | Choice[Format] | None, ui: UI) -> tuple[Format, ...
         return tuple(value.choices)
     if value.select is Select.FIRST:
         return (value.choices[0],)
-    return tuple(
+    chosen = tuple(
         ui.choose_many(
             "Which output formats?",
             [Option(str(f), f) for f in value.choices],
             fix="Pass --format.",
         )
     )
+    answers.settings["format"] = config_value(chosen)
+    return chosen
 
 
 def _requests(
