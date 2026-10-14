@@ -196,6 +196,22 @@ class TestAddRedirected:
         assert servers.secrets.tokens == {DEMO: TOKEN}
         assert user_config.read_text() == CONFIG
 
+    @hidden_input
+    def test_custom_server_saved_then_redirected(
+        self, servers: Servers, interactive: None, user_config: Path
+    ) -> None:
+        # Enter a custom http:// URL, save it as 'work', follow the redirect, update
+        # the saved URL, then paste the token.
+        user_config.write_text("")
+        servers.redirects[self.HTTP] = DEMO
+        answers = self.HTTP + "\ny\nwork\ny\ny\n" + TOKEN + "\n"
+        result = run("token", "add", input=answers, tokens=False)
+        assert result.exit_code == 0, result.output
+        assert "isn't defined in a config file" not in result.stderr
+        assert user_config.read_text() == f'[servers.work]\nurl = "{DEMO}"\n'
+        assert f"Create an API token at {DEMO}/zabbix.php" in result.stderr
+        assert servers.secrets.tokens == {DEMO: TOKEN}
+
     def test_non_interactive_stops(self, servers: Servers) -> None:
         servers.redirects[self.HTTP] = DEMO
         result = run("token", "add", self.HTTP, "-", input=TOKEN, tokens=False)
@@ -226,11 +242,13 @@ class TestReset:
         assert "Delete all 2 tokens" in result.stderr
         assert len(servers.secrets.tokens) == 2
 
-    def test_non_interactive_needs_yes(self, servers: Servers) -> None:
+    def test_non_interactive_assumes_no(self, servers: Servers) -> None:
         servers.secrets.tokens[DEMO] = TOKEN
         result = run("token", "reset")
-        assert result.exit_code == EXIT_ERROR
+        assert result.exit_code == EXIT_INTERRUPTED
+        assert "Running non-interactively, so assuming no." in result.stderr
         assert "Pass --yes" in result.stderr
+        assert servers.secrets.tokens == {DEMO: TOKEN}
 
     def test_nothing_stored(self, servers: Servers) -> None:
         result = run("token", "reset")
@@ -256,10 +274,11 @@ class TestDelete:
         assert result.exit_code == EXIT_ERROR
         assert "No token is stored for 'demo'." in result.stderr
 
-    def test_non_interactive_needs_yes(self, servers: Servers) -> None:
+    def test_non_interactive_assumes_no(self, servers: Servers) -> None:
         servers.secrets.tokens[DEMO] = TOKEN
         result = run("token", "delete", "demo")
-        assert result.exit_code == EXIT_ERROR
+        assert result.exit_code == EXIT_INTERRUPTED
+        assert "assuming no" in result.stderr
         assert "Pass --yes" in result.stderr
         assert servers.secrets.tokens == {DEMO: TOKEN}
 

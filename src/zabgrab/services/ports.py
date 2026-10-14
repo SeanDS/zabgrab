@@ -35,8 +35,10 @@ class UI(Protocol):
 
     Every method that asks for input takes a ``fix`` argument: a message telling the
     user how to provide the answer without being asked (e.g. a flag or config
-    snippet). When the session is not interactive, these methods raise
-    :class:`zabgrab.errors.InputRequired` carrying ``fix`` instead of prompting.
+    snippet). When the session is not interactive, yes/no questions take their
+    default answer with a warning; other questions raise
+    :class:`zabgrab.errors.InputRequired` carrying ``fix``, since there's no answer
+    to carry on with.
     """
 
     @property
@@ -57,7 +59,11 @@ class UI(Protocol):
     ) -> None: ...
 
     def confirm(self, question: str, *, fix: str, default: bool = True) -> bool:
-        """Ask a yes/no question."""
+        """Ask a yes/no question.
+
+        Unlike the other questions, this doesn't fail when the session isn't
+        interactive: it warns (including ``fix``) and returns ``default``.
+        """
         ...
 
     def prompt(

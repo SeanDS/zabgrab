@@ -233,9 +233,14 @@ inside Zabbix (used in item specs).
 
 When a required input is missing or invalid:
 - **Interactive and convenient to answer:** prompt for it.
-- **Not interactive, or not convenient to prompt:** exit with an error saying exactly
-  how to fix the call. The message gives the flag to add, or the config snippet and the
-  file to put it in (`zabgrab config paths` / `config edit`).
+- **Not interactive:** keep going with the input that was given, warning about
+  anything assumed. Yes/no questions take their default answer with a warning that
+  says how to choose otherwise. Questions with nothing to fall back on (which server,
+  which token, which items) exit with an error saying exactly how to fix the call: the
+  flag to add, or the config snippet and the file to put it in.
+- **Not convenient to prompt:** exit with such an error too.
+- **Exception:** a server redirect (e.g. HTTP to HTTPS) never causes a request to be
+  resent non-interactively; the run fails and asks the user to fix the URL.
 
 **Interactive** means stdin and stderr are both TTYs and none of these are set:
 `--no-input`, `ZABGRAB_NO_INPUT=1`, or `CI`. Prompts are written to stderr, so piping
@@ -243,8 +248,9 @@ stdout keeps working.
 
 **Implementation:** services ask through the `UI` port, for example
 `ui.choose(question, options, fix=...)`. Every call must include a `fix` remedy
-message. The non-interactive UI raises `InputRequired(fix)`, which the CLI turns into a
-red error, the remedy, and exit code 1. This keeps the policy uniform and testable.
+message. Non-interactively, `ui.confirm` warns (including the `fix`) and returns its
+default; the other questions raise `InputRequired(fix)`, which the CLI turns into a red
+error, the remedy, and exit code 1. This keeps the policy uniform and testable.
 
 Prompts use rich: numbered choice lists, text input with validation, and confirmation.
 That avoids an extra dependency for arrow-key menus.

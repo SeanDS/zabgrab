@@ -117,6 +117,8 @@ class AppContext:
     def save_server(self, name: str, url: str) -> None:
         """Add a server to the user config file."""
         add_server(user_config_path(self.env), name, url)
+        # Reload on next use, so the new server is known (e.g. to update its URL).
+        self._loaded = None
 
     def update_server_url(self, name: str, url: str) -> None:
         """Change a configured server's URL in the config file that defines it."""

@@ -88,6 +88,11 @@ def test_errors_without_a_file_are_not_repaired(env: Environment) -> None:
 
 
 def test_recording_ui_mirrors_non_interactive_behaviour() -> None:
+    ui = RecordingUI(interactive=False)
+    assert ui.confirm("Sure?", fix="Pass --yes.", default=False) is False
+    assert ui.levels("warning") == [
+        "Sure? Running non-interactively, so assuming no. Pass --yes."
+    ]
     with pytest.raises(InputRequired) as exc_info:
-        RecordingUI(interactive=False).confirm("Sure?", fix="Pass --yes.")
-    assert exc_info.value.hint == "Pass --yes."
+        ui.prompt("Name?", fix="Pass --name.", parse=str)
+    assert exc_info.value.hint == "Pass --name."

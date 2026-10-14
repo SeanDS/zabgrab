@@ -119,15 +119,14 @@ async def add_token(
             'only be used if you change it to auth = "token".'
         )
 
-    if token is None:
-        ui.info(f"Create an API token at {server.token_page}")
-
     if check:
+        # Connect first: the server may redirect, changing the token page's URL.
         client, server, _ = await open_client(
             server, factory=factory, ui=ui, update_url=update_url
         )
         try:
             if token is None:
+                ui.info(f"Create an API token at {server.token_page}")
                 token = await ask_for_token(client, ui, fix=fix)
             else:
                 try:
@@ -138,6 +137,7 @@ async def add_token(
         finally:
             await client.close()
     elif token is None:
+        ui.info(f"Create an API token at {server.token_page}")
         token = ui.prompt("API token", fix=fix, parse=non_empty, secret=True)
 
     secrets.set_token(server.url, token)

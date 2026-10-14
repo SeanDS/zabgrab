@@ -67,6 +67,12 @@ class MessageHighlighter(RegexHighlighter):
     ]
 
 
+def non_interactive_answer(question: str, default: bool, fix: str) -> str:
+    """The warning given when a yes/no question is answered by its default."""
+    answer = "yes" if default else "no"
+    return f"{question} Running non-interactively, so assuming {answer}. {fix}".strip()
+
+
 def is_interactive(
     variables: Mapping[str, str],
     *,
@@ -195,7 +201,9 @@ class RichUI:
             raise Cancelled() from None
 
     def confirm(self, question: str, *, fix: str, default: bool = True) -> bool:
-        self._require_interactive(question, fix)
+        if not self._interactive:
+            self.warning(non_interactive_answer(question, default, fix))
+            return default
         return self._ask(
             lambda: Confirm.ask(
                 self.highlight(question), console=self.err, default=default

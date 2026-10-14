@@ -148,9 +148,18 @@ class TestPrompts:
         with pytest.raises(InputRequired):
             ui.choose_many("Which?", self.OPTIONS, fix="Use --x.")
         with pytest.raises(InputRequired):
-            ui.confirm("Sure?", fix="Use --yes.")
-        with pytest.raises(InputRequired):
             ui.prompt("Name?", fix="Use --name.", parse=str)
+
+    @pytest.mark.parametrize(("default", "answer"), [(True, "yes"), (False, "no")])
+    def test_non_interactive_confirm_assumes_default(
+        self, capsys: pytest.CaptureFixture[str], default: bool, answer: str
+    ) -> None:
+        ui = make_ui(capsys, interactive=False)
+        assert ui.confirm("Sure?", fix="Use --yes.", default=default) is default
+        assert capsys.readouterr().err == (
+            f"Warning: Sure? Running non-interactively, so assuming {answer}. "
+            "Use --yes.\n"
+        )
 
     def test_choose(
         self, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch

@@ -10,6 +10,7 @@ from typing import Any, TypeVar
 
 from zabgrab.errors import InputRequired, ZabgrabError
 from zabgrab.services.ports import Option
+from zabgrab.ui.console import non_interactive_answer
 
 T = TypeVar("T")
 
@@ -59,6 +60,9 @@ class RecordingUI:
         return self.answers.pop(0)
 
     def confirm(self, question: str, *, fix: str, default: bool = True) -> bool:
+        if not self.interactive:
+            self.warning(non_interactive_answer(question, default, fix))
+            return default
         answer = self._answer(question, fix)
         assert isinstance(answer, bool)
         return answer
