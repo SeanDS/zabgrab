@@ -150,4 +150,4 @@ def test_format_from_config(data: Path, tmp_path: Path, user_config: Path) -> No
     user_config.write_text(CONFIG + TEMPLATES + '[defaults]\nformat = "csv"\n')
     out = tmp_path / "out"
     ok(run("export", str(data), "-o", str(out)))
-    assert "," in out.read_text().splitlines()[-1]
+    assert "," in out.read_text(encoding="utf-8").splitlines()[-1]

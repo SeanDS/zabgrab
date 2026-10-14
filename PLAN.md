@@ -354,6 +354,9 @@ default.
 - **`resolution`/`agg`:** the same rule as `from`/`to`. Templates that set different
   values get a warning, then a prompt when interactive or an error when not. A CLI
   `--resolution`/`--agg` wins, and a log message says the templates' values are ignored.
+  `agg` only applies to hourly trends: with raw data, an `agg` from the CLI or a
+  template gets a warning that it's ignored (one from `[defaults]` doesn't), and an
+  ignored `--agg` doesn't make the query custom.
 - Item specs and `--item` flags on the CLI are added to the templates' items.
 
 ### Downloading
@@ -705,16 +708,20 @@ alongside the MATLAB check files.
   - a cached unauthenticated client after a failed login
 - **Optional integration job:** a Zabbix 7 docker-compose stack in CI (manual or
   nightly).
-- **MATLAB checks (manual, by Sean):**
+- **MATLAB checks (wherever MATLAB is installed):**
   - `tests/matlab/generate.py` writes sample `.mat`/`.h5` files covering: raw data,
     trends, empty items, appended groups, non-ASCII names, char/text/log items, and
     a large log item.
   - `tests/matlab/check_files.m` loads them and asserts their structure and values.
     It also exercises `zabgrab_load.m`.
+  - `tests/test_matlab.py` runs `check_files.m` in every MATLAB it finds (`matlab` on
+    `PATH`, `/Applications/MATLAB_*.app`, or the executables in `ZABGRAB_MATLAB`),
+    and is skipped when there is none, as in CI.
   - Once verified, the files are kept as reference outputs in the Python test suite.
-- **CI (GitLab):**
-  - ruff, mypy (strict on `src/`), pytest with coverage, on a Python 3.11 to 3.14
-    matrix via `parallel: matrix`
+- **CI (GitHub Actions, `.github/workflows/ci.yml`):**
+  - pre-commit hooks (ruff check and format, etc.) and mypy
+  - pytest with 100% coverage on Python 3.11 to 3.14 (Linux), plus the newest Python
+    on macOS, where the tests run as a normal user rather than root, and on Windows
   - build the package, then smoke-test the installed wheel
 
 ## Documentation
@@ -736,7 +743,7 @@ alongside the MATLAB check files.
 
 | # | Scope | Done when |
 |---|---|---|
-| 1 ✅ | Project skeleton: src layout, pyproject (3.11+), ruff/mypy/pytest/pre-commit, GitLab CI matrix. Ports, model, `ui/console.py`, config adapter (paths, layering, validation), `config paths/show/edit` | CI green; config tests pass |
+| 1 ✅ | Project skeleton: src layout, pyproject (3.11+), ruff/mypy/pytest/pre-commit, CI matrix. Ports, model, `ui/console.py`, config adapter (paths, layering, validation), `config paths/show/edit` | CI green; config tests pass |
 | 2 ✅ | Zabbix adapter, secrets adapter (env/keyring, password prompt), `FakeZabbixClient` + fake JSON-RPC server, item spec parsing, `services/discover.py`, `hosts`/`items` commands | Can list hosts/items against fake and real servers |
 | 3 ✅ | `services/resolve.py` (provenance, override logs, choices, stacked-template rules), `services/fetch.py` (async, chunked, raw + 1h trends, all value types), progress bars, summary, exit codes, TSV/CSV, auto naming, `--dry-run`/`--explain` | End-to-end fetch to TSV |
 | 4 ✅ | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
@@ -807,6 +814,10 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   later), since raw values have sub-second times.
 - Items in a group are named `item_<id>`, with `_2`, `_3`, ... when items on
   different servers share an ID; readers use the stored server and ID, not the names.
+- CI moved from GitLab to GitHub Actions, with no release or deployment jobs yet.
+- Tests run in UK time, which their expected local times are written in. Windows
+  can't change a running process's time zone, so there the system time zone must
+  be UK time (CI sets it with `tzutil`), and the tests stop with an error otherwise.
 - Files written via a temporary file get normal permissions (the umask, or the
   replaced file's), not the temporary file's private 0600.
 

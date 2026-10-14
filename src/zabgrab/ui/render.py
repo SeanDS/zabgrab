@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timedelta, tzinfo
 from typing import Any
 
@@ -220,6 +220,47 @@ def hosts_table(rows: Sequence[tuple[Server, Host]]) -> Table:
             style=None if host.enabled else "dim",
         )
     return table
+
+
+def _value_order(value: str | None) -> tuple[int, float, str]:
+    """Numbers in numeric order, then text, then no value."""
+    if value is None:
+        return (2, 0.0, "")
+    try:
+        return (0, float(value), "")
+    except ValueError:
+        return (1, 0.0, value.casefold())
+
+
+def _age_order(clock: datetime | None) -> tuple[bool, float]:
+    """Newest first, then no value."""
+    return (clock is None, 0.0 if clock is None else -clock.timestamp())
+
+
+ITEM_SORT_KEYS: dict[str, Callable[[tuple[Server, Item]], Any]] = {
+    "Server": lambda row: row[0].label.casefold(),
+    "Item ID": lambda row: row[1].itemid,
+    "Host": lambda row: row[1].host_name.casefold(),
+    "Name": lambda row: row[1].name.casefold(),
+    "Key": lambda row: row[1].key.casefold(),
+    "Type": lambda row: row[1].value_type.label,
+    "Units": lambda row: row[1].units.casefold(),
+    "Last value": lambda row: _value_order(row[1].last_value),
+    "Age": lambda row: _age_order(row[1].last_clock),
+}
+"""How to sort ``items`` by each of :func:`items_table`'s columns."""
+
+
+def sort_items(
+    rows: Iterable[tuple[Server, Item]], column: str = "Item ID"
+) -> list[tuple[Server, Item]]:
+    """Rows sorted by a column of :func:`items_table`, then by item ID.
+
+    The sort is stable, so the same item ID on several servers keeps the order the
+    servers were queried in.
+    """
+    by_id = sorted(rows, key=ITEM_SORT_KEYS["Item ID"])
+    return sorted(by_id, key=ITEM_SORT_KEYS[column])
 
 
 def items_table(rows: Sequence[tuple[Server, Item]], *, now: datetime) -> Table:

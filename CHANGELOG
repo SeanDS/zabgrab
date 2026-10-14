@@ -7,6 +7,7 @@ PLAN.md for the design.
   errors that point at the offending file and key.
 - New `zabgrab config paths|show|edit` commands.
 - New `zabgrab hosts` and `zabgrab items` commands to find hosts and items.
+  Items are sorted by item ID, or by any column with `items --sort`.
 - Multiple servers can be configured; servers are chosen with `--server`, the
   config, or a prompt (custom URLs can be saved to the config).
 - API tokens are read from an environment variable or the system keyring, or pasted
@@ -18,7 +19,8 @@ PLAN.md for the design.
 - New `zabgrab fetch` command: stackable templates and item specs, parallel
   downloads with progress bars, raw history or hourly trends, every item value
   type, TSV/CSV output with metadata, automatic file names, `--explain` and
-  `--dry-run`.
+  `--dry-run`. `--agg` applies to hourly trends only; with raw data it's ignored
+  with a warning.
 - MATLAB v7.3 (`.mat`) and HDF5 (`.h5`) output, holding one group per fetch;
   `fetch --append` adds groups to existing files.
 - New `zabgrab update FILE` command to add the data since a file's last fetch.

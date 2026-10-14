@@ -90,10 +90,14 @@ zabgrab hosts demo --group Lab      # hosts matching "demo" in groups matching "
 zabgrab items "Particles *" --host demo1
 zabgrab items --key "net.if.in[*]" --server demo --server lab
 zabgrab items --item 12345 --item "host=demo1,key=system.uptime"
+zabgrab items --host demo1 --sort "last value"
 ```
 
 Patterns work like the filters in the Zabbix web UI: they're case-insensitive, match
 anywhere in the text, and `*` matches any text.
+
+Items are listed by item ID. `--sort` takes any column header instead, in any case.
+Last values sort numbers in numeric order, and ages put the newest first.
 
 ## Fetching data
 
@@ -105,6 +109,10 @@ zabgrab fetch -t particles --resolution 1h --agg avg --agg max -o   # Zabbix's h
 zabgrab fetch -t particles --explain                 # show the settings and where they came from
 zabgrab fetch -t particles --dry-run                 # show what would be fetched
 ```
+
+`--agg` picks which of Zabbix's hourly statistics to save, so it only applies with
+`--resolution 1h`. Raw data is saved as it is; an `--agg` given with raw data (or by
+a template) is ignored with a warning.
 
 Templates define what to fetch, and can set any `fetch` option:
 

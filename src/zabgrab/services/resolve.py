@@ -96,8 +96,15 @@ def resolve_query(
         )
         start, end, from_text, to_text = end, start, to_text, from_text
 
+    resolution = Resolution(resolver.setting("resolution"))
+    agg = tuple(Agg(agg) for agg in resolver.setting("agg"))
+    data_settings = set(DATA_SETTINGS)
+    if resolution is Resolution.RAW:
+        data_settings.discard("agg")
+        _warn_agg_ignored(resolver.sources["agg"], ui)
+
     formats = resolver.setting("format")
-    custom = bool(cli.items) or not templates or bool(DATA_SETTINGS & set(cli.values))
+    custom = bool(cli.items) or not templates or bool(data_settings & set(cli.values))
     requests, server_custom = _requests(cli, config, templates, ui)
 
     return Query(
@@ -108,8 +115,8 @@ def resolve_query(
         end=end,
         from_text=from_text,
         to_text=to_text,
-        resolution=Resolution(resolver.setting("resolution")),
-        agg=tuple(Agg(agg) for agg in resolver.setting("agg")),
+        resolution=resolution,
+        agg=agg,
         formats=_formats(formats, ui),
         output_dir=resolver.setting("output_dir"),
         output_pattern=resolver.setting("output_pattern"),
@@ -119,6 +126,24 @@ def resolve_query(
         max_items=resolver.setting("max_items"),
         mat_text_warn_entries=resolver.setting("mat_text_warn_entries"),
         sources=resolver.sources,
+    )
+
+
+def _warn_agg_ignored(source: str, ui: UI) -> None:
+    """Warn when a chosen agg won't be used because the data is raw.
+
+    An agg in ``[defaults]`` (or built in) is a preference for hourly trends, so
+    it's only a mistake when it was given on the command line or by a template.
+    """
+    if source.startswith("command line"):
+        setter = flag("agg")
+    elif source.startswith("template"):
+        setter = f"agg from {source.removesuffix(' (chosen at a prompt)')}"
+    else:
+        return
+    ui.warning(
+        f"{setter} is ignored: statistics are only available for hourly trends "
+        f"({flag('resolution')} 1h), and raw data is saved as it is."
     )
 
 
