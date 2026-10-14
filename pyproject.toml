@@ -29,6 +29,7 @@ dependencies = [
   "tomlkit >=0.12",
   "aiohttp >=3.9",
   "keyring >=24",
+  "dateparser >=1.2",
 ]
 dynamic = ["version"]
 
@@ -81,6 +82,10 @@ python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["dateparser", "dateparser.*"]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"
