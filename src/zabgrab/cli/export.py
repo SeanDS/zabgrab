@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import click
 
-from ..adapters.dates import EXAMPLES, parse_time, timezone_for
 from ..adapters.formats import hdf5
 from ..adapters.formats.delimited import write_delimited
 from ..errors import ZabgrabError
 from ..model.config import Format
 from ..model.series import FetchResult
-from ..services.dataset import filter_dataset, merge, select_groups
 from ..services.metadata import export_metadata
 from ..services.output import (
     STRUCTURED,
@@ -25,6 +22,7 @@ from ..services.output import (
     guard_large_text,
 )
 from .app import AppContext, global_options, pass_app
+from .reading import read_dataset, selection_options
 
 
 @click.command("export")
@@ -42,26 +40,7 @@ from .app import AppContext, global_options, pass_app
     type=click.Choice([f.value for f in Format]),
     help="Output format (default: from the output file name).",
 )
-@click.option(
-    "-i",
-    "--item",
-    "items",
-    multiple=True,
-    metavar="PATTERN",
-    help="Only items whose ID, name, key or 'host: name' matches (* wildcards; "
-    "repeat for several).",
-)
-@click.option(
-    "--from", "from_", metavar="TIME", help=f"Only data from this time, {EXAMPLES}."
-)
-@click.option("--to", metavar="TIME", help="Only data up to this time.")
-@click.option(
-    "--group",
-    "groups",
-    multiple=True,
-    metavar="NAME",
-    help="Only these fetch groups (repeat for several; default all).",
-)
+@selection_options
 @click.option("--overwrite", is_flag=True, help="Replace an existing output file.")
 @click.option(
     "--allow-large-text",
@@ -88,32 +67,23 @@ def export_command(
     this flattens a file that has been updated many times, or converts it to
     another format.
     """
-    if file.suffix.lower() in (".tsv", ".csv", ".txt"):
-        raise ZabgrabError(
-            f"Can't export {file}: only .mat and .h5 files can be exported.",
-            hint="Tab- and comma-separated files can be read directly.",
-        )
+    dataset, tz = read_dataset(
+        app,
+        file,
+        verb=("export", "exported"),
+        items=items,
+        from_=from_,
+        to=to,
+        groups=groups,
+    )
     defaults = app.config().config.defaults
-    tz = timezone_for(defaults.timezone or "local")
     now = app.clock.now()
-
-    def time(text: str | None, option: str) -> datetime | None:
-        if text is None:
-            return None
-        try:
-            return parse_time(text, now=now, tz=tz)
-        except ValueError as exc:
-            raise click.BadParameter(str(exc), param_hint=option) from None
-
-    start, end = time(from_, "--from"), time(to, "--to")
-    dataset = merge(select_groups(hdf5.read_fetches(file), groups), app.ui)
     resolutions = {series.resolution for series in dataset.series}
     if len(resolutions) > 1:
         raise ZabgrabError(
             f"{file} has both raw and hourly data.",
             hint="Export them separately, choosing groups with --group.",
         )
-    dataset = filter_dataset(dataset, items=items, start=start, end=end)
     if not dataset.series or not dataset.coverage:
         raise ZabgrabError("Nothing to export.", hint="Check --item, --from and --to.")
 
