@@ -113,6 +113,14 @@ class SecretStore(Protocol):
 
     def set_token(self, url: str, token: str) -> None: ...
 
+    def delete_token(self, url: str) -> bool:
+        """Delete a stored token; return whether there was one."""
+        ...
+
+    def urls(self) -> list[str]:
+        """URLs of the servers with stored tokens."""
+        ...
+
 
 class ZabbixClient(Protocol):
     """A connection to one Zabbix server."""

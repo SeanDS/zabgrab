@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from ..errors import AuthenticationFailed, ZabgrabError
 from ..model.config import AuthMethod
@@ -13,7 +14,51 @@ _TOKEN = "token"
 _PASSWORD = "password"
 
 
-def _non_empty(text: str) -> str:
+@dataclass(frozen=True)
+class TokenLookup:
+    """Where a server's token comes from."""
+
+    token: str | None
+    source: str
+    """``$VARIABLE`` or ``your keyring``."""
+
+
+def find_token(
+    server: Server, secrets: SecretStore, env: Mapping[str, str]
+) -> TokenLookup:
+    """The token to use for ``server``: its ``token_env`` variable if set, otherwise
+    the keyring."""
+    variable = server.config.token_env
+    if variable and env.get(variable):
+        return TokenLookup(env[variable], f"${variable}")
+    return TokenLookup(secrets.get_token(server.url), "your keyring")
+
+
+def token_fix(server: Server) -> str:
+    """How to give zabgrab a token for ``server`` without being prompted."""
+    name = server.name or "myserver"
+    variable = (
+        server.config.token_env or f"ZABGRAB_{name.upper().replace('-', '_')}_TOKEN"
+    )
+    return (
+        f"Create an API token at {server.token_page}, then store it with `zabgrab "
+        f'token add {server.name or server.url}`, or set token_env = "{variable}" '
+        f"in [servers.{name}] in your config and export {variable}."
+    )
+
+
+async def ask_for_token(client: ZabbixClient, ui: UI, *, fix: str = "") -> str:
+    """Ask for a token until the server accepts one, and return it."""
+    while True:
+        token = ui.prompt("API token", fix=fix, parse=non_empty, secret=True)
+        try:
+            await client.login_token(token)
+            return token
+        except AuthenticationFailed:
+            ui.error("That token was rejected; check it and try again.")
+
+
+def non_empty(text: str) -> str:
     if not text.strip():
         raise ValueError("Please enter a value.")
     return text.strip()
@@ -50,17 +95,6 @@ async def connect(
     return client
 
 
-def _token_fix(server: Server) -> str:
-    name = server.name or "myserver"
-    variable = (
-        server.config.token_env or f"ZABGRAB_{name.upper().replace('-', '_')}_TOKEN"
-    )
-    return (
-        f"Create an API token at {server.token_page}, then set token_env = "
-        f'"{variable}" in [servers.{name}] in your config and export {variable}.'
-    )
-
-
 async def _token_login(
     client: ZabbixClient,
     server: Server,
@@ -69,20 +103,17 @@ async def _token_login(
     env: Mapping[str, str],
 ) -> None:
     variable = server.config.token_env
-    token: str | None
-    if variable and env.get(variable):
-        token, source = env[variable], f"${variable}"
-    else:
-        token, source = secrets.get_token(server.url), "your keyring"
-        if variable and not token:
-            ui.warning(f"${variable} is not set.")
+    lookup = find_token(server, secrets, env)
+    token, source = lookup.token, lookup.source
+    if variable and not token:
+        ui.warning(f"${variable} is not set.")
 
     if token:
         try:
             await client.login_token(token)
         except AuthenticationFailed as err:
             if not ui.interactive:
-                err.hint = f"The API token from {source} was rejected. " + _token_fix(
+                err.hint = f"The API token from {source} was rejected. " + token_fix(
                     server
                 )
                 raise
@@ -97,20 +128,13 @@ async def _token_login(
             Option("Paste an API token", _TOKEN, f"create one at {server.token_page}"),
             Option("Username and password", _PASSWORD),
         ],
-        fix=_token_fix(server),
+        fix=token_fix(server),
     )
     if method == _PASSWORD:
         await _password_login(client, server, ui)
         return
 
-    while True:
-        token = ui.prompt("API token", fix="", parse=_non_empty, secret=True)
-        try:
-            await client.login_token(token)
-            break
-        except AuthenticationFailed:
-            ui.error("That token was rejected; check it and try again.")
-
+    token = await ask_for_token(client, ui)
     if ui.confirm("Save the token in your system keyring for next time?", fix=""):
         try:
             secrets.set_token(server.url, token)
@@ -123,18 +147,16 @@ async def _token_login(
 async def _password_login(client: ZabbixClient, server: Server, ui: UI) -> None:
     fix = (
         "Password login needs an interactive terminal. Use an API token instead: "
-        + _token_fix(server)
+        + token_fix(server)
     )
     username = server.config.username
     while True:
         if server.config.username is None:
-            username = ui.prompt(
-                "Username", fix=fix, parse=_non_empty, default=username
-            )
+            username = ui.prompt("Username", fix=fix, parse=non_empty, default=username)
         password = ui.prompt(
             f"Password for {username}" if username else "Password",
             fix=fix,
-            parse=_non_empty,
+            parse=non_empty,
             secret=True,
         )
         assert username is not None

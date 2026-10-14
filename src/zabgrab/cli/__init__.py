@@ -17,6 +17,7 @@ from ..ui.console import RichUI, is_interactive
 from .app import AppContext, ZabgrabGroup
 from .config import config_group
 from .discovery import hosts_command, items_command
+from .tokens import token_group
 
 
 def http_client(config: ServerConfig) -> ZabbixClient:
@@ -100,6 +101,7 @@ def cli(
 cli.add_command(config_group)
 cli.add_command(hosts_command)
 cli.add_command(items_command)
+cli.add_command(token_group)
 
 
 def main() -> None:

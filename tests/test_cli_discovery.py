@@ -3,95 +3,18 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner, Result
+from click.testing import CliRunner
 
 from zabgrab.adapters.zabbix import HttpTransport, ZabbixAPI
 from zabgrab.cli import cli, http_client
 from zabgrab.errors import EXIT_ERROR
 from zabgrab.model.config import ServerConfig
-from zabgrab.services.ports import ZabbixClient
 
-from .fakes import FrozenClock
-from .fakezabbix import TOKEN, FakeTransport, FakeZabbix, seeded
-
-NOW = datetime.fromtimestamp(1_760_000_000 + 300, UTC)
-
-CONFIG = """\
-[servers.demo]
-url = "https://demo.example.org"
-token_env = "DEMO_TOKEN"
-
-[servers.lab]
-url = "https://lab.example.org"
-token_env = "LAB_TOKEN"
-"""
-
-
-@dataclass
-class Servers:
-    by_url: dict[str, FakeZabbix] = field(default_factory=dict)
-    secrets: dict[str, str] = field(default_factory=dict)
-
-    def factory(self, config: ServerConfig) -> ZabbixClient:
-        if config.url not in self.by_url:
-            self.by_url[config.url] = seeded()
-        return ZabbixAPI(FakeTransport(self.by_url[config.url]))
-
-
-@dataclass
-class MemorySecrets:
-    tokens: dict[str, str]
-
-    def get_token(self, url: str) -> str | None:
-        return self.tokens.get(url)
-
-    def set_token(self, url: str, token: str) -> None:
-        self.tokens[url] = token
-
-
-@pytest.fixture
-def user_config(fake_home: Path) -> Path:
-    path = fake_home / ".config" / "zabgrab" / "config.toml"
-    path.parent.mkdir(parents=True)
-    path.write_text(CONFIG)
-    return path
-
-
-@pytest.fixture
-def servers(monkeypatch: pytest.MonkeyPatch, user_config: Path) -> Servers:
-    fake = Servers()
-    monkeypatch.setattr("zabgrab.cli.http_client", fake.factory)
-    monkeypatch.setattr(
-        "zabgrab.cli.KeyringSecrets", lambda: MemorySecrets(fake.secrets)
-    )
-    monkeypatch.setattr("zabgrab.cli.SystemClock", lambda: FrozenClock(NOW))
-    return fake
-
-
-@pytest.fixture
-def interactive(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("zabgrab.cli.is_interactive", lambda *args, **kwargs: True)
-
-
-def run(*args: str, input: str | None = None, tokens: bool = True) -> Result:
-    env = {"COLUMNS": "250"}
-    if tokens:
-        env |= {"DEMO_TOKEN": TOKEN, "LAB_TOKEN": TOKEN}
-    return CliRunner(env=env).invoke(cli, ["--no-color", *args], input=input)
-
-
-def table_rows(output: str) -> list[list[str]]:
-    """Cells of the data rows of a rich table."""
-    return [
-        [cell.strip() for cell in line.strip("│").split("│")]
-        for line in output.splitlines()
-        if line.startswith("│")
-    ]
+from .cli_support import CONFIG, Servers, run, table_rows
+from .fakezabbix import TOKEN, seeded
 
 
 class TestHosts:
@@ -177,7 +100,7 @@ class TestHosts:
         assert "export DEMO_TOKEN" in result.stderr
 
     def test_token_from_keyring(self, servers: Servers) -> None:
-        servers.secrets["https://demo.example.org"] = TOKEN
+        servers.secrets.tokens["https://demo.example.org"] = TOKEN
         result = run("hosts", "-s", "demo", tokens=False)
         assert result.exit_code == 0, result.output
 

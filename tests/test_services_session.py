@@ -20,24 +20,10 @@ from zabgrab.model.server import Server
 from zabgrab.services.ports import ZabbixClient
 from zabgrab.services.session import connect
 
-from .fakes import RecordingUI
+from .fakes import MemorySecrets, RecordingUI
 from .fakezabbix import PASSWORD, TOKEN, USERNAME, FakeTransport, FakeZabbix, seeded
 
 URL = "https://demo.example.org"
-
-
-@dataclass
-class MemorySecrets:
-    tokens: dict[str, str] = field(default_factory=dict)
-    fail: bool = False
-
-    def get_token(self, url: str) -> str | None:
-        return self.tokens.get(url)
-
-    def set_token(self, url: str, token: str) -> None:
-        if self.fail:
-            raise ZabgrabError("Couldn't save the token.", hint="Use token_env.")
-        self.tokens[url] = token
 
 
 @dataclass

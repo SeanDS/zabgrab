@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import tomlkit
+from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 from tomlkit.items import Array, InlineTable
@@ -15,6 +16,7 @@ from tomlkit.items import Item as TomlItem
 from ..adapters.configfiles import ConfigLayer, LayerKind, LoadedConfig
 from ..model.server import Server
 from ..model.zabbix import Host, Item
+from ..services.tokens import CheckResult, CheckState, TokenStatus
 
 
 def layers_table(layers: Iterable[ConfigLayer]) -> Table:
@@ -202,4 +204,45 @@ def items_table(rows: Sequence[tuple[Server, Item]], *, now: datetime) -> Table:
             *cells,
             style=None if item.enabled else "dim",
         )
+    return table
+
+
+_CHECK_STYLES = {
+    CheckState.VALID: "green",
+    CheckState.REJECTED: "red",
+    CheckState.MISSING: "yellow",
+    CheckState.ERROR: "yellow",
+}
+
+
+def tokens_table(
+    statuses: Sequence[TokenStatus], results: Sequence[CheckResult] | None = None
+) -> Table:
+    """Table of servers and where their tokens come from."""
+    table = Table()
+    table.add_column("Server", style="bold")
+    table.add_column("URL", style="cyan", overflow="fold")
+    table.add_column("Keyring")
+    table.add_column("Environment")
+    if results is not None:
+        table.add_column("Check")
+
+    for index, status in enumerate(statuses):
+        if status.env_var is None:
+            environment = ""
+        elif status.env_set:
+            environment = f"[green]${status.env_var} (set)[/]"
+        else:
+            environment = f"[dim]${status.env_var} (not set)[/]"
+        cells = [
+            status.server.name or "",
+            status.server.url,
+            "[green]stored[/]" if status.stored else "[dim]-[/]",
+            environment,
+        ]
+        if results is not None:
+            result = results[index]
+            text = f"{result.state} {result.detail}".strip()
+            cells.append(f"[{_CHECK_STYLES[result.state]}]{escape(text)}[/]")
+        table.add_row(*cells)
     return table

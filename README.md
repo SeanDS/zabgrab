@@ -62,6 +62,15 @@ looks for a token in the server's `token_env` variable, then in your system keyr
 there's none, it asks you to paste one (and offers to save it to the keyring) or to log
 in with a username and password.
 
+Manage tokens stored in the keyring with:
+
+```bash
+zabgrab token list [--check]         # servers and where their tokens come from
+zabgrab token add demo               # asks for the token, checks it, stores it
+printenv TOKEN | zabgrab token add demo --stdin
+zabgrab token delete demo
+```
+
 If no server is given or configured, zabgrab asks you to choose one, or to enter a URL
 (which it can save to your config).
 

@@ -11,6 +11,7 @@ PLAN.md for the design.
   config, or a prompt (custom URLs can be saved to the config).
 - API tokens are read from an environment variable or the system keyring, or pasted
   at a prompt; username/password login is also supported.
+- New `zabgrab token list|add|delete` commands to manage tokens in the keyring.
 
 # 0.1.2 (2023-12-12)
 - Changed CSV output format to display retrieved timeseries in parallel columns instead

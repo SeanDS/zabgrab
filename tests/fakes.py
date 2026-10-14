@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
-from zabgrab.errors import InputRequired
+from zabgrab.errors import InputRequired, ZabgrabError
 from zabgrab.services.ports import Option
 
 T = TypeVar("T")
@@ -118,3 +118,25 @@ class FrozenClock:
 
     def now(self) -> datetime:
         return self.time
+
+
+@dataclass
+class MemorySecrets:
+    """A token store in memory. ``fail`` makes saving fail like a broken keyring."""
+
+    tokens: dict[str, str] = field(default_factory=dict)
+    fail: bool = False
+
+    def get_token(self, url: str) -> str | None:
+        return self.tokens.get(url)
+
+    def set_token(self, url: str, token: str) -> None:
+        if self.fail:
+            raise ZabgrabError("Couldn't save the token.", hint="Use token_env.")
+        self.tokens[url] = token
+
+    def delete_token(self, url: str) -> bool:
+        return self.tokens.pop(url, None) is not None
+
+    def urls(self) -> list[str]:
+        return sorted(self.tokens)

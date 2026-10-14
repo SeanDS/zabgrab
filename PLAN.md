@@ -160,7 +160,7 @@ max_items = 50                     # confirm before wildcard expansions larger t
 [servers.demo]
 url = "https://zabbix.demo.example.org"
 auth = "token"                     # token | password
-token_env = "ZABGRAB_DEMO_TOKEN"   # optional; otherwise the keyring (see zabgrab login)
+token_env = "ZABGRAB_DEMO_TOKEN"   # optional; otherwise the keyring (see zabgrab token add)
 verify_ssl = true
 timeout = 30
 
@@ -265,8 +265,8 @@ suggests adding `--save-template NAME`.
 | Unknown template or server name | If close matches exist: "Did you mean X?". Otherwise choose from all names | Lists the close matches and `zabgrab templates list` / `config show` |
 | Unparseable `--from`/`--to` | Re-ask with the parse error and examples | Error with examples of supported formats |
 | Stacked templates disagree on from/to/resolution/agg | Show each template's value, then ask for the value to use | Error naming the flag to set |
-| No token for the server | Choose: paste a token now (opens the token page; offer to save to keyring) / use username+password / cancel | `zabgrab login SERVER`, or set `token_env`'s variable |
-| Username/password (`auth = "password"`) | Prompt (username defaults to the config value) | Use a token: `zabgrab login SERVER` |
+| No token for the server | Choose: paste a token now (opens the token page; offer to save to keyring) / use username+password / cancel | `zabgrab token add SERVER`, or set `token_env`'s variable |
+| Username/password (`auth = "password"`) | Prompt (username defaults to the config value) | Use a token: `zabgrab token add SERVER` |
 | Output file exists | Choose: append (`.h5`/`.mat` only) / overwrite / new name (suggested `-2` suffix) / cancel | `--append`, `--overwrite`, or another `--output` |
 | Fetched but no `--output`/`--plot` | "Save as `<auto name>`? [Y/n/other path]" | Warn only (data discarded); suggest `--output` |
 | Config file invalid (TOML syntax or schema) | Show the error with file, line and key, then offer to open the file in `$EDITOR` and reload | Error with file, line, key and the expected type or values |
@@ -382,7 +382,7 @@ default.
   full rich traceback. Hints include:
   - SSL failure → mention `verify_ssl = false`
   - connection refused or timeout → show the URL
-  - authentication failure → `zabgrab login SERVER`
+  - authentication failure → `zabgrab token add SERVER`
   - empty result → check the time range, retention, or `--resolution 1h`
   - unknown template or server → "did you mean"
 - `verify_ssl = false` prints one yellow warning and suppresses urllib3's per-request
@@ -589,16 +589,20 @@ timeseries.
 - Token lookup order: `token_env` environment variable, then keyring entry for the
   server URL. If neither exists (or the token is rejected), interactive users choose
   between pasting a token (offered to be saved in the keyring) and a username and
-  password. Non-interactive runs get an error explaining how to set up `token_env`
-  (to be updated to mention `zabgrab login` in phase 5).
+  password. Non-interactive runs get an error explaining how to store a token with
+  `zabgrab token add` or set up `token_env`.
 - `auth = "password"`: prompt for the username (defaulting to `username` from the
   server config, if set) and the password every time. Non-interactive runs error.
-- `zabgrab login SERVER`:
-  1. Opens `<url>/zabbix.php?action=user.token.list` in the browser.
-  2. Prompts the user to paste the token (hidden input).
-  3. Checks it with a test API call.
-  4. Stores it in the keyring.
-- `zabgrab logout SERVER` removes the keyring entry.
+- `zabgrab token list [--check]`: every configured server plus any other server with
+  a stored token, showing whether a token is stored and the `token_env` status (never
+  the tokens). `--check` tests each token against its server. Keyring backends can't
+  be enumerated, so zabgrab keeps an index of URLs with stored tokens in the keyring
+  (entry `_urls`).
+- `zabgrab token add [SERVER] [--stdin] [--no-check]`: shows the token page URL, asks
+  for the token (hidden input; `--stdin` for scripts), checks it against the server
+  unless `--no-check`, and stores it. Without SERVER, asks which (including "Custom…").
+- `zabgrab token delete [SERVER] [--yes]`: confirms first (non-interactive runs need
+  `--yes`). Without SERVER, asks which of the stored tokens.
 
 ## Merged view, plotting and export
 
@@ -704,7 +708,7 @@ alongside the MATLAB check files.
 
 - **README:**
   - install, including `[plot]`
-  - quick start, `zabgrab login`, finding items (`hosts`/`items`)
+  - quick start, `zabgrab token add`, finding items (`hosts`/`items`)
   - a **complete commented config example** (servers, defaults, templates with
     choices and wildcards)
   - stacking templates, output naming, formats and MATLAB/Python loading snippets
@@ -723,7 +727,7 @@ alongside the MATLAB check files.
 | 2 ✅ | Zabbix adapter, secrets adapter (env/keyring, password prompt), `FakeZabbixClient` + fake JSON-RPC server, item spec parsing, `services/discover.py`, `hosts`/`items` commands | Can list hosts/items against fake and real servers |
 | 3 | `services/resolve.py` (provenance, override logs, choices, stacked-template rules), `services/fetch.py` (async, chunked, raw + 1h trends, all value types), progress bars, summary, exit codes, TSV/CSV, auto naming, `--dry-run`/`--explain` | End-to-end fetch to TSV |
 | 4 | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
-| 5 | `--save-template` (tomlkit), `login`/`logout` | Round-trip tests pass |
+| 5 | `--save-template` (tomlkit) | Round-trip tests pass |
 | 6 | `plot` extra (merged view, coverage gaps, text-item errors) | Plots from live fetch and from multi-group files |
 | 7 | Full README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
 
@@ -745,6 +749,8 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   (phase 2). zabbix_utils closes its HTTP session after any API error, which breaks
   retries and concurrent requests, and silently reads `ZABBIX_TOKEN` and similar
   environment variables.
+- `zabgrab login`/`logout` became `zabgrab token list|add|delete`, done early
+  (after phase 2).
 - Search patterns use Zabbix's own semantics (substring match, `*` wildcard), so
   results match the web UI and server-side limits are exact.
 

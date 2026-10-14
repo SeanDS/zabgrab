@@ -8,6 +8,9 @@ import pytest
 
 from zabgrab.adapters.configfiles import Environment
 
+from .cli_support import CONFIG, NOW, Servers
+from .fakes import FrozenClock
+
 
 @pytest.fixture
 def fake_home(tmp_path: Path) -> Path:
@@ -43,3 +46,28 @@ def _isolate_environment(
         "zabgrab.adapters.configfiles.system_config_path",
         lambda env: tmp_path / "etc" / "zabgrab" / "config.toml",
     )
+
+
+# CLI fixtures (see tests/cli_support.py).
+
+
+@pytest.fixture
+def user_config(fake_home: Path) -> Path:
+    path = fake_home / ".config" / "zabgrab" / "config.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text(CONFIG)
+    return path
+
+
+@pytest.fixture
+def servers(monkeypatch: pytest.MonkeyPatch, user_config: Path) -> Servers:
+    fake = Servers()
+    monkeypatch.setattr("zabgrab.cli.http_client", fake.factory)
+    monkeypatch.setattr("zabgrab.cli.KeyringSecrets", lambda: fake.secrets)
+    monkeypatch.setattr("zabgrab.cli.SystemClock", lambda: FrozenClock(NOW))
+    return fake
+
+
+@pytest.fixture
+def interactive(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("zabgrab.cli.is_interactive", lambda *args, **kwargs: True)
