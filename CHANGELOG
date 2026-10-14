@@ -8,15 +8,16 @@ PLAN.md for the design.
 - New `zabgrab config paths|show|edit` commands.
 - New `zabgrab hosts` and `zabgrab items` commands to find hosts and items.
   Items are sorted by item ID, or by any column with `items --sort`.
-- Multiple servers can be configured; servers are chosen with `--server`, the
-  config, or a prompt (custom URLs can be saved to the config).
+- Multiple servers can be configured; each fetch uses one, chosen with `--server`,
+  the template or `[defaults]`, or at a prompt (custom URLs can be saved to the
+  config).
 - API tokens are read from an environment variable or the system keyring, or pasted
   at a prompt; username/password login is also supported.
 - New `zabgrab token list|add|delete|reset` commands to manage tokens in the
   keyring.
 - Global options (`-v`, `-q`, `--debug`, `--config`, ...) work before or after the
   command.
-- New `zabgrab fetch` command: stackable templates and item specs, parallel
+- New `zabgrab fetch` command: a template and/or item specs, parallel
   downloads with progress bars, raw history or hourly trends, every item value
   type, TSV/CSV output with metadata, automatic file names, `--explain` and
   `--dry-run`. `--agg` applies to hourly trends only; with raw data it's ignored

@@ -22,7 +22,7 @@ from = "2 hours ago"
 to = "now"
 
 [templates.either]
-server = { choices = ["lab", "demo"], select = "first" }
+server = { choices = ["lab", "demo"] }
 items = [{ itemid = 20004 }]
 from = "2 hours ago"
 to = "now"
@@ -162,14 +162,25 @@ class TestSaveTemplate:
         assert result.exit_code == 2
         assert f"{option[0]} only applies with --save-template." in result.stderr
 
-    def test_different_servers(self, configured: Servers) -> None:
-        result = run(
-            "fetch", "-t", "particles", "-t", "either", "--explain",
-            "--save-template", "both",
+    def test_server_choice_is_kept(
+        self, configured: Servers, user_config: Path
+    ) -> None:
+        ok(run("fetch", "-t", "either", "--explain", "--save-template", "copy"))
+        assert saved(user_config, "copy")["server"] == {
+            "choices": ["lab", "demo"],
+            "select": "prompt",
+        }
+
+    def test_server_chosen_is_saved(
+        self, configured: Servers, user_config: Path, interactive: None
+    ) -> None:
+        ok(
+            run(
+                "fetch", "-t", "either", "--dry-run", "--save-template", "copy",
+                input="2\n",
+            )
         )  # fmt: skip
-        assert result.exit_code == EXIT_ERROR
-        assert "Can't save one template for different servers." in result.stderr
-        assert "template 'either': lab or demo (first)" in result.stderr
+        assert saved(user_config, "copy")["server"] == "demo"
 
     def test_answers_are_saved(
         self, configured: Servers, user_config: Path, interactive: None
@@ -232,8 +243,8 @@ class TestNextTime:
             )
         )  # fmt: skip
         assert (
-            "Next time: zabgrab --no-color fetch -t particles --dry-run --server demo"
-            in result.stderr
+            "Next time: zabgrab --no-color fetch --dry-run --template particles "
+            "--server demo" in result.stderr
         )
 
     def test_server_asked_for(self, configured: Servers, interactive: None) -> None:
@@ -264,21 +275,6 @@ class TestNextTime:
             "The items chosen from template 'particles' can't be given on the "
             "command line." in result.stderr
         )
-
-    def test_template_conflict(
-        self, configured: Servers, user_config: Path, interactive: None
-    ) -> None:
-        user_config.write_text(
-            CONFIG
-            + TEMPLATES
-            + '[templates.later]\nserver = "demo"\nitems = [{ itemid = 20004 }]\n'
-            + 'from = "1 hour ago"\n',
-            encoding="utf-8",
-        )
-        result = ok(
-            run("fetch", "-t", "particles", "-t", "later", "--dry-run", input="2\n")
-        )
-        assert "--dry-run --from '1 hour ago'" in result.stderr
 
     def test_format_choice_in_a_template(
         self, configured: Servers, user_config: Path, interactive: None

@@ -5,43 +5,28 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TypeVar
 
-from ..errors import ConnectionFailed
 from ..model.choice import Choice, Select
 from ..model.item import ItemSpec
 from ..model.server import Server
 from ..model.zabbix import Item
 from .ports import UI, Option, ZabbixClient
-from .servers import ServerSelection
 
 T = TypeVar("T")
 
 
 async def on_servers(
-    selection: ServerSelection,
+    servers: Sequence[Server],
     connect: Callable[[Server], Awaitable[ZabbixClient]],
     action: Callable[[ZabbixClient], Awaitable[T]],
-    ui: UI,
 ) -> list[tuple[Server, T]]:
-    """Run ``action`` on each selected server, closing connections afterwards.
-
-    With failover, servers that can't be reached are skipped (with a warning) until
-    one works.
-    """
+    """Run ``action`` on each server, closing connections afterwards."""
     results: list[tuple[Server, T]] = []
-    for index, server in enumerate(selection.servers):
-        try:
-            client = await connect(server)
-        except ConnectionFailed as err:
-            if not selection.failover or index == len(selection.servers) - 1:
-                raise
-            ui.warning(f"{err.message} Trying the next server.")
-            continue
+    for server in servers:
+        client = await connect(server)
         try:
             results.append((server, await action(client)))
         finally:
             await client.close()
-        if selection.failover:
-            break
     return results
 
 

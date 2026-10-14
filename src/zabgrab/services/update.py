@@ -56,7 +56,9 @@ def plan_update(
         stored = last.metadata["query"]
         resolution = Resolution(stored["resolution"])
         agg = tuple(Agg(a) for a in stored.get("agg", []))
-        requests = tuple(_request(r) for r in stored.get("requests", []))
+        stored_requests = stored.get("requests", [])
+        requests = tuple(_request(r) for r in stored_requests)
+        servers_named = [_server_ref(r) for r in stored_requests]
         entries = last.metadata["items"]
     except (KeyError, TypeError, ValueError, ValidationError) as exc:
         raise ZabgrabError(
@@ -84,7 +86,8 @@ def plan_update(
     timezone = stored.get("timezone", "local")
     query = Query(
         requests=requests,
-        templates=tuple(stored.get("templates", ())),
+        template=next(iter(stored.get("templates", ())), None),
+        server=servers_named[0] if len(set(map(str, servers_named))) == 1 else None,
         custom=bool(stored.get("custom", False)),
         start=start,
         end=end,
@@ -141,15 +144,6 @@ async def collect_previous_items(
     return result
 
 
-def server_for(plan: UpdatePlan, ref: str | Choice[str] | None) -> Server | None:
-    """The server an original request's server reference now maps to, if known."""
-    if isinstance(ref, str):
-        for url, server in plan.servers.items():
-            if ref in (url, server.name):
-                return server
-    return None
-
-
 def _server(url: str, name: str | None, config: Config, ui: UI) -> Server:
     if name and name in config.servers:
         return Server(name, config.servers[name])
@@ -161,11 +155,14 @@ def _server(url: str, name: str | None, config: Config, ui: UI) -> Server:
 
 
 def _request(data: Mapping[str, Any]) -> Request:
-    server = data.get("server")
-    if isinstance(server, dict):
-        server = Choice[str].model_validate(server)
     return Request(
         str(data["label"]),
-        server,
         tuple(ItemSpec.model_validate(spec) for spec in data.get("items", [])),
     )
+
+
+def _server_ref(data: Mapping[str, Any]) -> str | Choice[str] | None:
+    server = data.get("server")
+    if isinstance(server, dict):
+        return Choice[str].model_validate(server)
+    return None if server is None else str(server)

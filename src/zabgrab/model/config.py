@@ -23,7 +23,7 @@ from pydantic import (
     PositiveInt,
 )
 
-from .choice import Choice, choice_or
+from .choice import Choice, Select, choice_or
 from .item import ItemSpec
 from .names import Name, ServerRef, Url
 
@@ -31,8 +31,8 @@ from .names import Name, ServerRef, Url
 class Format(StrEnum):
     """Output file formats."""
 
-    MAT = "mat"
     H5 = "h5"
+    MAT = "mat"
     TSV = "tsv"
     CSV = "csv"
 
@@ -90,11 +90,21 @@ AggList = Annotated[list[Agg], Field(min_length=1), AfterValidator(_validate_uni
 EnvName = Annotated[str, AfterValidator(_validate_env_name)]
 NonEmptyStr = Annotated[str, Field(min_length=1)]
 
+
+def _ask_only(value: Any) -> Any:
+    if isinstance(value, Choice) and value.select is not Select.PROMPT:
+        raise ValueError(
+            "a choice of servers is only for choosing one when asked (zabgrab "
+            "fetches from one server at a time), so its select must be 'prompt'"
+        )
+    return value
+
+
 if TYPE_CHECKING:
     ServerChoice = str | Choice[str]
     FormatChoice = Format | Choice[Format]
 else:
-    ServerChoice = choice_or(ServerRef)
+    ServerChoice = Annotated[choice_or(ServerRef), AfterValidator(_ask_only)]
     FormatChoice = choice_or(Format)
 
 _MODEL_CONFIG = ConfigDict(

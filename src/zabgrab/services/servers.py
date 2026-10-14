@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import difflib
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from ..errors import InputRequired, ZabgrabError
-from ..model.choice import Choice, Select
+from ..model.choice import Choice
 from ..model.config import Config, ServerConfig
 from ..model.names import is_url, is_valid_name
 from ..model.server import Server
@@ -22,13 +21,32 @@ ADD_SERVER_SNIPPET = """\
 url = "https://zabbix.example.org\""""
 
 
-@dataclass(frozen=True)
-class ServerSelection:
-    """The servers to use, in order."""
+def select_server(
+    configured: str | Choice[str] | None,
+    config: Config,
+    ui: UI,
+    *,
+    save: SaveServer | None = None,
+) -> Server:
+    """Resolve the one server to fetch from.
 
-    servers: list[Server]
-    failover: bool = False
-    """Use only the first server that works, rather than all of them."""
+    ``configured`` is a server name or URL, a choice to ask about, or ``None`` (ask
+    which of the configured servers to use).
+
+    ``save``, if given, is offered for custom URLs entered at a prompt.
+    """
+    if configured is None:
+        return _ask_for_server(config, ui, save=save)
+    if isinstance(configured, str):
+        return resolve_server(configured, config, ui, save=save)
+
+    options = [
+        _option(resolve_server(ref, config, ui, save=save))
+        for ref in configured.choices
+    ]
+    options.append(Option[Server | None]("Custom…", None, "enter a URL"))
+    chosen = ui.choose("Which Zabbix server?", options, fix="Pass --server NAME.")
+    return _ask_for_url(config, ui, save=save) if chosen is None else chosen
 
 
 def select_servers(
@@ -38,45 +56,12 @@ def select_servers(
     ui: UI,
     *,
     save: SaveServer | None = None,
-) -> ServerSelection:
-    """Resolve the servers to use.
-
-    ``cli`` (repeated ``--server`` options) wins over ``configured`` (a template's
-    or ``[defaults]``'s ``server``). When nothing is given, the user is asked.
-
-    ``save``, if given, is offered for custom URLs entered at a prompt.
-    """
+) -> list[Server]:
+    """The servers to search (``hosts``, ``items``): each ``--server`` given, else the
+    one from ``configured`` (see :func:`select_server`)."""
     if cli:
-        return ServerSelection(
-            [resolve_server(ref, config, ui, save=save) for ref in cli]
-        )
-
-    if configured is None:
-        return ServerSelection([_ask_for_server(config, ui, save=save)])
-
-    if isinstance(configured, str):
-        return ServerSelection([resolve_server(configured, config, ui, save=save)])
-
-    servers = [resolve_server(ref, config, ui, save=save) for ref in configured.choices]
-    if configured.select is Select.ALL:
-        return ServerSelection(servers)
-    if configured.select is Select.FIRST:
-        return ServerSelection(servers, failover=True)
-
-    options = [_option(server) for server in servers]
-    options.append(Option[Server | None]("Custom…", None, "enter a URL"))
-    chosen = ui.choose_many(
-        "Which servers?",
-        options,
-        fix='Pass --server NAME (repeat for several), or set select = "all" or '
-        '"first" for this server choice in your config.',
-    )
-    return ServerSelection(
-        [
-            _ask_for_url(config, ui, save=save) if choice is None else choice
-            for choice in chosen
-        ]
-    )
+        return [resolve_server(ref, config, ui, save=save) for ref in cli]
+    return [select_server(configured, config, ui, save=save)]
 
 
 def resolve_server(

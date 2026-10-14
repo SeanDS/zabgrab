@@ -9,7 +9,7 @@ import pytest
 
 from zabgrab.adapters.dates import parse_time
 from zabgrab.errors import InputRequired, ZabgrabError
-from zabgrab.model.choice import Choice, Select
+from zabgrab.model.choice import Choice
 from zabgrab.model.config import BUILTIN_DEFAULTS, Agg, Config, Format, Resolution
 from zabgrab.model.item import ItemSpec
 from zabgrab.model.query import CUSTOM, Query, Request
@@ -59,17 +59,18 @@ CONFIG = config(templates=TEMPLATES, defaults={"server": "demo", "timezone": "UT
 
 
 def resolve(
-    *templates: str,
+    template: str | None = None,
+    *,
     ui: RecordingUI | None = None,
     cfg: Config = CONFIG,
     items: tuple[ItemSpec, ...] = (),
-    servers: tuple[str, ...] = (),
+    server: str | None = None,
     **values: Any,
 ) -> Query:
     cli = CliRequest(
-        templates=templates,
+        template=template,
         items=items,
-        servers=servers,
+        server=server,
         values={key.replace("from_", "from"): value for key, value in values.items()},
     )
     return resolve_query(
@@ -135,52 +136,6 @@ class TestSettings:
         cfg = config(defaults={"timezone": "local"})
         query = resolve(cfg=cfg, items=(ItemSpec(itemid=1),), from_="now", to="now")
         assert query.tz is None
-
-
-class TestStackedTemplates:
-    def test_equivalent_times_agree(self) -> None:
-        # "24 hours ago" and "1 day ago" are the same time.
-        query = resolve("particles", "temps")
-        assert query.sources["from"] == "templates 'particles', 'temps'"
-
-    def test_conflict_interactive(self) -> None:
-        ui = RecordingUI(answers=[1])
-        query = resolve("particles", "short", ui=ui)
-        assert query.from_text == "1 hour ago"
-        assert ui.levels("warning") == [
-            "The templates set different values for from: template 'particles' sets "
-            "'24 hours ago'; template 'short' sets '1 hour ago'."
-        ]
-        assert query.sources["from"] == "template 'short' (chosen at a prompt)"
-
-    def test_conflict_non_interactive(self) -> None:
-        with pytest.raises(InputRequired) as exc_info:
-            resolve("particles", "short", ui=RecordingUI(interactive=False))
-        assert exc_info.value.fix == "Pass --from to choose."
-
-    def test_conflict_resolved_by_cli(self) -> None:
-        ui = RecordingUI()
-        query = resolve("particles", "short", ui=ui, from_="3 hours ago")
-        assert query.from_text == "3 hours ago"
-        assert ui.levels("info") == [
-            "--from '3 hours ago' overrides '24 hours ago' from template 'particles', "
-            "'1 hour ago' from template 'short'."
-        ]
-
-    def test_resolution_conflict(self) -> None:
-        cfg = config(
-            templates={
-                "a": {
-                    "items": [{"itemid": 1}],
-                    "resolution": "raw",
-                    "from": "now",
-                    "to": "now",
-                },
-                "b": {"items": [{"itemid": 2}], "resolution": "1h"},
-            }
-        )
-        with pytest.raises(InputRequired, match="Which resolution"):
-            resolve("a", "b", cfg=cfg, ui=RecordingUI(interactive=False))
 
 
 class TestTimes:
@@ -255,27 +210,34 @@ class TestFormats:
 
 
 class TestRequests:
-    def test_templates_keep_their_servers(self) -> None:
-        query = resolve("particles", "temps")
+    def test_template(self) -> None:
+        query = resolve("particles")
         assert query.requests == (
-            Request("particles", "demo", (ItemSpec(host="demo1", name="Particles *"),)),
-            Request("temps", "lab", (ItemSpec(key="temp[*]"),)),
+            Request("particles", (ItemSpec(host="demo1", name="Particles *"),)),
         )
+        assert (query.template, query.server) == ("particles", "demo")
+        assert query.sources["server"] == "template 'particles'"
         assert not query.custom
 
     def test_template_without_server_uses_defaults(self) -> None:
         query = resolve("short", to="now")
-        assert query.requests[0].server == "demo"
+        assert query.server == "demo"
+        assert query.sources["server"] == "[defaults] in built-in"
+
+    def test_no_server_anywhere(self) -> None:
+        query = resolve("short", cfg=config(templates=TEMPLATES), to="now")
+        assert query.server is None
+        assert "server" not in query.sources
 
     def test_cli_items_form_a_custom_request(self) -> None:
         query = resolve("particles", items=(ItemSpec(itemid=9),))
-        assert query.requests[-1] == Request(CUSTOM, "demo", (ItemSpec(itemid=9),))
+        assert query.requests[-1] == Request(CUSTOM, (ItemSpec(itemid=9),))
         assert query.custom
 
-    def test_no_templates_is_custom(self) -> None:
+    def test_no_template_is_custom(self) -> None:
         query = resolve(items=(ItemSpec(itemid=9),), from_="now", to="now")
         assert query.custom
-        assert query.templates == ()
+        assert query.template is None
 
     def test_data_settings_on_cli_make_it_custom(self) -> None:
         assert resolve("particles", resolution="raw").custom
@@ -283,24 +245,35 @@ class TestRequests:
 
     def test_cli_server_overrides(self) -> None:
         ui = RecordingUI()
-        query = resolve("particles", "short", ui=ui, servers=("lab",), from_="now")
-        assert [r.server for r in query.requests] == ["lab", "lab"]
+        query = resolve("particles", ui=ui, server="lab")
+        assert query.server == "lab"
+        assert query.sources["server"] == "command line (--server)"
         assert ui.levels("info")[-1] == (
             "--server lab overrides the server of template 'particles'."
         )
         assert query.custom
 
-    def test_several_cli_servers(self) -> None:
-        query = resolve("short", servers=("demo", "lab"), to="now")
-        assert query.requests[0].server == Choice[str](
-            choices=["demo", "lab"], select=Select.ALL
-        )
+    def test_cli_server_same_as_template(self) -> None:
+        ui = RecordingUI()
+        query = resolve("particles", ui=ui, server="demo")
+        assert ui.levels("info") == []
+        assert not query.custom
+
+    def test_cli_server_without_template_server(self) -> None:
+        ui = RecordingUI()
+        query = resolve("short", ui=ui, server="lab", to="now")
+        assert query.server == "lab"
+        assert ui.levels("info") == []
 
     def test_cli_server_within_template_choice_is_not_custom(self) -> None:
         ui = RecordingUI()
-        query = resolve("choice", ui=ui, servers=("lab",), from_="now", to="now")
+        query = resolve("choice", ui=ui, server="lab", from_="now", to="now")
         assert ui.levels("info") == []
-        assert query.requests[0].server == "lab"
+        assert query.server == "lab"
+
+    def test_template_server_choice(self) -> None:
+        query = resolve("choice", from_="now", to="now")
+        assert query.server == Choice[str](choices=["demo", "lab"])
 
     def test_template_without_items_warns(self) -> None:
         ui = RecordingUI()
@@ -360,11 +333,6 @@ class TestAggWithRawData:
         resolve("a", cfg=self.CFG, ui=ui)
         assert ui.levels("warning") == [f"agg from template 'a' {self.IGNORED}"]
 
-    def test_template_chosen_at_prompt(self) -> None:
-        ui = RecordingUI(answers=[0])
-        resolve("a", "b", cfg=self.CFG, ui=ui)
-        assert ui.levels("warning")[-1] == f"agg from template 'a' {self.IGNORED}"
-
     @pytest.mark.parametrize(
         "cfg",
         [
@@ -394,31 +362,27 @@ class TestValueDisplay:
                 "format": {"choices": ["csv", "tsv"], "select": "all"},
                 "from": "garbage",
             },
-            "b": {"items": [{"itemid": 2}], "agg": ["avg"], "format": "csv"},
         }
     )
 
     def test_lists_and_choices_in_messages(self) -> None:
-        ui = RecordingUI(answers=[0])
+        ui = RecordingUI()
         query = resolve(
             "a",
-            "b",
             cfg=self.CFG,
             ui=ui,
             agg=["count"],
             resolution="1h",
+            format="csv",
             from_="now",
             to="now",
         )
         assert query.agg == (Agg.COUNT,)
-        assert query.formats == (Format.CSV, Format.TSV)
+        assert query.formats == (Format.CSV,)
         assert ui.levels("info") == [
             "--from 'now' overrides 'garbage' from template 'a'.",
-            "--agg count overrides min, max from template 'a', avg from template 'b'.",
-        ]
-        assert ui.levels("warning") == [
-            "The templates set different values for format: template 'a' sets csv or "
-            "tsv (all); template 'b' sets csv."
+            "--agg count overrides min, max from template 'a'.",
+            "--format 'csv' overrides csv or tsv (all) from template 'a'.",
         ]
 
     def test_unparseable_template_time(self) -> None:

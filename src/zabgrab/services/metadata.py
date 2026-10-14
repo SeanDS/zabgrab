@@ -37,7 +37,7 @@ def build_metadata(
         "created": created.isoformat(),
         "command": list(command),
         "query": {
-            "templates": list(query.templates),
+            "templates": [query.template] if query.template else [],
             "custom": query.custom,
             "from": query.from_text,
             "to": query.to_text,
@@ -50,7 +50,7 @@ def build_metadata(
             "requests": [
                 {
                     "label": request.label,
-                    "server": _server(request.server),
+                    "server": _server(query.server),
                     "items": [
                         spec.model_dump(mode="json", exclude_none=True)
                         for spec in request.items
@@ -63,7 +63,7 @@ def build_metadata(
             name: templates[name].model_dump(
                 mode="json", by_alias=True, exclude_none=True
             )
-            for name in query.templates
+            for name in ([query.template] if query.template else [])
             if name in templates
         },
         "servers": [{"name": s.name, "url": url} for url, s in servers.items()],

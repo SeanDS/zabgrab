@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -22,21 +21,15 @@ from .resolve import SETTINGS, CliRequest, flag
 def template_table(cli: CliRequest, query: Query, config: Config) -> dict[str, Any]:
     """The template that repeats this fetch, as a config table.
 
-    It's self-contained, since templates can't build on each other: the templates
-    used contribute their items and settings, overridden by the command line and by
+    It's self-contained, since templates can't build on each other: the template
+    used contributes its items and settings, overridden by the command line and by
     answers given at prompts. ``[defaults]`` and built-in values are left out, so
     they still apply when the template is used.
-
-    Raises
-    ------
-    ZabgrabError
-        If the fetch used different servers for different templates, which one
-        template can't express.
     """
-    templates = [config.templates[name] for name in query.templates]
+    templates = [] if query.template is None else [config.templates[query.template]]
     table: dict[str, Any] = {}
 
-    server = _server(query, config)
+    server = _server(query)
     if server is not None:
         table["server"] = server
     items = _items(query)
@@ -78,41 +71,13 @@ def _setting(
     return None
 
 
-def _server(query: Query, config: Config) -> Any:
-    """The server all requests used, or ``None`` if it's [defaults]' server."""
-    servers: dict[str, Any] = {}
-    for request in query.requests:
-        answered = query.answers.servers.get(request.label)
-        if answered is not None:
-            server: Any = (
-                answered[0]
-                if len(answered) == 1
-                else {"choices": list(answered), "select": "all"}
-            )
-        elif request.server is None:
-            server = None
-        else:
-            server = config_value(request.server)
-        servers[request.label] = server
-
-    effective = {
-        label: config_value(config.defaults.server) if server is None else server
-        for label, server in servers.items()
-    }
-    if len({json.dumps(server) for server in effective.values()}) > 1:
-        used = "; ".join(
-            f"{_describe(label)}: {_show(server)}"
-            for label, server in effective.items()
-        )
-        raise ZabgrabError(
-            "Can't save one template for different servers.",
-            details=[used],
-            hint="Pass --server to fetch them all from the same server(s), or save "
-            "a template for each.",
-        )
-    if all(server is None for server in servers.values()):
+def _server(query: Query) -> Any:
+    """The server chosen, given or from the template; not [defaults]' server."""
+    if query.answers.server is not None:
+        return query.answers.server
+    if query.sources.get("server", "").startswith("[defaults]"):
         return None
-    return next(iter(effective.values()))
+    return config_value(query.server)
 
 
 def _items(query: Query) -> list[ItemSpec]:
@@ -122,18 +87,6 @@ def _items(query: Query) -> list[ItemSpec]:
             if spec not in specs:
                 specs.append(spec)
     return specs
-
-
-def _describe(label: str) -> str:
-    return "the command line" if label == CUSTOM else f"template {label!r}"
-
-
-def _show(server: Any) -> str:
-    if server is None:
-        return "none"
-    if isinstance(server, dict):
-        return " or ".join(server["choices"]) + f" ({server['select']})"
-    return str(server)
 
 
 @dataclass
@@ -160,7 +113,9 @@ _OPTIONS = {
 def equivalent_command(args: Sequence[str], answers: Answers) -> Equivalent:
     """The command line ``args`` (after the program name) with the answers given at
     prompts added, so it can be run again without them."""
-    result = Equivalent(_rename_templates(list(args), answers.templates))
+    result = Equivalent(list(args))
+    if answers.template is not None:
+        result.args = _replace(result.args, _OPTIONS["template"], [answers.template])
 
     for key, value in answers.settings.items():
         values = value if isinstance(value, list) else [value]
@@ -172,15 +127,8 @@ def equivalent_command(args: Sequence[str], answers: Answers) -> Equivalent:
             continue
         result.args = _replace(result.args, _OPTIONS[key], [str(v) for v in values])
 
-    servers = set(answers.servers.values())
-    if len(servers) == 1:
-        (chosen,) = servers
-        result.args = _replace(result.args, _OPTIONS["server"], list(chosen))
-    elif servers:
-        result.notes.append(
-            "Different servers were chosen for different templates, which --server "
-            "can't express."
-        )
+    if answers.server is not None:
+        result.args = _replace(result.args, _OPTIONS["server"], [answers.server])
 
     for label, specs in answers.items.items():
         if label == CUSTOM:
@@ -195,26 +143,6 @@ def equivalent_command(args: Sequence[str], answers: Answers) -> Equivalent:
 
     if answers.all_items and not {"-y", "--yes"} & set(result.args):
         result.args.append("--yes")
-    return result
-
-
-def _rename_templates(args: list[str], renamed: dict[str, str]) -> list[str]:
-    if not renamed:
-        return args
-    result = []
-    expecting = False
-    for arg in args:
-        if expecting:
-            arg = renamed.get(arg, arg)
-            expecting = False
-        elif arg in _OPTIONS["template"]:
-            expecting = True
-        elif arg.startswith("--template="):
-            name = arg.removeprefix("--template=")
-            arg = f"--template={renamed.get(name, name)}"
-        elif arg.startswith("-t") and len(arg) > 2:
-            arg = f"-t{renamed.get(arg[2:], arg[2:])}"
-        result.append(arg)
     return result
 
 

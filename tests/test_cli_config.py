@@ -87,7 +87,7 @@ class TestShow:
             user_config,
             "[defaults]\njobs = 2\n"
             '[servers.demo]\nurl = "https://demo.example.org"\n'
-            '[templates.t]\nserver = { choices = ["demo"], select = "all" }\n'
+            '[templates.t]\nserver = { choices = ["demo"], select = "prompt" }\n'
             'items = [{ host = "h", name = "CPU *" }, { itemid = 7 }]\n'
             'from = "2 days ago"\n',
         )
@@ -100,7 +100,7 @@ class TestShow:
         assert "format" not in shown["defaults"]
         assert shown["servers"]["demo"]["url"] == "https://demo.example.org"
         template = shown["templates"]["t"]
-        assert template["server"] == {"choices": ["demo"], "select": "all"}
+        assert template["server"] == {"choices": ["demo"], "select": "prompt"}
         assert template["items"] == [{"host": "h", "name": "CPU *"}, {"itemid": 7}]
         assert template["from"] == "2 days ago"
 

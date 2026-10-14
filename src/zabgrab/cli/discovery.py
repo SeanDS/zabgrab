@@ -69,8 +69,8 @@ def _query(
     servers: Sequence[str],
     action: Callable[[ZabbixClient], Any],
 ) -> list[tuple[Server, Any]]:
-    selection = app.select_servers(servers, app.config().config.defaults.server)
-    return asyncio.run(on_servers(selection, app.connect, action, app.ui))
+    selected = app.select_servers(servers, app.config().config.defaults.server)
+    return asyncio.run(on_servers(selected, app.connect, action))
 
 
 def _report_limit(

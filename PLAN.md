@@ -9,7 +9,7 @@ phased delivery plan, and the remaining open questions.
 - Find Zabbix items without digging IDs out of the web UI; wildcard item selection.
 - Multi-server configs; templates that can run against one, several or a user-chosen
   server.
-- Templates that can set every fetch argument; templates are stackable.
+- Templates that can set every fetch argument. One template and one server per fetch.
 - Fast parallel downloads with clear progress, colour and helpful errors.
 - MATLAB-friendly HDF5 output that can be incrementally updated.
 - Optional plotting.
@@ -70,7 +70,7 @@ src/zabgrab/
                        #   phase that first needs it)
     config.py          # config loading with interactive repair of invalid files
     resolve.py         # CLI + templates + defaults → Query, with provenance, choice
-                       #   resolution, stacked-template rules
+                       #   resolution
     servers.py         # which server(s) to use: --server, config, prompt, "Custom…"
     session.py         # connecting and logging in (env/keyring token, paste, password)
     discover.py        # item spec / wildcard → Items; running actions across servers
@@ -201,12 +201,14 @@ Keys that support it accept either a plain value or
 
 | `select` | Behaviour |
 |---|---|
-| `all` | Run against every choice and stack the results into one output. |
-| `prompt` | Interactive: the user picks one or more. Non-interactive: an error unless the CLI sets the value. |
-| `first` | Use the first choice that works (failover). |
+| `all` | Use every choice, stacking the results into one output. |
+| `prompt` (default) | Interactive: the user picks. Non-interactive: an error unless the CLI sets the value. |
+| `first` | Use the first choice that works. |
 
-Supported on: `server`, `host` (inside item specs), `format`.
-Repeating a CLI flag (`--server a --server b`) means `all`.
+Supported on: `server`, `host` (inside item specs), `format`. A fetch uses one
+server, so a `server` choice only allows `prompt` (the user picks one; `--server`
+picks without asking); `all` or `first` there is a config error. `fetch` accepts one
+`--server` and one `--template`.
 
 A missing `server` (nowhere in the CLI, the template or `[defaults]`) is prompted for.
 See "Missing and invalid input".
@@ -276,9 +278,8 @@ suggests adding `--save-template NAME`.
 | Wildcard matches more than `max_items` | Choose: fetch all / narrow to a host (from the matched hosts) / pick from table / cancel | `--yes`, or a narrower spec (e.g. `host=`) |
 | Unknown template or server name | If close matches exist: "Did you mean X?". Otherwise choose from all names | Lists the close matches and `zabgrab templates list` / `config show` |
 | No `from`/`to` (no built-in default) | Ask for each, with examples (e.g. "24 hours ago", "2026-10-14 09:00", "now") | `--from`/`--to`, or set `from`/`to` in the template or `[defaults]` |
-| No `format` (no built-in default) | Use the output file's extension if it has a known one; otherwise choose from mat / h5 / tsv / csv | `--format`, an `--output` path with a known extension, or `format` in the template or `[defaults]` |
+| No `format` (no built-in default) | Use the output file's extension if it has a known one; otherwise choose from h5 (the default) / mat / tsv / csv | `--format`, an `--output` path with a known extension, or `format` in the template or `[defaults]` |
 | Unparseable `--from`/`--to` | Re-ask with the parse error and examples | Error with examples of supported formats |
-| Stacked templates disagree on from/to/resolution/agg | Show each template's value, then ask for the value to use | Error naming the flag to set |
 | No token for the server | Choose: paste a token now (opens the token page; offer to save to keyring) / use username+password / cancel | `zabgrab token add SERVER`, or set `token_env`'s variable |
 | Username/password (`auth = "password"`) | Prompt (username defaults to the config value) | Use a token: `zabgrab token add SERVER` |
 | Output file exists | Choose: append (`.h5`/`.mat` only) / overwrite / new name (suggested `-2` suffix) / cancel | `--append`, `--overwrite`, or another `--output` |
@@ -330,7 +331,7 @@ allowed to.
 
 ## Fetch
 
-`zabgrab fetch [-t TEMPLATE]... [--item SPEC]... [--server S]... [--from] [--to]
+`zabgrab fetch [-t TEMPLATE] [--item SPEC]... [--server S] [--from] [--to]
 [--resolution raw|1h] [--agg ...] [--output [PATH]] [--format] [--append|--overwrite]
 [--group NAME] [--dry-run] [--explain] [--plot] [--save-template NAME] [--yes]
 [--jobs N]`
@@ -346,21 +347,14 @@ default.
 - `--explain` prints the resolved query with the source of each value, then exits.
 - `--dry-run` resolves servers, items and time range, prints the fetch plan, and exits.
 
-### Stacked templates (`-t a -t b ...`)
+### One template and one server
 
-- Templates may differ in server(s) and items. The results are stacked into one output.
-- **`from`/`to`:** compare the values that the templates set themselves, after
-  resolving them against the same base "now". This means `"24 hours ago"` and
-  `"1 day ago"` count as equal.
-  - If they all agree, or only one template sets them, use that value.
-  - If they disagree, print a warning listing each template's value. Then prompt for
-    new `from`/`to` when interactive, or exit with an error when not.
-  - If `--from` or `--to` is on the CLI, use it and log that the templates' own values
-    are being ignored.
-- **`resolution`/`agg`:** the same rule as `from`/`to`. Templates that set different
-  values get a warning, then a prompt when interactive or an error when not. A CLI
-  `--resolution`/`--agg` wins, and a log message says the templates' values are ignored.
-  `agg` only applies to hourly trends: with raw data, an `agg` from the CLI or a
+- A fetch uses at most one template (`-t`) and one server: `--server`, else the
+  template's, else `[defaults]`', else asked. Items given with `--item` come from the
+  same server.
+- A CLI value that differs from the template's is logged (times compare after
+  parsing, so `"24 hours ago"` and `"1 day ago"` are the same).
+- `agg` only applies to hourly trends: with raw data, an `agg` from the CLI or a
   template gets a warning that it's ignored (one from `[defaults]` doesn't), and an
   ignored `--agg` doesn't make the query custom.
 - Item specs and `--item` flags on the CLI are added to the templates' items.
@@ -688,7 +682,7 @@ alongside the MATLAB check files.
 - **Prompt tests:** every prompt site is tested twice, once with scripted answers and
   once with the non-interactive UI. The second test asserts the exact remedy message.
 - **Unit tests:** item spec parsing, choice resolution, query merging and provenance,
-  stacked from/to rules, filename building, config discovery and merging (with
+  override rules, filename building, config discovery and merging (with
   `XDG_CONFIG_HOME`, `$HOME` and cwd faked using `tmp_path`/monkeypatch), name
   validation, date parsing with a fixed "now" and timezone.
 - **Format tests:**
@@ -737,7 +731,7 @@ alongside the MATLAB check files.
   - quick start, `zabgrab token add`, finding items (`hosts`/`items`)
   - a **complete commented config example** (servers, defaults, templates with
     choices and wildcards)
-  - stacking templates, output naming, formats and MATLAB/Python loading snippets
+  - templates, output naming, formats and MATLAB/Python loading snippets
   - the `update` example, trends vs raw, and the calculated-item note for other
     averages
 - A test parses the README's TOML example so it cannot go stale. Ship the same
@@ -761,9 +755,12 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 
 ## Decisions log
 
-- Stacked templates: `from`/`to`/`resolution`/`agg` must agree, otherwise warn and
-  then prompt (interactive) or error (non-interactive). CLI values win, with a log
-  message.
+- One template and one server per fetch (stacked templates and multi-server fetches
+  were dropped). A server choice is only ever a question (`select = "prompt"`).
+  Groups fetched from several servers before this can still be read and updated,
+  but not updated with `--rematch`.
+- HDF5 is the first and default answer when zabgrab asks for a format (there's still
+  no built-in `format`).
 - Release version: 1.0.0.
 - No built-in defaults for `from`, `to` or `format`: they come from the CLI, a
   template or `[defaults]`, else the user is asked (format is first inferred from the

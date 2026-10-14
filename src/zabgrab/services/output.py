@@ -22,7 +22,7 @@ MAT_TEXT_BYTES = 480
 MAT_TEXT_WRITE_SECONDS = 60e-6
 
 FORMAT_FIX = (
-    "Pass --format, give --output a file name ending in .mat, .h5, .tsv or .csv, or "
+    "Pass --format, give --output a file name ending in .h5, .mat, .tsv or .csv, or "
     "set format in the template or [defaults]."
 )
 
@@ -73,7 +73,7 @@ def auto_name(query: Query, *, hosts: Sequence[str], servers: Sequence[str]) -> 
     return output_name(
         query.output_pattern,
         hosts=hosts,
-        templates=query.templates,
+        templates=[query.template] if query.template else [],
         custom=query.custom,
         start=query.start,
         end=query.end,
@@ -154,8 +154,8 @@ def choose_formats(
     chosen = ui.choose(
         "Which format should the data be saved in?",
         [
-            Option("mat", Format.MAT, "MATLAB (v7.3)"),
             Option("h5", Format.H5, "HDF5"),
+            Option("mat", Format.MAT, "MATLAB (v7.3)"),
             Option("tsv", Format.TSV, "tab-separated values"),
             Option("csv", Format.CSV, "comma-separated values"),
         ],

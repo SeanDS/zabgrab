@@ -27,7 +27,7 @@ FULL_CONFIG: dict[str, Any] = {
     "templates": {
         "particles": {
             "description": "Particle counters",
-            "server": {"choices": ["demo", "lab-2"], "select": "all"},
+            "server": {"choices": ["demo", "lab-2"]},
             "items": [
                 {"host": "demo1", "name": "Particles *"},
                 {"key": "particle.count[*]"},
@@ -55,7 +55,7 @@ def test_full_config_is_valid() -> None:
     config = Config.model_validate(FULL_CONFIG)
 
     template = config.templates["particles"]
-    assert template.server == Choice[str](choices=["demo", "lab-2"], select=Select.ALL)
+    assert template.server == Choice[str](choices=["demo", "lab-2"])
     assert template.from_ == "24 hours ago"
     assert template.agg == [Agg.AVG, Agg.MAX]
     assert isinstance(template.format, Choice)
@@ -70,6 +70,22 @@ def test_empty_config_is_valid() -> None:
     config = Config.model_validate({})
     assert config.templates == {}
     assert config.defaults.from_ is None
+
+
+@pytest.mark.parametrize("select", ["all", "first"])
+@pytest.mark.parametrize("table", ["defaults", "template"])
+def test_server_choices_are_only_asked(select: str, table: str) -> None:
+    server = {"choices": ["a", "b"], "select": select}
+    data = (
+        {"defaults": {"server": server}}
+        if table == "defaults"
+        else {"templates": {"t": {"server": server}}}
+    )
+    where = "defaults.server" if table == "defaults" else "templates.t.server"
+    assert errors(data) == [
+        f"{where}: a choice of servers is only for choosing one when asked (zabgrab "
+        "fetches from one server at a time), so its select must be 'prompt'"
+    ]
 
 
 def test_choice_defaults_to_prompt() -> None:

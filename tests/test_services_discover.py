@@ -15,7 +15,6 @@ from zabgrab.model.item import ItemSpec
 from zabgrab.model.server import Server
 from zabgrab.services.discover import find_items, on_servers
 from zabgrab.services.ports import ZabbixClient
-from zabgrab.services.servers import ServerSelection
 
 from .fakes import RecordingUI
 from .fakezabbix import TOKEN, FakeTransport, seeded
@@ -107,7 +106,7 @@ def server(name: str) -> Server:
 class TestOnServers:
     @staticmethod
     def run(
-        selection: ServerSelection, down: set[str], ui: RecordingUI | None = None
+        servers: list[Server], down: set[str]
     ) -> tuple[list[str], list[FakeTransport]]:
         transports: list[FakeTransport] = []
 
@@ -123,33 +122,17 @@ class TestOnServers:
         async def action(client: ZabbixClient) -> int:
             return len(await client.hosts())
 
-        results = asyncio.run(
-            on_servers(selection, connect, action, ui or RecordingUI())
-        )
+        results = asyncio.run(on_servers(servers, connect, action))
         return [str(server.name) for server, _ in results], transports
 
     def test_all(self) -> None:
-        names, transports = self.run(ServerSelection([server("a"), server("b")]), set())
+        names, transports = self.run([server("a"), server("b")], set())
         assert names == ["a", "b"]
         assert all(transport.closed for transport in transports)
 
-    def test_failover_uses_first_working(self) -> None:
-        ui = RecordingUI()
-        selection = ServerSelection(
-            [server("a"), server("b"), server("c")], failover=True
-        )
-        names, _ = self.run(selection, {"a"}, ui)
-        assert names == ["b"]
-        assert ui.levels("warning") == ["Can't connect to a. Trying the next server."]
-
-    def test_failover_all_down(self) -> None:
-        selection = ServerSelection([server("a"), server("b")], failover=True)
-        with pytest.raises(ConnectionFailed, match="Can't connect to b"):
-            self.run(selection, {"a", "b"})
-
-    def test_without_failover_errors_propagate(self) -> None:
+    def test_errors_propagate(self) -> None:
         with pytest.raises(ConnectionFailed, match="Can't connect to a"):
-            self.run(ServerSelection([server("a"), server("b")]), {"a"})
+            self.run([server("a"), server("b")], {"a"})
 
     def test_client_closed_when_action_fails(self) -> None:
         transport = FakeTransport(seeded())
@@ -161,9 +144,5 @@ class TestOnServers:
             return await client.hosts()  # not logged in
 
         with pytest.raises(Exception, match="Not authorized"):
-            asyncio.run(
-                on_servers(
-                    ServerSelection([server("a")]), connect, action, RecordingUI()
-                )
-            )
+            asyncio.run(on_servers([server("a")], connect, action))
         assert transport.closed

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import difflib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, tzinfo
 from enum import Enum
@@ -48,9 +48,9 @@ DATA_SETTINGS = frozenset({"from", "to", "resolution", "agg"})
 class CliRequest:
     """What was given on the command line."""
 
-    templates: tuple[str, ...] = ()
+    template: str | None = None
     items: tuple[ItemSpec, ...] = ()
-    servers: tuple[str, ...] = ()
+    server: str | None = None
     values: Mapping[str, Any] = field(default_factory=dict)
     """Settings given explicitly, by config key (e.g. ``"from"``)."""
 
@@ -70,13 +70,17 @@ def resolve_query(
 ) -> Query:
     """Combine the command line, templates and config into a :class:`Query`.
 
-    Precedence: the command line, then the templates (which must agree with each
-    other), then ``[defaults]`` (including built-in values). Missing times are asked
-    for. Overrides of template values are logged.
+    Precedence: the command line, then the template, then ``[defaults]`` (including
+    built-in values). Missing times are asked for. Overrides of template values are
+    logged.
     """
     answers = Answers()
-    templates = [find_template(name, config, ui, answers) for name in cli.templates]
-    resolver = _Resolver(cli, config, templates, ui, defaults_source, answers)
+    template = (
+        None
+        if cli.template is None
+        else find_template(cli.template, config, ui, answers)
+    )
+    resolver = _Resolver(cli, config, template, ui, defaults_source)
 
     timezone = resolver.setting("timezone")
     tz = None if timezone == "local" else ZoneInfo(timezone)
@@ -87,8 +91,8 @@ def resolve_query(
         except ValueError:
             return value
 
-    from_text = resolver.setting("from", compare=time_key)
-    to_text = resolver.setting("to", compare=time_key)
+    from_text = resolver.setting("from", same=time_key)
+    to_text = resolver.setting("to", same=time_key)
     from_text, start = _time("from", from_text, ui, parse_time, tz, answers)
     to_text, end = _time("to", to_text, ui, parse_time, tz, answers)
     if start > end:
@@ -106,13 +110,21 @@ def resolve_query(
         _warn_agg_ignored(resolver.sources["agg"], ui)
 
     formats = resolver.setting("format")
-    custom = bool(cli.items) or not templates or bool(data_settings & set(cli.values))
-    requests, server_custom = _requests(cli, config, templates, ui)
+    server, server_custom = _server(
+        cli, config, template, ui, resolver.sources, defaults_source
+    )
+    custom = (
+        bool(cli.items)
+        or template is None
+        or bool(data_settings & set(cli.values))
+        or server_custom
+    )
 
     return Query(
-        requests=requests,
-        templates=tuple(name for name, _ in templates),
-        custom=custom or server_custom,
+        requests=_requests(cli, template, ui),
+        template=None if template is None else template[0],
+        server=server,
+        custom=custom,
         start=start,
         end=end,
         from_text=from_text,
@@ -141,7 +153,7 @@ def _warn_agg_ignored(source: str, ui: UI) -> None:
     if source.startswith("command line"):
         setter = flag("agg")
     elif source.startswith("template"):
-        setter = f"agg from {source.removesuffix(' (chosen at a prompt)')}"
+        setter = f"agg from {source}"
     else:
         return
     ui.warning(
@@ -168,12 +180,12 @@ def find_template(
         if close and ui.confirm(
             f"Unknown template {name!r}. Did you mean {close[0]!r}?", fix=""
         ):
-            answers.templates[name] = close[0]
+            answers.template = close[0]
             return close[0], config.templates[close[0]]
         if names:
             ui.warning(f"Unknown template {name!r}.")
             chosen = ui.choose("Which template?", [Option(n, n) for n in names], fix="")
-            answers.templates[name] = chosen
+            answers.template = chosen
             return chosen, config.templates[chosen]
 
     hint = f"Did you mean {close[0]!r}? " if close else ""
@@ -192,51 +204,43 @@ class _Resolver:
         self,
         cli: CliRequest,
         config: Config,
-        templates: Sequence[tuple[str, Template]],
+        template: tuple[str, Template] | None,
         ui: UI,
         defaults_source: DefaultsSource,
-        answers: Answers,
     ) -> None:
         self.cli = cli
         self.config = config
-        self.templates = templates
+        self.template = template
         self.ui = ui
         self.defaults_source = defaults_source
-        self.answers = answers
         self.sources: dict[str, str] = {}
 
-    def setting(self, key: str, *, compare: Callable[[Any], Any] = lambda v: v) -> Any:
-        """The value of a setting (``None`` if nothing sets it)."""
-        attribute = "from_" if key == "from" else key
-        from_templates = [
-            (name, getattr(template, attribute))
-            for name, template in self.templates
-            if getattr(template, attribute) is not None
-        ]
+    def setting(self, key: str, *, same: Callable[[Any], Any] = lambda v: v) -> Any:
+        """The value of a setting (``None`` if nothing sets it).
 
-        def same(value: Any) -> Any:
-            return _hashable(compare(value))
+        ``same`` maps values to something that compares equal when they mean the
+        same (e.g. parsed times), to tell whether the command line overrides the
+        template.
+        """
+        attribute = "from_" if key == "from" else key
+        name, template = self.template or ("", None)
+        from_template = None if template is None else getattr(template, attribute)
 
         if key in self.cli.values:
             value = self.cli.values[key]
-            overridden = [(n, v) for n, v in from_templates if same(v) != same(value)]
-            if overridden:
-                values = ", ".join(
-                    f"{_show(v)} from template {n!r}" for n, v in overridden
+            if from_template is not None and _hashable(same(from_template)) != (
+                _hashable(same(value))
+            ):
+                self.ui.info(
+                    f"{flag(key)} {_show(value)} overrides {_show(from_template)} "
+                    f"from template {name!r}."
                 )
-                self.ui.info(f"{flag(key)} {_show(value)} overrides {values}.")
             self.sources[key] = f"command line ({flag(key)})"
             return value
 
-        if from_templates:
-            groups: dict[Any, list[tuple[str, Any]]] = {}
-            for name, value in from_templates:
-                groups.setdefault(same(value), []).append((name, value))
-            if len(groups) > 1:
-                return self._conflict(key, list(groups.values()))
-            (group,) = groups.values()
-            self.sources[key] = _templates_label([name for name, _ in group])
-            return group[0][1]
+        if from_template is not None:
+            self.sources[key] = f"template {name!r}"
+            return from_template
 
         value = getattr(self.config.defaults, attribute)
         if value is not None:
@@ -247,33 +251,6 @@ class _Resolver:
                 else f"[defaults] in {source}"
             )
         return value
-
-    def _conflict(self, key: str, groups: list[list[tuple[str, Any]]]) -> Any:
-        described = "; ".join(
-            f"{_templates_label([n for n, _ in group])} sets {_show(group[0][1])}"
-            for group in groups
-        )
-        self.ui.warning(f"The templates set different values for {key}: {described}.")
-        chosen = self.ui.choose(
-            f"Which {key} should be used?",
-            [
-                Option(
-                    _show(group[0][1]), group, _templates_label([n for n, _ in group])
-                )
-                for group in groups
-            ],
-            fix=f"Pass {flag(key)} to choose.",
-        )
-        self.sources[key] = (
-            f"{_templates_label([n for n, _ in chosen])} (chosen at a prompt)"
-        )
-        self.answers.settings[key] = config_value(chosen[0][1])
-        return chosen[0][1]
-
-
-def _templates_label(names: Sequence[str]) -> str:
-    quoted = ", ".join(repr(name) for name in names)
-    return f"template {quoted}" if len(names) == 1 else f"templates {quoted}"
 
 
 def _hashable(value: Any) -> Any:
@@ -347,45 +324,52 @@ def _formats(
     return chosen
 
 
-def _requests(
+def _server(
     cli: CliRequest,
     config: Config,
-    templates: Sequence[tuple[str, Template]],
+    template: tuple[str, Template] | None,
     ui: UI,
-) -> tuple[tuple[Request, ...], bool]:
-    """One request per template, plus one for command line items.
+    sources: dict[str, str],
+    defaults_source: DefaultsSource,
+) -> tuple[str | Choice[str] | None, bool]:
+    """The server to fetch from: --server, else the template's, else [defaults]'.
 
-    Returns the requests and whether --server changed a template's server.
+    Returns it and whether --server changed the template's server (choosing one of
+    the template's server choices doesn't).
     """
-    cli_server: str | Choice[str] | None = None
-    if len(cli.servers) == 1:
-        cli_server = cli.servers[0]
-    elif cli.servers:
-        cli_server = Choice[str](choices=list(cli.servers), select=Select.ALL)
-
-    requests = []
-    changed = False
-    for name, template in templates:
-        server = (
-            template.server if template.server is not None else config.defaults.server
+    configured = None if template is None else template[1].server
+    if cli.server is None:
+        if configured is None:
+            if config.defaults.server is not None:
+                sources["server"] = f"[defaults] in {defaults_source('server')}"
+            return config.defaults.server, False
+        assert template is not None
+        sources["server"] = f"template {template[0]!r}"
+        return configured, False
+    sources["server"] = f"command line ({flag('server')})"
+    if configured is None:
+        return cli.server, False
+    if isinstance(configured, Choice) and cli.server in configured.choices:
+        return cli.server, False
+    if configured != cli.server:
+        assert template is not None
+        ui.info(
+            f"--server {cli.server} overrides the server of template {template[0]!r}."
         )
-        if cli_server is not None:
-            within_choice = isinstance(template.server, Choice) and set(
-                cli.servers
-            ) <= set(template.server.choices)
-            if template.server is not None and not within_choice:
-                ui.info(
-                    f"--server {', '.join(cli.servers)} overrides the server of "
-                    f"template {name!r}."
-                )
-                changed = True
-            server = cli_server
-        if not template.items:
+        return cli.server, True
+    return cli.server, False
+
+
+def _requests(
+    cli: CliRequest, template: tuple[str, Template] | None, ui: UI
+) -> tuple[Request, ...]:
+    """The template's items, plus a request for any items on the command line."""
+    requests = []
+    if template is not None:
+        name, settings = template
+        if not settings.items:
             ui.warning(f"Template {name!r} has no items.")
-        requests.append(Request(name, server, tuple(template.items)))
-
-    if cli.items or not templates:
-        server = cli_server if cli_server is not None else config.defaults.server
-        requests.append(Request(CUSTOM, server, tuple(cli.items)))
-
-    return tuple(requests), changed
+        requests.append(Request(name, tuple(settings.items)))
+    if cli.items or template is None:
+        requests.append(Request(CUSTOM, tuple(cli.items)))
+    return tuple(requests)

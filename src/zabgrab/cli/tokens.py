@@ -29,8 +29,7 @@ def _server(app: AppContext, ref: str | None) -> Server:
     config = app.config().config
     if ref is not None:
         return resolve_server(ref, config, app.ui, save=app.save_server)
-    (server,) = app.select_servers([], None).servers
-    return server
+    return app.select_server(None)
 
 
 @token_group.command("list")

@@ -18,12 +18,12 @@ from .item import ItemSpec
 class Answers:
     """Answers given at prompts, in the form the command line or a template takes."""
 
-    templates: dict[str, str] = field(default_factory=dict)
-    """Template names typed (unknown) → the template chosen instead."""
+    template: str | None = None
+    """The template chosen instead of an unknown one."""
     settings: dict[str, Any] = field(default_factory=dict)
     """Settings by config key, e.g. ``{"from": "24 hours ago", "format": ["mat"]}``."""
-    servers: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    """Request label → the server names or URLs chosen for it."""
+    server: str | None = None
+    """The server name or URL chosen."""
     items: dict[str, tuple[ItemSpec, ...]] = field(default_factory=dict)
     """Request label → the items chosen, replacing the request's own."""
     all_items: bool = False
@@ -31,9 +31,9 @@ class Answers:
 
     def __bool__(self) -> bool:
         return bool(
-            self.templates
+            self.template
             or self.settings
-            or self.servers
+            or self.server
             or self.items
             or self.all_items
         )

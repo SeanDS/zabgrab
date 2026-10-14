@@ -1,13 +1,13 @@
-"""Working out which items to fetch from which servers."""
+"""Working out which items to fetch."""
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from ..errors import Cancelled, ConnectionFailed, InputRequired
+from ..errors import Cancelled, InputRequired
 from ..model.answers import Answers
-from ..model.choice import Choice, Select
+from ..model.choice import Choice
 from ..model.item import ItemSpec
 from ..model.query import Query, Request
 from ..model.server import Server
@@ -15,9 +15,8 @@ from ..model.zabbix import Item
 from .discover import find_items
 from .fetch import Job
 from .ports import UI, Option, ZabbixClient
-from .servers import ServerSelection
 
-SelectServers = Callable[[str | Choice[str] | None], ServerSelection]
+SelectServer = Callable[[str | Choice[str] | None], Server]
 Connect = Callable[[Server], Awaitable[ZabbixClient]]
 
 PICKER_LIMIT = 100
@@ -43,52 +42,44 @@ async def collect(
     query: Query,
     ui: UI,
     *,
-    select_servers: SelectServers,
+    select_server: SelectServer,
     connect: Connect,
     yes: bool = False,
 ) -> Plan:
-    """Resolve each request's servers and items into download jobs.
+    """Resolve the query's server and each request's items into download jobs.
 
-    Items matched by several requests (on the same server) are fetched once.
-    Connections are kept in the plan for downloading; close it when done.
+    Items matched by several requests are fetched once. The connection is kept in
+    the plan for downloading; close it when done.
     """
     plan = Plan()
-    jobs: dict[tuple[str, int], Job] = {}
+    jobs: dict[int, Job] = {}
+    server = select_server(query.server)
+    if _asked(query.server, server):
+        query.answers.server = server.label
+    client = await connect(server)
+    plan.clients[server] = client
     try:
         for request in query.requests:
-            selection = select_servers(request.server)
-            if _asked(request.server, selection):
-                query.answers.servers[request.label] = tuple(
-                    server.label for server in selection.servers
+            items = await _items(client, request, ui, query.answers)
+            items = _limit(
+                items,
+                query.max_items,
+                ui,
+                yes=yes,
+                label=request.label,
+                answers=query.answers,
+            )
+            for item in items:
+                previous = jobs.get(item.itemid)
+                labels = (
+                    (request.label,)
+                    if previous is None
+                    else (
+                        *previous.requests,
+                        request.label,
+                    )
                 )
-            for index, server in enumerate(selection.servers):
-                try:
-                    client = await _client(plan, server, connect)
-                except ConnectionFailed as err:
-                    if not selection.failover or index == len(selection.servers) - 1:
-                        raise
-                    ui.warning(f"{err.message} Trying the next server.")
-                    continue
-                items = await _items(client, request, ui, query.answers)
-                items = _limit(
-                    items,
-                    query.max_items,
-                    ui,
-                    yes=yes,
-                    label=request.label,
-                    answers=query.answers,
-                )
-                for item in items:
-                    key = (server.url, item.itemid)
-                    if key in jobs:
-                        previous = jobs[key]
-                        jobs[key] = Job(
-                            server, item, (*previous.requests, request.label)
-                        )
-                    else:
-                        jobs[key] = Job(server, item, (request.label,))
-                if selection.failover:
-                    break
+                jobs[item.itemid] = Job(server, item, labels)
     except BaseException:
         await plan.close()
         raise
@@ -96,24 +87,12 @@ async def collect(
     return plan
 
 
-async def _client(plan: Plan, server: Server, connect: Connect) -> ZabbixClient:
-    for known, client in plan.clients.items():
-        if known.url == server.url:
-            return client
-    client = await connect(server)
-    plan.clients[server] = client
-    return client
-
-
-def _asked(configured: str | Choice[str] | None, selection: ServerSelection) -> bool:
-    """Whether choosing the servers involved asking the user."""
-    if configured is None:
-        return True
+def _asked(configured: str | Choice[str] | None, server: Server) -> bool:
+    """Whether choosing the server involved asking the user."""
     if isinstance(configured, str):
-        # An unknown name, replaced by the user's choice.
-        (server,) = selection.servers
+        # Asked only if the name was unknown and the user chose another.
         return configured not in (server.name, server.url)
-    return configured.select is Select.PROMPT
+    return True
 
 
 async def _items(

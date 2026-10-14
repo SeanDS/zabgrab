@@ -103,7 +103,7 @@ Last values sort numbers in numeric order, and ages put the newest first.
 
 ```bash
 zabgrab fetch -t particles -o                       # a template, saved under an automatic name
-zabgrab fetch -t particles -t temps -o data.csv     # stacked templates, in one file
+zabgrab fetch -t particles -i 12345 -o data.h5      # a template plus another item
 zabgrab fetch -s demo -i "host=demo1,name=CPU *" --from "24 hours ago" --to now -o
 zabgrab fetch -t particles --resolution 1h --agg avg --agg max -o   # Zabbix's hourly trends
 zabgrab fetch -t particles --explain                 # show the settings and where they came from
@@ -118,17 +118,19 @@ Templates define what to fetch, and can set any `fetch` option:
 
 ```toml
 [templates.particles]
-server = "demo"                                     # or a URL, or a choice (see below)
+server = "demo"                                     # or a URL, or { choices = ["demo", "lab"] }
 items = [{ host = "demo1", name = "Particles *" }, { itemid = 12345 }]
 from = "24 hours ago"
 to = "now"
 resolution = "raw"                                  # or "1h" for hourly trends
-format = "csv"
+format = "h5"
 ```
 
-Command line options override templates, which override `[defaults]`; zabgrab says
-when an option overrides a template. Stacked templates must agree on the time range,
-resolution and statistics. Anything missing (such as the time range) is asked for,
+Each fetch uses one template (or none) and one server. A template's server can be a
+list of choices, which you're asked to pick from (`--server` picks one without
+asking). Command line options override the template, which overrides `[defaults]`;
+zabgrab says when an option overrides a template. Anything missing (such as the time
+range or the format) is asked for,
 and afterwards zabgrab shows the command that would have avoided the questions
 (`Next time: zabgrab fetch ...`).
 

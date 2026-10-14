@@ -287,12 +287,11 @@ class TestDelimitedWriter:
 def test_metadata() -> None:
     query = Query(
         requests=(
-            Request("particles", "demo", (ItemSpec(host="demo1", name="P*"),)),
-            Request(
-                "__custom", Choice[str](choices=["demo", "lab"]), (ItemSpec(itemid=5),)
-            ),
+            Request("particles", (ItemSpec(host="demo1", name="P*"),)),
+            Request("__custom", (ItemSpec(itemid=5),)),
         ),
-        templates=("particles", "gone"),
+        template="particles",
+        server=Choice[str](choices=["demo", "lab"]),
         custom=True,
         start=START,
         end=END,
@@ -325,15 +324,17 @@ def test_metadata() -> None:
     assert metadata["query"]["from"] == "24 hours ago"
     assert metadata["query"]["start"] == "2026-10-13T10:15:00+00:00"
     assert metadata["query"]["sources"] == {"from": "template 'particles'"}
-    assert metadata["query"]["requests"][0] == {
-        "label": "particles",
-        "server": "demo",
-        "items": [{"host": "demo1", "name": "P*"}],
-    }
-    assert metadata["query"]["requests"][1]["server"] == {
-        "choices": ["demo", "lab"],
-        "select": "prompt",
-    }
+    assert metadata["query"]["templates"] == ["particles"]
+    # Each request records the server (kept from when requests had their own).
+    server = {"choices": ["demo", "lab"], "select": "prompt"}
+    assert metadata["query"]["requests"] == [
+        {
+            "label": "particles",
+            "server": server,
+            "items": [{"host": "demo1", "name": "P*"}],
+        },
+        {"label": "__custom", "server": server, "items": [{"itemid": 5}]},
+    ]
     assert metadata["templates"] == {
         "particles": {"items": [{"name": "P*"}], "from": "24 hours ago"}
     }

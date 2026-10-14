@@ -54,7 +54,7 @@ from .discovery import ItemSpecType
     "templates",
     multiple=True,
     metavar="NAME",
-    help="Template to fetch (repeat to stack several).",
+    help="Template to fetch.",
 )
 @click.option(
     "-i",
@@ -71,7 +71,7 @@ from .discovery import ItemSpecType
     "servers",
     multiple=True,
     metavar="NAME|URL",
-    help="Server to fetch from (repeat for several); overrides templates' servers.",
+    help="Server to fetch from; overrides the template's server.",
 )
 @click.option("--from", "from_", metavar="TIME", help=f"Start time, {EXAMPLES}.")
 @click.option("--to", metavar="TIME", help="End time (as for --from).")
@@ -223,7 +223,14 @@ def fetch_command(
     def parse(text: str, tz: tzinfo | None) -> datetime:
         return parse_time(text, now=now, tz=tz)
 
-    cli = CliRequest(templates, items, servers, values)
+    cli = CliRequest(
+        template=_one(
+            templates, "--template", "Only one template can be fetched at a time."
+        ),
+        items=items,
+        server=_one(servers, "--server", "zabgrab fetches from one server at a time."),
+        values=values,
+    )
     query = resolve_query(
         cli,
         loaded.config,
@@ -254,6 +261,12 @@ def fetch_command(
         _show_equivalent(app, query)
     if partial:
         click.get_current_context().exit(EXIT_PARTIAL)
+
+
+def _one(values: tuple[str, ...], option: str, reason: str) -> str | None:
+    if len(values) > 1:
+        raise click.UsageError(f"{option} can only be given once: {reason}")
+    return values[0] if values else None
 
 
 @dataclass(frozen=True)
@@ -390,7 +403,7 @@ async def _download(
     plan = await collect(
         query,
         app.ui,
-        select_servers=lambda server: app.select_servers([], server),
+        select_server=app.select_server,
         connect=app.connect,
         yes=yes,
     )
