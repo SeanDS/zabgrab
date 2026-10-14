@@ -14,7 +14,7 @@ from ..model.server import Server
 from ..services.discover import find_items, on_servers
 from ..services.ports import ZabbixClient
 from ..ui.render import hosts_table, items_table
-from .app import AppContext, pass_app
+from .app import AppContext, global_options, pass_app
 
 T = TypeVar("T")
 F = TypeVar("F", bound=Callable[..., Any])
@@ -85,6 +85,7 @@ def _report_limit(
 
 
 @click.command("hosts")
+@global_options
 @click.argument("pattern", required=False)
 @click.option("-g", "--group", help="Only hosts in host groups matching this pattern.")
 @server_option
@@ -116,6 +117,7 @@ def hosts_command(
 
 
 @click.command("items")
+@global_options
 @click.argument("pattern", required=False)
 @click.option("-H", "--host", help="Only items on hosts matching this pattern.")
 @click.option("-k", "--key", help="Only items whose key matches this pattern.")

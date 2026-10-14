@@ -12,10 +12,11 @@ from ..model.server import Server
 from ..services import tokens
 from ..services.servers import resolve_server
 from ..ui.render import tokens_table
-from .app import AppContext, pass_app
+from .app import AppContext, global_options, pass_app
 
 
 @click.group("token")
+@global_options
 def token_group() -> None:
     """Manage API tokens stored in your system keyring.
 
@@ -33,6 +34,7 @@ def _server(app: AppContext, ref: str | None) -> Server:
 
 
 @token_group.command("list")
+@global_options
 @click.option("--check", is_flag=True, help="Check each token against its server.")
 @pass_app
 def list_command(app: AppContext, check: bool) -> None:
@@ -67,6 +69,7 @@ def list_command(app: AppContext, check: bool) -> None:
 
 
 @token_group.command("add")
+@global_options
 @click.argument("server", required=False, metavar="[NAME|URL]")
 @click.option("--stdin", is_flag=True, help="Read the token from standard input.")
 @click.option(
@@ -97,6 +100,7 @@ def add_command(
 
 
 @token_group.command("delete")
+@global_options
 @click.argument("server", required=False, metavar="[NAME|URL]")
 @click.option("-y", "--yes", is_flag=True, help="Don't ask for confirmation.")
 @pass_app

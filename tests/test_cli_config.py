@@ -11,12 +11,9 @@ from click.testing import CliRunner, Result
 
 from zabgrab import __version__
 from zabgrab.adapters.configfiles import Environment
-from zabgrab.adapters.secrets import KeyringSecrets
-from zabgrab.adapters.system import SystemClock
-from zabgrab.cli import cli, http_client
+from zabgrab.cli import cli
 from zabgrab.cli.app import AppContext
 from zabgrab.errors import EXIT_ERROR, EXIT_INTERRUPTED, ZabgrabError
-from zabgrab.ui.console import RichUI
 
 from .fakes import FakeEditor
 
@@ -29,13 +26,13 @@ def user_config(fake_home: Path) -> Path:
 @pytest.fixture
 def editor(monkeypatch: pytest.MonkeyPatch) -> FakeEditor:
     fake = FakeEditor()
-    monkeypatch.setattr("zabgrab.cli.ClickEditor", lambda: fake)
+    monkeypatch.setattr("zabgrab.cli.app.ClickEditor", lambda: fake)
     return fake
 
 
 @pytest.fixture
 def interactive(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("zabgrab.cli.is_interactive", lambda *args, **kwargs: True)
+    monkeypatch.setattr("zabgrab.cli.app.is_interactive", lambda *args, **kwargs: True)
 
 
 def run(*args: str, input: str | None = None) -> Result:
@@ -306,14 +303,8 @@ class TestMoreEdit:
 
 
 def test_config_is_loaded_once(env: Environment) -> None:
-    app = AppContext(
-        ui=RichUI(interactive=False),
-        env=env,
-        editor=FakeEditor(),
-        secrets=KeyringSecrets(),
-        client_factory=http_client,
-        clock=SystemClock(),
-    )
+    app = AppContext()
+    app.env = env
     assert app.config() is app.config()
 
 

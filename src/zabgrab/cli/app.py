@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import click
 
@@ -18,33 +19,74 @@ from ..adapters.configfiles import (
     load_config,
     user_config_path,
 )
+from ..adapters.secrets import KeyringSecrets
+from ..adapters.system import ClickEditor, SystemClock
+from ..adapters.zabbix import HttpTransport, ZabbixAPI
 from ..errors import EXIT_ERROR, EXIT_INTERRUPTED, ZabgrabError
 from ..model.choice import Choice
+from ..model.config import ServerConfig
 from ..model.server import Server
 from ..services import servers, session
 from ..services.config import load_with_repair
 from ..services.ports import ClientFactory, Clock, Editor, SecretStore, ZabbixClient
-from ..ui.console import RichUI
+from ..ui.console import RichUI, is_interactive
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def http_client(config: ServerConfig) -> ZabbixClient:
+    """Create a client that talks to a real server over HTTP(S)."""
+    return ZabbixAPI(
+        HttpTransport(config.url, verify_ssl=config.verify_ssl, timeout=config.timeout)
+    )
 
 
 @dataclass
-class AppContext:
-    """State shared by all commands, built from the global options."""
+class GlobalOptions:
+    """Options accepted by every command (see :func:`global_options`)."""
 
-    ui: RichUI
-    env: Environment
-    editor: Editor
-    secrets: SecretStore
-    client_factory: ClientFactory
-    clock: Clock
-    explicit_config: Path | None = None
+    verbosity: int = 0
+    debug: bool = False
+    color: bool | None = None
+    config_path: Path | None = None
     isolated: bool = False
-    _loaded: LoadedConfig | None = field(default=None, init=False, repr=False)
+    no_input: bool = False
+
+
+class AppContext:
+    """State shared by all commands: the click context object.
+
+    Global options update :attr:`options` while the command line is parsed, at
+    whichever level they appear; everything else is built on first use.
+    """
+
+    def __init__(self) -> None:
+        self.options = GlobalOptions()
+        self.env = Environment.current()
+        self.editor: Editor = ClickEditor()
+        self.secrets: SecretStore = KeyringSecrets()
+        self.client_factory: ClientFactory = http_client
+        self.clock: Clock = SystemClock()
+        self._loaded: LoadedConfig | None = None
+
+    @cached_property
+    def ui(self) -> RichUI:
+        """The terminal UI, configured by the global options."""
+        return RichUI(
+            interactive=is_interactive(
+                self.env.variables, no_input=self.options.no_input
+            ),
+            verbosity=self.options.verbosity,
+            color=self.options.color,
+            debug=self.options.debug,
+        )
 
     def layers(self) -> list[ConfigLayer]:
         """The config layers, including those without a file."""
         return discover_layers(
-            self.env, explicit=self.explicit_config, isolated=self.isolated
+            self.env,
+            explicit=self.options.config_path,
+            isolated=self.options.isolated,
         )
 
     def config(self) -> LoadedConfig:
@@ -84,7 +126,98 @@ class AppContext:
         )
 
 
-pass_app = click.make_pass_decorator(AppContext)
+pass_app = click.make_pass_decorator(AppContext, ensure=True)
+
+
+def _set(
+    apply: Callable[[GlobalOptions, Any], None],
+) -> Callable[[click.Context, click.Parameter, Any], None]:
+    """An option callback applying a given (non-default) value to the options."""
+
+    def callback(ctx: click.Context, param: click.Parameter, value: Any) -> None:
+        if value not in (None, False, 0):
+            apply(ctx.ensure_object(AppContext).options, value)
+
+    return callback
+
+
+def _add_verbosity(options: GlobalOptions, count: int) -> None:
+    options.verbosity += count
+
+
+def _subtract_verbosity(options: GlobalOptions, count: int) -> None:
+    options.verbosity -= count
+
+
+GLOBAL_OPTIONS = [
+    click.option(
+        "-v",
+        "--verbose",
+        count=True,
+        expose_value=False,
+        callback=_set(_add_verbosity),
+        help="Show more output (repeat for even more).",
+    ),
+    click.option(
+        "-q",
+        "--quiet",
+        count=True,
+        expose_value=False,
+        callback=_set(_subtract_verbosity),
+        help="Show less output (repeat for less).",
+    ),
+    click.option(
+        "--debug",
+        is_flag=True,
+        expose_value=False,
+        callback=_set(lambda options, value: setattr(options, "debug", True)),
+        help="Show debug messages and full tracebacks for errors.",
+    ),
+    click.option(
+        "--color/--no-color",
+        default=None,
+        expose_value=False,
+        callback=_set(lambda options, value: setattr(options, "color", value)),
+        help="Force coloured output on or off. Default: on for terminals, unless "
+        "$NO_COLOR is set.",
+    ),
+    click.option(
+        "-c",
+        "--config",
+        type=click.Path(dir_okay=False, path_type=Path),
+        envvar="ZABGRAB_CONFIG",
+        show_envvar=True,
+        expose_value=False,
+        callback=_set(lambda options, value: setattr(options, "config_path", value)),
+        help="Extra config file, applied on top of all others.",
+    ),
+    click.option(
+        "--isolated",
+        is_flag=True,
+        expose_value=False,
+        callback=_set(lambda options, value: setattr(options, "isolated", True)),
+        help="Ignore the system, user and project config files.",
+    ),
+    click.option(
+        "--no-input",
+        is_flag=True,
+        expose_value=False,
+        callback=_set(lambda options, value: setattr(options, "no_input", True)),
+        help="Never prompt; fail with instructions instead. Also enabled by "
+        "$ZABGRAB_NO_INPUT or $CI.",
+    ),
+]
+
+
+def global_options(function: F) -> F:
+    """Add the global options to a command or group.
+
+    Every command gets them, so they can be given at any level, e.g. both
+    ``zabgrab -v hosts`` and ``zabgrab hosts -v``.
+    """
+    for option in reversed(GLOBAL_OPTIONS):
+        function = option(function)
+    return function
 
 
 class ZabgrabGroup(click.Group):

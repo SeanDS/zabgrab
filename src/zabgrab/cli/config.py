@@ -16,7 +16,7 @@ from ..adapters.configfiles import (
 )
 from ..errors import ConfigError, ZabgrabError
 from ..ui.render import config_to_toml, config_with_sources, layers_table
-from .app import AppContext, pass_app
+from .app import AppContext, global_options, pass_app
 
 STARTER_CONFIG = """\
 # zabgrab configuration (TOML).
@@ -40,11 +40,13 @@ EDIT_TARGETS = {
 
 
 @click.group("config")
+@global_options
 def config_group() -> None:
     """Show and edit the configuration."""
 
 
 @config_group.command("paths")
+@global_options
 @pass_app
 def paths_command(app: AppContext) -> None:
     """List the config files zabgrab reads, and which exist."""
@@ -52,6 +54,7 @@ def paths_command(app: AppContext) -> None:
 
 
 @config_group.command("show")
+@global_options
 @click.option(
     "--sources",
     is_flag=True,
@@ -68,6 +71,7 @@ def show_command(app: AppContext, sources: bool) -> None:
 
 
 @config_group.command("edit")
+@global_options
 @click.option(
     "--target",
     type=click.Choice(list(EDIT_TARGETS)),

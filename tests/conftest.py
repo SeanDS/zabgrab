@@ -62,12 +62,12 @@ def user_config(fake_home: Path) -> Path:
 @pytest.fixture
 def servers(monkeypatch: pytest.MonkeyPatch, user_config: Path) -> Servers:
     fake = Servers()
-    monkeypatch.setattr("zabgrab.cli.http_client", fake.factory)
-    monkeypatch.setattr("zabgrab.cli.KeyringSecrets", lambda: fake.secrets)
-    monkeypatch.setattr("zabgrab.cli.SystemClock", lambda: FrozenClock(NOW))
+    monkeypatch.setattr("zabgrab.cli.app.http_client", fake.factory)
+    monkeypatch.setattr("zabgrab.cli.app.KeyringSecrets", lambda: fake.secrets)
+    monkeypatch.setattr("zabgrab.cli.app.SystemClock", lambda: FrozenClock(NOW))
     return fake
 
 
 @pytest.fixture
 def interactive(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("zabgrab.cli.is_interactive", lambda *args, **kwargs: True)
+    monkeypatch.setattr("zabgrab.cli.app.is_interactive", lambda *args, **kwargs: True)

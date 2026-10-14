@@ -9,7 +9,8 @@ import pytest
 from click.testing import CliRunner
 
 from zabgrab.adapters.zabbix import HttpTransport, ZabbixAPI
-from zabgrab.cli import cli, http_client
+from zabgrab.cli import cli
+from zabgrab.cli.app import http_client
 from zabgrab.errors import EXIT_ERROR
 from zabgrab.model.config import ServerConfig
 
