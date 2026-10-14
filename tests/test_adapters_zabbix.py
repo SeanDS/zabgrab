@@ -327,6 +327,24 @@ class TestHttpTransport:
         with pytest.raises(ConnectionFailed, match="returned HTTP 404 Not Found"):
             run(self._raw_server(handler))
 
+    @pytest.mark.parametrize(
+        ("location", "suggestion"),
+        [
+            ("https://z.example.org/api_jsonrpc.php", "https://z.example.org"),
+            ("/zabbix/api_jsonrpc.php", "/zabbix"),
+        ],
+    )
+    def test_redirect(self, location: str, suggestion: str) -> None:
+        async def handler(request: web.Request) -> web.Response:
+            raise web.HTTPFound(location)
+
+        with pytest.raises(ConnectionFailed, match="redirects to") as exc_info:
+            run(self._raw_server(handler))
+        assert exc_info.value.hint is not None
+        assert exc_info.value.hint.startswith("Use ")
+        assert suggestion in exc_info.value.hint
+        assert "api_jsonrpc.php" not in exc_info.value.hint
+
     def test_not_json(self) -> None:
         async def handler(request: web.Request) -> web.Response:
             return web.Response(text="<html>login page</html>")

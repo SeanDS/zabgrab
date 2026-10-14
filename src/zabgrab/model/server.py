@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urlsplit, urlunsplit
 
 from .config import ServerConfig
+from .names import frontend_url
 
 
 @dataclass(frozen=True)
@@ -27,11 +27,7 @@ class Server:
     @property
     def frontend_url(self) -> str:
         """The web frontend's base URL (without ``api_jsonrpc.php``)."""
-        parts = urlsplit(self.url)
-        path = parts.path
-        if path.endswith(".php"):
-            path = path.rsplit("/", 1)[0]
-        return urlunsplit(parts._replace(path=path.rstrip("/"), query="", fragment=""))
+        return frontend_url(self.url)
 
     @property
     def token_page(self) -> str:

@@ -42,6 +42,15 @@ def validate_url(value: str) -> str:
     return value
 
 
+def frontend_url(url: str) -> str:
+    """The web frontend's base URL, given it or its ``.../api_jsonrpc.php`` URL."""
+    parts = urlsplit(url)
+    path = parts.path
+    if path.endswith(".php"):
+        path = path.rsplit("/", 1)[0]
+    return parts._replace(path=path.rstrip("/"), query="", fragment="").geturl()
+
+
 def validate_server_ref(value: str) -> str:
     """Return ``value`` if it is a server name or an absolute HTTP(S) URL."""
     if is_valid_name(value) or is_url(value):

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from typing import Any, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import aiohttp
 
 from ...errors import ConnectionFailed
+from ...model.names import frontend_url
 
 API_PATH = "api_jsonrpc.php"
 
@@ -54,8 +55,19 @@ class HttpTransport:
     async def post(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
         try:
             async with self._client().post(
-                self.endpoint, json=body, headers=headers
+                self.endpoint, json=body, headers=headers, allow_redirects=False
             ) as response:
+                if 300 <= response.status < 400:
+                    # Following a redirect would turn the POST into a GET (losing
+                    # the request) or could send credentials to another host.
+                    target = urljoin(
+                        self.endpoint, response.headers.get("Location", "")
+                    )
+                    raise ConnectionFailed(
+                        f"{self.endpoint} redirects to {target}.",
+                        hint=f"Use {frontend_url(target)} as the server URL instead "
+                        "(with --server, or as the server's url in your config).",
+                    )
                 if response.status != 200:
                     raise ConnectionFailed(
                         f"{self.endpoint} returned HTTP {response.status} "
