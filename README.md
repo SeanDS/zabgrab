@@ -72,9 +72,8 @@ zabgrab token delete demo
 zabgrab token reset                  # delete all of zabgrab's tokens
 ```
 
-All tokens are kept in a single keyring entry (service `zabgrab`, name `tokens`).
-Windows limits keyring entries to about 2.5 KB, which is enough for roughly 10-20
-tokens; beyond that, use `token_env` instead.
+Tokens are kept in keyring entries under the service `zabgrab`, named `token1`,
+`token2`, and so on (one per server).
 
 Global options such as `-v`, `-q`, `--debug` and `--config` can be given before or
 after the command: `zabgrab -v hosts` and `zabgrab hosts -v` are the same.

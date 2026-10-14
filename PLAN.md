@@ -598,17 +598,18 @@ timeseries.
 - `zabgrab token list [--check]`: every configured server plus any other server with
   a stored token, showing whether a token is stored and the `token_env` status (never
   the tokens). `--check` tests each token against its server.
-- All tokens live in one keyring entry (`zabgrab`/`tokens`, a JSON map of URL to
-  token), because keyring backends can't be enumerated. Windows limits entries to
-  about 2.5 KB (roughly 10-20 tokens).
+- Tokens live in numbered keyring entries `zabgrab`/`token1`, `token2`, ... each
+  holding `{"url", "token"}` as JSON. Keyring backends can't be enumerated, so
+  zabgrab reads entries in order until the first missing one; deleting moves the
+  last entry into the gap so numbering stays contiguous. `token reset` deletes
+  entries until 256 consecutive numbers are empty, to catch leftovers beyond a gap.
 - `zabgrab token add [SERVER] [FILE] [--no-check]`: shows the token page URL, reads
   the token from FILE (`-` for stdin) or asks for it (hidden input), checks it against
   the server unless `--no-check`, and stores it. Without SERVER, asks which
   (including "Custom…").
 - `zabgrab token delete [SERVER] [--yes]`: confirms first (non-interactive runs need
   `--yes`). Without SERVER, asks which of the stored tokens.
-- `zabgrab token reset [--yes]`: deletes the keyring entry, leaving nothing of
-  zabgrab's behind.
+- `zabgrab token reset [--yes]`: deletes all of zabgrab's keyring entries.
 
 ## Merged view, plotting and export
 
@@ -759,8 +760,8 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   retries and concurrent requests, and silently reads `ZABBIX_TOKEN` and similar
   environment variables.
 - `zabgrab login`/`logout` became `zabgrab token list|add|delete|reset`, done early
-  (after phase 2). Tokens are stored in a single keyring entry rather than one per
-  server plus an index.
+  (after phase 2). Tokens are stored in numbered keyring entries (`token1`,
+  `token2`, ...), avoiding both a separate index and a single size-limited entry.
 - Global options are accepted by every command, before or after it (a shared
   decorator whose callbacks update the click context object).
 - API endpoint redirects (e.g. HTTP to HTTPS) are never followed automatically:

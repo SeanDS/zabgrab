@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import contextlib
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import keyring
 from keyring.errors import KeyringError, PasswordDeleteError
@@ -11,10 +13,27 @@ from keyring.errors import KeyringError, PasswordDeleteError
 from .. import PROGRAM
 from ..errors import ZabgrabError
 
-#: The single keyring entry holding all tokens, as a JSON object mapping server URLs
-#: to tokens. One entry (rather than one per server) means zabgrab can list and
-#: remove its tokens, which keyring backends otherwise can't enumerate.
-ENTRY = "tokens"
+#: Tokens are stored one per keyring entry, named ``token1``, ``token2``, ... with no
+#: gaps (keyring backends can't be listed, so zabgrab reads entries in order until it
+#: finds a missing one). Each entry holds ``{"url": ..., "token": ...}`` as JSON.
+PREFIX = "token"
+
+#: How many consecutive missing entries :meth:`KeyringSecrets.delete_all` checks
+#: past the last entry it finds, to catch anything left beyond a gap.
+RESET_SCAN = 256
+
+
+@dataclass(frozen=True)
+class _Entry:
+    number: int
+    url: str | None
+    """``None`` if the entry is unreadable (it still occupies its number)."""
+    token: str | None
+    raw: str
+
+
+def _name(number: int) -> str:
+    return f"{PREFIX}{number}"
 
 
 class KeyringSecrets:
@@ -27,56 +46,96 @@ class KeyringSecrets:
     service = PROGRAM
 
     def get_token(self, url: str) -> str | None:
-        return self._read().get(url)
+        entry = _find(url, self._entries())
+        return entry.token if entry else None
 
     def set_token(self, url: str, token: str) -> None:
-        tokens = self._read()
-        tokens[url] = token
-        self._write(tokens, "save the token in")
+        entries = self._entries()
+        existing = _find(url, entries)
+        number = existing.number if existing else len(entries) + 1
+        value = json.dumps({"url": url, "token": token})
+        self._change("save the token in", lambda: self._set(number, value))
 
     def delete_token(self, url: str) -> bool:
-        tokens = self._read()
-        if tokens.pop(url, None) is None:
+        entries = self._entries()
+        entry = _find(url, entries)
+        if entry is None:
             return False
-        self._write(tokens, "delete the token from")
+
+        def delete() -> None:
+            # Keep the numbering contiguous: move the last entry into the gap.
+            last = entries[-1]
+            if last.number != entry.number:
+                self._set(entry.number, last.raw)
+            keyring.delete_password(self.service, _name(last.number))
+
+        self._change("delete the token from", delete)
         return True
 
     def urls(self) -> list[str]:
-        return sorted(self._read())
+        return sorted(entry.url for entry in self._entries() if entry.url)
 
     def delete_all(self) -> int:
-        count = len(self._read())
-        self._write({}, "delete the tokens from")
+        count = len(self.urls())
+
+        def delete() -> None:
+            number, missing = 1, 0
+            while missing < RESET_SCAN:
+                if keyring.get_password(self.service, _name(number)) is None:
+                    missing += 1
+                else:
+                    missing = 0
+                    with contextlib.suppress(PasswordDeleteError):
+                        keyring.delete_password(self.service, _name(number))
+                number += 1
+
+        self._change("delete the tokens from", delete)
         return count
 
-    def _read(self) -> dict[str, str]:
-        try:
-            stored = keyring.get_password(self.service, ENTRY)
-        except KeyringError:
-            return {}
-        try:
-            tokens = json.loads(stored or "{}")
-        except ValueError:
-            return {}
-        if not isinstance(tokens, dict):
-            return {}
-        return {
-            url: token
-            for url, token in tokens.items()
-            if isinstance(url, str) and isinstance(token, str)
-        }
+    def _entries(self) -> list[_Entry]:
+        entries = []
+        number = 1
+        while True:
+            try:
+                raw = keyring.get_password(self.service, _name(number))
+            except KeyringError:
+                break
+            if raw is None:
+                break
+            entries.append(_parse(number, raw))
+            number += 1
+        return entries
 
-    def _write(self, tokens: dict[str, str], action: str) -> None:
+    def _set(self, number: int, value: str) -> None:
+        keyring.set_password(self.service, _name(number), value)
+
+    def _change(self, action: str, change: Callable[[], None]) -> None:
         try:
-            if tokens:
-                keyring.set_password(self.service, ENTRY, json.dumps(tokens))
-            else:
-                # Leave nothing behind once the last token is gone.
-                with contextlib.suppress(PasswordDeleteError):
-                    keyring.delete_password(self.service, ENTRY)
+            change()
         except KeyringError as exc:
             raise ZabgrabError(
                 f"Couldn't {action} the system keyring: {exc}",
                 hint="Set token_env for the server in your config and put the token "
                 "in that environment variable instead.",
             ) from exc
+
+
+def _find(url: str, entries: list[_Entry]) -> _Entry | None:
+    for entry in entries:
+        if entry.url == url:
+            return entry
+    return None
+
+
+def _parse(number: int, raw: str) -> _Entry:
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return _Entry(number, None, None, raw)
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("url"), str)
+        or not isinstance(data.get("token"), str)
+    ):
+        return _Entry(number, None, None, raw)
+    return _Entry(number, data["url"], data["token"], raw)
