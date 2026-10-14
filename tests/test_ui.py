@@ -245,3 +245,22 @@ def test_choose_many_reasks(
 )
 def test_format_age(seconds: int, text: str) -> None:
     assert format_age(timedelta(seconds=seconds)) == text
+
+
+def test_progress_renders_on_terminals(capsys: pytest.CaptureFixture[str]) -> None:
+    ui = RichUI(interactive=False, color=True)
+    with ui.progress("Downloading", 2) as progress:
+        item = progress.add_item("demo1: Particles", 2)
+        progress.advance(item)
+        progress.advance(item)
+        progress.remove_item(item)
+    err = capsys.readouterr().err
+    assert "Downloading" in err
+    assert "2/2" in err
+
+
+def test_progress_hidden_when_quiet(capsys: pytest.CaptureFixture[str]) -> None:
+    ui = RichUI(interactive=False, color=True, verbosity=-1)
+    with ui.progress("Downloading", 1) as progress:
+        progress.advance(progress.add_item("x", 1))
+    assert capsys.readouterr().err == ""

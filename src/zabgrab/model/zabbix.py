@@ -68,3 +68,29 @@ class Item:
     enabled: bool = True
     last_value: str | None = None
     last_clock: datetime | None = None
+
+
+@dataclass(frozen=True)
+class HistoryRow:
+    """One raw value of an item."""
+
+    time: float
+    """POSIX seconds, including the nanosecond part."""
+    value: str
+    # Log items only.
+    log_time: int | None = None
+    source: str = ""
+    severity: int = 0
+    event_id: int = 0
+
+
+@dataclass(frozen=True)
+class TrendRow:
+    """Hourly statistics of a numeric item."""
+
+    time: int
+    """Start of the hour, POSIX seconds."""
+    count: int
+    min: str
+    avg: str
+    max: str

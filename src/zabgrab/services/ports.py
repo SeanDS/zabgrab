@@ -8,13 +8,14 @@ Services never print, prompt or perform I/O except through these.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Generic, Protocol, TypeVar
 
 from ..model.config import ServerConfig
-from ..model.zabbix import Host, Item
+from ..model.zabbix import HistoryRow, Host, Item, TrendRow
 
 T = TypeVar("T")
 
@@ -26,6 +27,22 @@ class Option(Generic[T]):
     label: str
     value: T
     description: str | None = None
+
+
+class Progress(Protocol):
+    """Reports progress of a download: an overall count plus one bar per item."""
+
+    def add_item(self, label: str, total: int) -> int:
+        """Start showing an item with ``total`` steps; returns its ID."""
+        ...
+
+    def advance(self, item: int) -> None:
+        """Mark one step of an item (and of the overall total) as done."""
+        ...
+
+    def remove_item(self, item: int) -> None:
+        """Stop showing an item."""
+        ...
 
 
 class UI(Protocol):
@@ -97,6 +114,12 @@ class UI(Protocol):
         """Ask the user to pick one or more options."""
         ...
 
+    def progress(
+        self, description: str, total: int
+    ) -> AbstractContextManager[Progress]:
+        """Show progress of ``total`` steps while the context is active."""
+        ...
+
 
 class Clock(Protocol):
     """Source of the current time."""
@@ -163,6 +186,14 @@ class ZabbixClient(Protocol):
         tag: str | None = None,
         limit: int | None = None,
     ) -> list[Item]: ...
+
+    async def history(self, item: Item, start: int, end: int) -> list[HistoryRow]:
+        """Raw values between two POSIX times (inclusive), oldest first."""
+        ...
+
+    async def trends(self, item: Item, start: int, end: int) -> list[TrendRow]:
+        """Hourly trends for hours starting between two POSIX times (inclusive)."""
+        ...
 
 
 ClientFactory = Callable[[ServerConfig], ZabbixClient]

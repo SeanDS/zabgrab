@@ -9,7 +9,7 @@ from types import TracebackType
 from typing import Any
 
 from ...errors import AuthenticationFailed, UnsupportedServer, ZabbixAPIError
-from ...model.zabbix import Host, Item, ValueType
+from ...model.zabbix import HistoryRow, Host, Item, TrendRow, ValueType
 from .transport import Transport
 
 MIN_VERSION = (7, 0)
@@ -221,6 +221,36 @@ class ZabbixAPI:
 
         return [_item(row) for row in await self.call("item.get", params)]
 
+    async def history(self, item: Item, start: int, end: int) -> list[HistoryRow]:
+        """Raw values of ``item`` between two POSIX times (inclusive), oldest first."""
+        rows = await self.call(
+            "history.get",
+            {
+                "output": "extend",
+                "history": int(item.value_type),
+                "itemids": [str(item.itemid)],
+                "time_from": start,
+                "time_till": end,
+                "sortfield": "clock",
+                "sortorder": "ASC",
+            },
+        )
+        return sorted((_history_row(row) for row in rows), key=lambda row: row.time)
+
+    async def trends(self, item: Item, start: int, end: int) -> list[TrendRow]:
+        """Hourly trends of ``item`` for hours starting between two POSIX times
+        (inclusive), oldest first."""
+        rows = await self.call(
+            "trend.get",
+            {
+                "output": ["clock", "num", "value_min", "value_avg", "value_max"],
+                "itemids": [str(item.itemid)],
+                "time_from": start,
+                "time_till": end,
+            },
+        )
+        return sorted((_trend_row(row) for row in rows), key=lambda row: row.time)
+
 
 def _api_error(method: str, error: Any) -> ZabbixAPIError:
     if not isinstance(error, dict):
@@ -272,4 +302,26 @@ def _item(row: dict[str, Any]) -> Item:
         enabled=str(row.get("status", "0")) == "0",
         last_value=row.get("lastvalue") if clock else None,
         last_clock=datetime.fromtimestamp(clock, UTC) if clock else None,
+    )
+
+
+def _history_row(row: dict[str, Any]) -> HistoryRow:
+    log_time = int(row.get("timestamp") or 0)
+    return HistoryRow(
+        time=int(row["clock"]) + int(row.get("ns") or 0) / 1e9,
+        value=str(row["value"]),
+        log_time=log_time or None,
+        source=str(row.get("source", "")),
+        severity=int(row.get("severity") or 0),
+        event_id=int(row.get("logeventid") or 0),
+    )
+
+
+def _trend_row(row: dict[str, Any]) -> TrendRow:
+    return TrendRow(
+        time=int(row["clock"]),
+        count=int(row["num"]),
+        min=str(row["value_min"]),
+        avg=str(row["value_avg"]),
+        max=str(row["value_max"]),
     )

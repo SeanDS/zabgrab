@@ -7,17 +7,27 @@ Diagnostics and prompts go to stderr; data (tables, TOML, ...) goes to stdout vi
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from typing import Any, TextIO, TypeVar
 
 from rich.console import Console, RenderableType
 from rich.highlighter import RegexHighlighter
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    TaskID,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
+from rich.progress import Progress as RichProgress
 from rich.prompt import Confirm, Prompt
 from rich.text import Text
 from rich.theme import Theme
 
 from ..errors import Cancelled, InputRequired
-from ..services.ports import Option
+from ..services.ports import Option, Progress
 from .selection import parse_selection
 
 T = TypeVar("T")
@@ -291,3 +301,36 @@ class RichUI:
                 ]
             except ValueError as exc:
                 self._message(str(exc), "zabgrab.error")
+
+    # Progress.
+
+    @contextmanager
+    def progress(self, description: str, total: int) -> Iterator[Progress]:
+        bars = RichProgress(
+            TextColumn("{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=self.err,
+            disable=self.verbosity < 0 or not self.err.is_terminal,
+        )
+        overall = bars.add_task(description, total=total)
+        with bars:
+            yield _RichProgress(bars, overall)
+
+
+class _RichProgress:
+    def __init__(self, bars: RichProgress, overall: TaskID) -> None:
+        self.bars = bars
+        self.overall = overall
+
+    def add_item(self, label: str, total: int) -> int:
+        return int(self.bars.add_task(f"  {label}", total=total))
+
+    def advance(self, item: int) -> None:
+        self.bars.advance(TaskID(item))
+        self.bars.advance(self.overall)
+
+    def remove_item(self, item: int) -> None:
+        self.bars.remove_task(TaskID(item))

@@ -10,6 +10,7 @@ with ``*`` as a wildcard when ``searchWildcardsEnabled`` is set.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import secrets
 from collections.abc import AsyncIterator
@@ -20,7 +21,7 @@ from typing import Any
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from zabgrab.errors import Redirected
+from zabgrab.errors import ConnectionFailed, Redirected
 
 NOT_AUTHORIZED = {
     "code": -32602,
@@ -82,6 +83,61 @@ class FakeZabbix:
     #: Errors to return for a method instead of handling it.
     errors: dict[str, Any] = field(default_factory=dict)
     sessions: set[str] = field(default_factory=set)
+    #: Raw history rows by item ID, in API form (all values strings).
+    history: dict[int, list[dict[str, str]]] = field(default_factory=dict)
+    #: Hourly trend rows by item ID, in API form.
+    trends: dict[int, list[dict[str, str]]] = field(default_factory=dict)
+
+    def add_history(self, itemid: int, *points: tuple[float, Any]) -> None:
+        """Add raw values as (POSIX time, value) pairs."""
+        for time, value in points:
+            clock = int(time)
+            self.history.setdefault(itemid, []).append(
+                {
+                    "itemid": str(itemid),
+                    "clock": str(clock),
+                    "ns": str(round((time - clock) * 1e9)),
+                    "value": str(value),
+                }
+            )
+
+    def add_log(
+        self,
+        itemid: int,
+        clock: int,
+        value: str,
+        *,
+        timestamp: int,
+        source: str,
+        severity: int,
+        logeventid: int,
+    ) -> None:
+        self.history.setdefault(itemid, []).append(
+            {
+                "itemid": str(itemid),
+                "clock": str(clock),
+                "ns": "0",
+                "value": value,
+                "timestamp": str(timestamp),
+                "source": source,
+                "severity": str(severity),
+                "logeventid": str(logeventid),
+            }
+        )
+
+    def add_trend(
+        self, itemid: int, clock: int, num: int, low: float, avg: float, high: float
+    ) -> None:
+        self.trends.setdefault(itemid, []).append(
+            {
+                "itemid": str(itemid),
+                "clock": str(clock),
+                "num": str(num),
+                "value_min": str(low),
+                "value_avg": str(avg),
+                "value_max": str(high),
+            }
+        )
 
     def methods(self) -> list[str]:
         """Names of the methods called so far."""
@@ -207,6 +263,36 @@ class FakeZabbix:
             rows.append(row)
         return _finish(rows, params)
 
+    def _history_get(self, params: dict[str, Any], auth: str | None) -> list[Any]:
+        types = {item.itemid: item.value_type for item in self.items}
+        rows = [
+            row
+            for itemid in map(int, params.get("itemids", []))
+            # Zabbix returns nothing if the history type doesn't match the item's.
+            if types.get(itemid) == int(params.get("history", 3))
+            for row in self.history.get(itemid, [])
+            if _in_range(int(row["clock"]), params)
+        ]
+        if params.get("sortfield") == "clock":
+            rows.sort(key=lambda row: int(row["clock"]))
+        return rows[: int(params["limit"])] if "limit" in params else rows
+
+    def _trend_get(self, params: dict[str, Any], auth: str | None) -> list[Any]:
+        rows = [
+            row
+            for itemid in map(int, params.get("itemids", []))
+            for row in self.trends.get(itemid, [])
+            if _in_range(int(row["clock"]), params)
+        ]
+        # The real API doesn't sort trends.
+        return list(reversed(rows))
+
+
+def _in_range(clock: int, params: dict[str, Any]) -> bool:
+    return (
+        int(params.get("time_from", 0)) <= clock <= int(params.get("time_till", 2**63))
+    )
+
 
 class _Error(Exception):
     def __init__(self, error: dict[str, Any]) -> None:
@@ -257,6 +343,8 @@ class FakeTransport:
         self.closed = False
 
     async def post(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
+        # Yield to the event loop, like real I/O, so concurrency is exercised.
+        await asyncio.sleep(0)
         authorization = headers.get("Authorization")
         auth = authorization.removeprefix("Bearer ") if authorization else None
         return self.server.handle(body, auth)
@@ -289,9 +377,13 @@ USERNAME = "Admin"
 PASSWORD = "zabbix"
 
 
+#: Start of the seeded data (2025-10-09T08:00:00Z, on the hour).
+T0 = 1_759_996_800
+
+
 def seeded() -> FakeZabbix:
-    """A server with a few hosts and items of every value type."""
-    return FakeZabbix(
+    """A server with a few hosts and items of every value type, and data."""
+    server = FakeZabbix(
         tokens={TOKEN},
         users={USERNAME: PASSWORD},
         hosts=[
@@ -328,6 +420,46 @@ def seeded() -> FakeZabbix:
             ),
         ],
     )
+    server.add_history(20001, (T0, 1.5), (T0 + 60.25, 2.5), (T0 + 120, 3.5))
+    server.add_history(20002, (T0 + 30, 10.0))
+    server.add_history(20003, (T0, 7.0), (T0 + 86_400 + 60, 8.0))
+    server.add_history(20004, (T0, 100), (T0 + 60, 160))
+    server.add_log(
+        20005,
+        T0,
+        "kernel: boot",
+        timestamp=T0 - 5,
+        source="kern",
+        severity=1,
+        logeventid=7,
+    )
+    server.add_log(
+        20005,
+        T0 + 1,
+        'tab\there, comma, "quote"\nnewline ✓ 𝄞',
+        timestamp=0,
+        source="",
+        severity=0,
+        logeventid=0,
+    )
+    server.add_history(20006, (T0, "7.0.5"))
+    server.add_trend(20001, T0, 60, 1.0, 2.0, 3.0)
+    server.add_trend(20001, T0 + 3600, 58, 1.5, 2.5, 3.5)
+    return server
+
+
+class FlakyTransport(FakeTransport):
+    """A transport whose first ``failures`` requests fail like a network error."""
+
+    def __init__(self, server: FakeZabbix, failures: int) -> None:
+        super().__init__(server)
+        self.failures = failures
+
+    async def post(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
+        if self.failures:
+            self.failures -= 1
+            raise ConnectionFailed("Can't connect: connection reset.")
+        return await super().post(body, headers)
 
 
 class RedirectingTransport(FakeTransport):

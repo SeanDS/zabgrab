@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,38 @@ from zabgrab.services.ports import Option
 from zabgrab.ui.console import non_interactive_answer
 
 T = TypeVar("T")
+
+
+@dataclass
+class RecordingProgress:
+    """Records progress events."""
+
+    description: str
+    total: int
+    labels: list[str] = field(default_factory=list)
+    steps: list[int] = field(default_factory=list)
+    active: set[int] = field(default_factory=set)
+    max_active: int = 0
+    finished: bool = False
+
+    def add_item(self, label: str, total: int) -> int:
+        self.labels.append(label)
+        item = len(self.labels) - 1
+        self.steps.append(0)
+        self.active.add(item)
+        self.max_active = max(self.max_active, len(self.active))
+        return item
+
+    def advance(self, item: int) -> None:
+        assert item in self.active
+        self.steps[item] += 1
+
+    def remove_item(self, item: int) -> None:
+        self.active.remove(item)
+
+    @property
+    def done(self) -> int:
+        return sum(self.steps)
 
 
 @dataclass
@@ -30,6 +63,7 @@ class RecordingUI:
     messages: list[tuple[str, str]] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)
     secret_questions: list[str] = field(default_factory=list)
+    progresses: list[RecordingProgress] = field(default_factory=list)
 
     def _record(self, level: str, message: str) -> None:
         self.messages.append((level, message))
@@ -95,6 +129,13 @@ class RecordingUI:
         self, question: str, options: Sequence[Option[T]], *, fix: str
     ) -> list[T]:
         return [options[i].value for i in self._answer(question, fix)]
+
+    @contextmanager
+    def progress(self, description: str, total: int) -> Iterator[RecordingProgress]:
+        progress = RecordingProgress(description, total)
+        self.progresses.append(progress)
+        yield progress
+        progress.finished = True
 
     def levels(self, level: str) -> list[str]:
         """Messages recorded at ``level``."""
