@@ -72,3 +72,35 @@ class Cancelled(ZabgrabError):
 
     def __init__(self) -> None:
         super().__init__("Cancelled.")
+
+
+class ZabbixError(ZabgrabError):
+    """A problem talking to a Zabbix server."""
+
+
+class ConnectionFailed(ZabbixError):
+    """The server couldn't be reached, or didn't respond like a Zabbix server."""
+
+
+class ZabbixAPIError(ZabbixError):
+    """The Zabbix API returned an error."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: int | None = None,
+        data: str = "",
+        hint: str | None = None,
+    ) -> None:
+        super().__init__(message, hint=hint)
+        self.code = code
+        self.data = data
+
+
+class AuthenticationFailed(ZabbixAPIError):
+    """The server rejected the credentials."""
+
+
+class UnsupportedServer(ZabbixError):
+    """The server runs a Zabbix version zabgrab doesn't support."""

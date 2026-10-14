@@ -27,6 +27,8 @@ dependencies = [
   "rich >=13.7",
   "pydantic >=2.11",
   "tomlkit >=0.12",
+  "aiohttp >=3.9",
+  "keyring >=24",
 ]
 dynamic = ["version"]
 
