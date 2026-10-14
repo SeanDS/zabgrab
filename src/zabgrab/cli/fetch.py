@@ -4,20 +4,27 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from dataclasses import dataclass
 from datetime import datetime, tzinfo
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import click
 from pydantic import ValidationError
 
-from ..adapters.configfiles import format_validation_errors
+from ..adapters.configfiles import (
+    add_template,
+    format_validation_errors,
+    read_config_file,
+)
 from ..adapters.dates import EXAMPLES, parse_time
 from ..adapters.formats import hdf5
 from ..adapters.formats.delimited import write_delimited
 from ..errors import EXIT_PARTIAL, ZabgrabError
-from ..model.config import Agg, FetchSettings, Format, Resolution
+from ..model.config import Agg, Config, FetchSettings, Format, Resolution
 from ..model.item import ItemSpec
+from ..model.names import NAME_RULE, is_valid_name
 from ..model.query import Query
 from ..model.series import FetchResult
 from ..model.server import Server
@@ -33,8 +40,10 @@ from ..services.output import (
     targets,
 )
 from ..services.resolve import CliRequest, resolve_query
+from ..services.templates import equivalent_command, template_table
 from ..ui.render import explain_table, format_time, plan_table, requests_table
 from .app import AppContext, global_options, pass_app
+from .config import EDIT_TARGETS, edit_target_path
 from .discovery import ItemSpecType
 
 
@@ -45,7 +54,7 @@ from .discovery import ItemSpecType
     "templates",
     multiple=True,
     metavar="NAME",
-    help="Template to fetch (repeat to stack several).",
+    help="Template to fetch.",
 )
 @click.option(
     "-i",
@@ -62,7 +71,7 @@ from .discovery import ItemSpecType
     "servers",
     multiple=True,
     metavar="NAME|URL",
-    help="Server to fetch from (repeat for several); overrides templates' servers.",
+    help="Server to fetch from; overrides the template's server.",
 )
 @click.option("--from", "from_", metavar="TIME", help=f"Start time, {EXAMPLES}.")
 @click.option("--to", metavar="TIME", help="End time (as for --from).")
@@ -130,6 +139,17 @@ from .discovery import ItemSpecType
     is_flag=True,
     help="Show the settings and where each came from, then stop.",
 )
+@click.option(
+    "--save-template",
+    metavar="NAME",
+    help="Save this fetch (with any answers to questions) as a template.",
+)
+@click.option(
+    "--save-to",
+    metavar="user|project|system|PATH",
+    help="Config file to save the template to.  [default: user]",
+)
+@click.option("--force", is_flag=True, help="Replace an existing template.")
 @global_options
 @pass_app
 def fetch_command(
@@ -156,6 +176,9 @@ def fetch_command(
     yes: bool,
     dry_run: bool,
     explain: bool,
+    save_template: str | None,
+    save_to: str | None,
+    force: bool,
 ) -> None:
     """Fetch data from Zabbix, from templates and/or items.
 
@@ -192,27 +215,144 @@ def fetch_command(
         save.check(output)
 
     loaded = app.config()
+    template_target = _template_target(
+        app, loaded.config, save_template, save_to, force=force
+    )
     now = app.clock.now()
 
     def parse(text: str, tz: tzinfo | None) -> datetime:
         return parse_time(text, now=now, tz=tz)
 
+    cli = CliRequest(
+        template=_one(
+            templates, "--template", "Only one template can be fetched at a time."
+        ),
+        items=items,
+        server=_one(servers, "--server", "zabgrab fetches from one server at a time."),
+        values=values,
+    )
     query = resolve_query(
-        CliRequest(templates, items, servers, values),
+        cli,
         loaded.config,
         app.ui,
         parse_time=parse,
         defaults_source=lambda key: loaded.source_of("defaults", key),
     )
 
+    partial = False
     if explain:
         app.ui.print_data(explain_table(query))
         app.ui.print_data(requests_table(query))
-        return
+    else:
+        partial = _fetch_and_save(
+            app,
+            query,
+            loaded.config,
+            output=output,
+            options=save,
+            yes=yes,
+            dry_run=dry_run,
+            now=now,
+        )
 
+    if template_target is not None:
+        _save_template(app, template_target, cli, query, loaded.config)
+    elif query.answers:
+        _show_equivalent(app, query)
+    if partial:
+        click.get_current_context().exit(EXIT_PARTIAL)
+
+
+def _one(values: tuple[str, ...], option: str, reason: str) -> str | None:
+    if len(values) > 1:
+        raise click.UsageError(f"{option} can only be given once: {reason}")
+    return values[0] if values else None
+
+
+@dataclass(frozen=True)
+class _TemplateTarget:
+    name: str
+    path: Path
+    replace: bool
+
+
+def _template_target(
+    app: AppContext,
+    config: Config,
+    name: str | None,
+    save_to: str | None,
+    *,
+    force: bool,
+) -> _TemplateTarget | None:
+    """Where --save-template saves to, checked before anything is fetched."""
+    if name is None:
+        for option, given in (("--save-to", save_to is not None), ("--force", force)):
+            if given:
+                raise click.UsageError(f"{option} only applies with --save-template.")
+        return None
+    if not is_valid_name(name):
+        raise click.BadParameter(
+            f"{name!r}: {NAME_RULE}", param_hint="'--save-template'"
+        )
+    target = save_to or "user"
+    path = (
+        edit_target_path(app.env, EDIT_TARGETS[target])
+        if target in EDIT_TARGETS
+        else Path(target)
+    )
+    if not force:
+        if path.exists() and name in read_config_file(path).get("templates", {}):
+            where = str(path)
+        elif name in config.templates:
+            where = str(app.config().source_of("templates", name))
+        else:
+            where = ""
+        if where:
+            raise ZabgrabError(
+                f"Template {name!r} already exists in {where}.",
+                hint="Pass --force to replace it, or choose another name.",
+            )
+    return _TemplateTarget(name, path, replace=force)
+
+
+def _save_template(
+    app: AppContext,
+    target: _TemplateTarget,
+    cli: CliRequest,
+    query: Query,
+    config: Config,
+) -> None:
+    table = template_table(cli, query, config)
+    written = add_template(target.path, target.name, table, replace=target.replace)
+    app.ui.success(f"Saved template {target.name!r} to {target.path}:")
+    app.ui.info(written)
+    app.ui.info(f"Run it again with `zabgrab fetch -t {target.name}`.")
+
+
+def _show_equivalent(app: AppContext, query: Query) -> None:
+    """Show the command that repeats this fetch without its questions."""
+    equivalent = equivalent_command(sys.argv[1:], query.answers)
+    app.ui.info(f"Next time: {equivalent.command}")
+    for note in equivalent.notes:
+        app.ui.info(note)
+    app.ui.info("Or add --save-template NAME to save it as a template.")
+
+
+def _fetch_and_save(
+    app: AppContext,
+    query: Query,
+    config: Config,
+    *,
+    output: str | None,
+    options: SaveOptions,
+    yes: bool,
+    dry_run: bool,
+    now: datetime,
+) -> bool:
+    """Download and save the data; return whether some items failed."""
     result = asyncio.run(_download(app, query, yes=yes, dry_run=dry_run))
     if result is None:
-        return
+        return False
 
     report_problems(app, result)
     if not result.series:
@@ -224,7 +364,7 @@ def fetch_command(
         hosts=[series.item.host for series in result.series],
         servers=[_short(server) for server in servers_used],
     )
-    chosen = targets(output, query, app.ui, name=name, options=save)
+    chosen = targets(output, query, app.ui, name=name, options=options)
     saved = []
     for target in chosen:
         target, data = guard_large_text(
@@ -232,18 +372,18 @@ def fetch_command(
             result,
             app.ui,
             threshold=query.mat_text_warn_entries,
-            allow=allow_large_text,
+            allow=options.allow_large_text,
             existing_entries=hdf5.text_entries,
             accepted_before=hdf5.large_text_accepted,
         )
         metadata = build_metadata(
             query,
             data,
-            templates=loaded.config.templates,
+            templates=config.templates,
             command=sys.argv,
             created=now,
         )
-        saved.append(save_target(target, data, metadata, query, save))
+        saved.append(save_target(target, data, metadata, query, options))
 
     count = len(result.series)
     summary = (
@@ -254,9 +394,7 @@ def fetch_command(
     if saved:
         summary += "; saved to " + ", ".join(saved)
     app.ui.success(summary + ".")
-
-    if result.failed:
-        click.get_current_context().exit(EXIT_PARTIAL)
+    return bool(result.failed)
 
 
 async def _download(
@@ -265,7 +403,7 @@ async def _download(
     plan = await collect(
         query,
         app.ui,
-        select_servers=lambda server: app.select_servers([], server),
+        select_server=app.select_server,
         connect=app.connect,
         yes=yes,
     )

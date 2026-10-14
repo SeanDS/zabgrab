@@ -9,7 +9,7 @@ phased delivery plan, and the remaining open questions.
 - Find Zabbix items without digging IDs out of the web UI; wildcard item selection.
 - Multi-server configs; templates that can run against one, several or a user-chosen
   server.
-- Templates that can set every fetch argument; templates are stackable.
+- Templates that can set every fetch argument. One template and one server per fetch.
 - Fast parallel downloads with clear progress, colour and helpful errors.
 - MATLAB-friendly HDF5 output that can be incrementally updated.
 - Optional plotting.
@@ -70,7 +70,7 @@ src/zabgrab/
                        #   phase that first needs it)
     config.py          # config loading with interactive repair of invalid files
     resolve.py         # CLI + templates + defaults → Query, with provenance, choice
-                       #   resolution, stacked-template rules
+                       #   resolution
     servers.py         # which server(s) to use: --server, config, prompt, "Custom…"
     session.py         # connecting and logging in (env/keyring token, paste, password)
     discover.py        # item spec / wildcard → Items; running actions across servers
@@ -201,12 +201,14 @@ Keys that support it accept either a plain value or
 
 | `select` | Behaviour |
 |---|---|
-| `all` | Run against every choice and stack the results into one output. |
-| `prompt` | Interactive: the user picks one or more. Non-interactive: an error unless the CLI sets the value. |
-| `first` | Use the first choice that works (failover). |
+| `all` | Use every choice, stacking the results into one output. |
+| `prompt` (default) | Interactive: the user picks. Non-interactive: an error unless the CLI sets the value. |
+| `first` | Use the first choice that works. |
 
-Supported on: `server`, `host` (inside item specs), `format`.
-Repeating a CLI flag (`--server a --server b`) means `all`.
+Supported on: `server`, `host` (inside item specs), `format`. A fetch uses one
+server, so a `server` choice only allows `prompt` (the user picks one; `--server`
+picks without asking); `all` or `first` there is a config error. `fetch` accepts one
+`--server` and one `--template`.
 
 A missing `server` (nowhere in the CLI, the template or `[defaults]`) is prompted for.
 See "Missing and invalid input".
@@ -215,10 +217,16 @@ See "Missing and invalid input".
 
 `zabgrab fetch ... --save-template NAME [--save-to user|project|system|PATH] [--force]`
 
-- Saves only parameters whose click `ParameterSource` is the command line or an
-  environment variable, so built-in defaults are not frozen into the template.
+- Saves the settings given on the command line, by the templates used, and as
+  answers at prompts. `[defaults]` and built-in values are not frozen into the
+  template. Templates can't build on each other, so the new one is self-contained:
+  it combines the templates' items and settings (the command line winning). If the
+  templates used different servers, saving fails and says so.
 - Saves values as the user typed them: wildcard patterns rather than resolved item
-  IDs, and relative times such as `"24 hours ago"`.
+  IDs, and relative times such as `"24 hours ago"`. Items picked at a prompt are
+  saved as the search pattern if all its matches were picked, otherwise as IDs.
+- Works with `--dry-run` and `--explain` too. The name and any existing template are
+  checked before anything is fetched. `--save-to` defaults to the user config.
 - Edits only the target file, using tomlkit so comments and whitespace survive. Writes
   to a temporary file and then replaces the original.
 - Refuses to overwrite an existing template without `--force`. Prints the TOML that was
@@ -270,9 +278,8 @@ suggests adding `--save-template NAME`.
 | Wildcard matches more than `max_items` | Choose: fetch all / narrow to a host (from the matched hosts) / pick from table / cancel | `--yes`, or a narrower spec (e.g. `host=`) |
 | Unknown template or server name | If close matches exist: "Did you mean X?". Otherwise choose from all names | Lists the close matches and `zabgrab templates list` / `config show` |
 | No `from`/`to` (no built-in default) | Ask for each, with examples (e.g. "24 hours ago", "2026-10-14 09:00", "now") | `--from`/`--to`, or set `from`/`to` in the template or `[defaults]` |
-| No `format` (no built-in default) | Use the output file's extension if it has a known one; otherwise choose from mat / h5 / tsv / csv | `--format`, an `--output` path with a known extension, or `format` in the template or `[defaults]` |
+| No `format` (no built-in default) | Use the output file's extension if it has a known one; otherwise choose from h5 (the default) / mat / tsv / csv | `--format`, an `--output` path with a known extension, or `format` in the template or `[defaults]` |
 | Unparseable `--from`/`--to` | Re-ask with the parse error and examples | Error with examples of supported formats |
-| Stacked templates disagree on from/to/resolution/agg | Show each template's value, then ask for the value to use | Error naming the flag to set |
 | No token for the server | Choose: paste a token now (opens the token page; offer to save to keyring) / use username+password / cancel | `zabgrab token add SERVER`, or set `token_env`'s variable |
 | Username/password (`auth = "password"`) | Prompt (username defaults to the config value) | Use a token: `zabgrab token add SERVER` |
 | Output file exists | Choose: append (`.h5`/`.mat` only) / overwrite / new name (suggested `-2` suffix) / cancel | `--append`, `--overwrite`, or another `--output` |
@@ -324,7 +331,7 @@ allowed to.
 
 ## Fetch
 
-`zabgrab fetch [-t TEMPLATE]... [--item SPEC]... [--server S]... [--from] [--to]
+`zabgrab fetch [-t TEMPLATE] [--item SPEC]... [--server S] [--from] [--to]
 [--resolution raw|1h] [--agg ...] [--output [PATH]] [--format] [--append|--overwrite]
 [--group NAME] [--dry-run] [--explain] [--plot] [--save-template NAME] [--yes]
 [--jobs N]`
@@ -340,21 +347,14 @@ default.
 - `--explain` prints the resolved query with the source of each value, then exits.
 - `--dry-run` resolves servers, items and time range, prints the fetch plan, and exits.
 
-### Stacked templates (`-t a -t b ...`)
+### One template and one server
 
-- Templates may differ in server(s) and items. The results are stacked into one output.
-- **`from`/`to`:** compare the values that the templates set themselves, after
-  resolving them against the same base "now". This means `"24 hours ago"` and
-  `"1 day ago"` count as equal.
-  - If they all agree, or only one template sets them, use that value.
-  - If they disagree, print a warning listing each template's value. Then prompt for
-    new `from`/`to` when interactive, or exit with an error when not.
-  - If `--from` or `--to` is on the CLI, use it and log that the templates' own values
-    are being ignored.
-- **`resolution`/`agg`:** the same rule as `from`/`to`. Templates that set different
-  values get a warning, then a prompt when interactive or an error when not. A CLI
-  `--resolution`/`--agg` wins, and a log message says the templates' values are ignored.
-  `agg` only applies to hourly trends: with raw data, an `agg` from the CLI or a
+- A fetch uses at most one template (`-t`) and one server: `--server`, else the
+  template's, else `[defaults]`', else asked. Items given with `--item` come from the
+  same server.
+- A CLI value that differs from the template's is logged (times compare after
+  parsing, so `"24 hours ago"` and `"1 day ago"` are the same).
+- `agg` only applies to hourly trends: with raw data, an `agg` from the CLI or a
   template gets a warning that it's ignored (one from `[defaults]` doesn't), and an
   ignored `--agg` doesn't make the query custom.
 - Item specs and `--item` flags on the CLI are added to the templates' items.
@@ -682,7 +682,7 @@ alongside the MATLAB check files.
 - **Prompt tests:** every prompt site is tested twice, once with scripted answers and
   once with the non-interactive UI. The second test asserts the exact remedy message.
 - **Unit tests:** item spec parsing, choice resolution, query merging and provenance,
-  stacked from/to rules, filename building, config discovery and merging (with
+  override rules, filename building, config discovery and merging (with
   `XDG_CONFIG_HOME`, `$HOME` and cwd faked using `tmp_path`/monkeypatch), name
   validation, date parsing with a fixed "now" and timezone.
 - **Format tests:**
@@ -731,7 +731,7 @@ alongside the MATLAB check files.
   - quick start, `zabgrab token add`, finding items (`hosts`/`items`)
   - a **complete commented config example** (servers, defaults, templates with
     choices and wildcards)
-  - stacking templates, output naming, formats and MATLAB/Python loading snippets
+  - templates, output naming, formats and MATLAB/Python loading snippets
   - the `update` example, trends vs raw, and the calculated-item note for other
     averages
 - A test parses the README's TOML example so it cannot go stale. Ship the same
@@ -747,7 +747,7 @@ alongside the MATLAB check files.
 | 2 ✅ | Zabbix adapter, secrets adapter (env/keyring, password prompt), `FakeZabbixClient` + fake JSON-RPC server, item spec parsing, `services/discover.py`, `hosts`/`items` commands | Can list hosts/items against fake and real servers |
 | 3 ✅ | `services/resolve.py` (provenance, override logs, choices, stacked-template rules), `services/fetch.py` (async, chunked, raw + 1h trends, all value types), progress bars, summary, exit codes, TSV/CSV, auto naming, `--dry-run`/`--explain` | End-to-end fetch to TSV |
 | 4 ✅ | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
-| 5 | `--save-template` (tomlkit) | Round-trip tests pass |
+| 5 ✅ | `--save-template` (tomlkit), "Next time" hint | Round-trip tests pass |
 | 6 | `plot` extra (merged view, coverage gaps, text-item errors) | Plots from live fetch and from multi-group files |
 | 7 | Full README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
 
@@ -755,9 +755,12 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 
 ## Decisions log
 
-- Stacked templates: `from`/`to`/`resolution`/`agg` must agree, otherwise warn and
-  then prompt (interactive) or error (non-interactive). CLI values win, with a log
-  message.
+- One template and one server per fetch (stacked templates and multi-server fetches
+  were dropped). A server choice is only ever a question (`select = "prompt"`).
+  Groups fetched from several servers before this can still be read and updated,
+  but not updated with `--rematch`.
+- HDF5 is the first and default answer when zabgrab asks for a format (there's still
+  no built-in `format`).
 - Release version: 1.0.0.
 - No built-in defaults for `from`, `to` or `format`: they come from the CLI, a
   template or `[defaults]`, else the user is asked (format is first inferred from the
@@ -799,9 +802,13 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Raw downloads are chunked by day and trends by 30 days; network errors are retried
   three times with backoff; each item downloads its chunks in order, `jobs` items at
   a time.
-- Still to do from phase 3's scope (deferred): the "Next time: zabgrab fetch ..."
-  hint after interactive answers (phase 5, with `--save-template`), and a warning
-  when raw data is requested beyond an item's history retention.
+- `--save-template` saves a self-contained template (the templates used, the command
+  line and prompt answers; never `[defaults]` or built-in values), rather than only
+  the command line's values, which would leave a template built on another one
+  without its items.
+- The "Next time" command is the command line as typed, with answered prompts added
+  as options (replacing any given). Answers it can't express (items narrowed from a
+  template, several formats, different servers per template) are noted instead.
 
 - `.mat`/`.h5` files are written with HDF5's earliest file format so that MATLAB's
   older HDF5 library can read them. The layout passed `tests/matlab/check_files.m`
@@ -820,6 +827,19 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   be UK time (CI sets it with `tzutil`), and the tests stop with an error otherwise.
 - Files written via a temporary file get normal permissions (the umask, or the
   replaced file's), not the temporary file's private 0600.
+
+- Code is commented wherever it isn't trivial, and every module, class, function and
+  method has a NumPy-style docstring (Sphinx/napoleon sections such as `Parameters`,
+  `Returns`, `Raises`). New and changed code follows this from phase 5 on.
+
+## Follow-up tasks
+
+- Retrofit comments and NumPy-style docstrings to the existing code in
+  `src/zabgrab/` (module by module, behaviour unchanged, coverage kept at 100%).
+  Then consider enforcing it with ruff's pydocstyle rules (`D`, `convention =
+  "numpy"`).
+- A warning when raw data is requested beyond an item's history retention (deferred
+  from phase 3).
 
 ## Open questions
 

@@ -14,16 +14,16 @@ from ..errors import EXIT_PARTIAL, ZabgrabError
 from ..model.choice import Choice
 from ..model.config import Format, Template
 from ..model.series import FetchResult
+from ..model.server import Server
 from ..services.collect import Plan, collect
 from ..services.fetch import fetch
 from ..services.metadata import build_metadata
 from ..services.output import SaveOptions, Target, guard_large_text
-from ..services.servers import ServerSelection, resolve_server
+from ..services.servers import resolve_server
 from ..services.update import (
     UpdatePlan,
     collect_previous_items,
     plan_update,
-    server_for,
 )
 from ..ui.render import format_time, plan_table
 from .app import AppContext, global_options, pass_app
@@ -163,17 +163,22 @@ async def _download(
 ) -> FetchResult | None:
     query = plan.query
     if rematch:
+        if len(plan.servers) > 1:
+            raise ZabgrabError(
+                f"Group {plan.last_group!r} was fetched from several servers, so "
+                "its items can't be looked up again.",
+                hint="Update it without --rematch, or fetch from each server "
+                "separately.",
+            )
 
-        def select(ref: str | Choice[str] | None) -> ServerSelection:
-            known = server_for(plan, ref)
-            if known is not None:
-                return ServerSelection([known])
-            if len(plan.servers) == 1:
-                return ServerSelection(list(plan.servers.values()))
-            return app.select_servers([], ref)
+        def select(ref: str | Choice[str] | None) -> Server:
+            # The server the group was fetched from (unless it found no items).
+            if plan.servers:
+                return next(iter(plan.servers.values()))
+            return app.select_server(ref)
 
         collected: Plan = await collect(
-            query, app.ui, select_servers=select, connect=app.connect, yes=True
+            query, app.ui, select_server=select, connect=app.connect, yes=True
         )
     else:
         collected = await collect_previous_items(plan, app.ui, connect=app.connect)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, tzinfo
 
+from .answers import Answers
 from .choice import Choice
 from .config import Agg, Format, Resolution
 from .item import ItemSpec
@@ -16,15 +17,13 @@ CUSTOM = "__custom"
 
 @dataclass(frozen=True)
 class Request:
-    """Items to fetch from one server (or choice of servers).
+    """Items to fetch.
 
-    Each template is a request; items given on the command line form another.
+    The template is a request; items given on the command line form another.
     """
 
     label: str
     """The template's name, or :data:`CUSTOM`."""
-    server: str | Choice[str] | None
-    """A server name or URL, a choice of them, or ``None`` (ask)."""
     items: tuple[ItemSpec, ...]
 
 
@@ -33,7 +32,10 @@ class Query:
     """Everything needed to fetch and save data, with where each value came from."""
 
     requests: tuple[Request, ...]
-    templates: tuple[str, ...]
+    template: str | None
+    server: str | Choice[str] | None
+    """The server to fetch from: a name or URL, a choice to ask about, or ``None``
+    (ask which configured server to use)."""
     custom: bool
     """Items were added, or data-affecting template values changed, on the command
     line (or there were no templates)."""
@@ -55,3 +57,5 @@ class Query:
     mat_text_warn_entries: int
     sources: dict[str, str] = field(default_factory=dict)
     """Where each setting came from, by config key."""
+    answers: Answers = field(default_factory=Answers, compare=False)
+    """What the user answered at prompts (filled in as the fetch goes)."""

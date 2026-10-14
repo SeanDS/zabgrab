@@ -24,6 +24,9 @@ from zabgrab.model.server import Server
 from zabgrab.model.zabbix import Item, ValueType
 from zabgrab.services.metadata import build_metadata
 from zabgrab.services.naming import format_for, output_name, unique_path
+from zabgrab.services.output import choose_formats
+
+from .fakes import RecordingUI
 
 START = datetime(2026, 10, 13, 10, 15, tzinfo=UTC)
 END = datetime(2026, 10, 14, 10, 15, tzinfo=UTC)
@@ -284,12 +287,11 @@ class TestDelimitedWriter:
 def test_metadata() -> None:
     query = Query(
         requests=(
-            Request("particles", "demo", (ItemSpec(host="demo1", name="P*"),)),
-            Request(
-                "__custom", Choice[str](choices=["demo", "lab"]), (ItemSpec(itemid=5),)
-            ),
+            Request("particles", (ItemSpec(host="demo1", name="P*"),)),
+            Request("__custom", (ItemSpec(itemid=5),)),
         ),
-        templates=("particles", "gone"),
+        template="particles",
+        server=Choice[str](choices=["demo", "lab"]),
         custom=True,
         start=START,
         end=END,
@@ -322,15 +324,17 @@ def test_metadata() -> None:
     assert metadata["query"]["from"] == "24 hours ago"
     assert metadata["query"]["start"] == "2026-10-13T10:15:00+00:00"
     assert metadata["query"]["sources"] == {"from": "template 'particles'"}
-    assert metadata["query"]["requests"][0] == {
-        "label": "particles",
-        "server": "demo",
-        "items": [{"host": "demo1", "name": "P*"}],
-    }
-    assert metadata["query"]["requests"][1]["server"] == {
-        "choices": ["demo", "lab"],
-        "select": "prompt",
-    }
+    assert metadata["query"]["templates"] == ["particles"]
+    # Each request records the server (kept from when requests had their own).
+    server = {"choices": ["demo", "lab"], "select": "prompt"}
+    assert metadata["query"]["requests"] == [
+        {
+            "label": "particles",
+            "server": server,
+            "items": [{"host": "demo1", "name": "P*"}],
+        },
+        {"label": "__custom", "server": server, "items": [{"itemid": 5}]},
+    ]
     assert metadata["templates"] == {
         "particles": {"items": [{"name": "P*"}], "from": "24 hours ago"}
     }
@@ -351,3 +355,8 @@ def test_metadata() -> None:
     assert metadata["skipped"][0]["reason"] == "binary items aren't supported"
     assert metadata["failed"][0]["reason"] == "Can't connect."
     json.dumps(metadata)
+
+
+def test_format_asked_for_without_recording_the_answer() -> None:
+    ui = RecordingUI(answers=[3])
+    assert choose_formats([], None, Path("out.dat"), ui) == (Format.CSV,)

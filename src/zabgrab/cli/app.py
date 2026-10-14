@@ -103,13 +103,20 @@ class AppContext:
             )
         return self._loaded
 
-    def select_servers(
-        self, cli: Sequence[str], configured: str | Choice[str] | None
-    ) -> servers.ServerSelection:
-        """The servers to use (see :func:`zabgrab.services.servers.select_servers`).
+    def select_server(self, configured: str | Choice[str] | None) -> Server:
+        """The server to use (see :func:`zabgrab.services.servers.select_server`).
 
         Custom servers entered at a prompt can be saved to the user config.
         """
+        return servers.select_server(
+            configured, self.config().config, self.ui, save=self.save_server
+        )
+
+    def select_servers(
+        self, cli: Sequence[str], configured: str | Choice[str] | None
+    ) -> list[Server]:
+        """The servers to search (see
+        :func:`zabgrab.services.servers.select_servers`)."""
         return servers.select_servers(
             cli, configured, self.config().config, self.ui, save=self.save_server
         )

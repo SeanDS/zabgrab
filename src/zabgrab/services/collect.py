@@ -1,11 +1,12 @@
-"""Working out which items to fetch from which servers."""
+"""Working out which items to fetch."""
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from ..errors import Cancelled, ConnectionFailed, InputRequired
+from ..errors import Cancelled, InputRequired
+from ..model.answers import Answers
 from ..model.choice import Choice
 from ..model.item import ItemSpec
 from ..model.query import Query, Request
@@ -14,9 +15,8 @@ from ..model.zabbix import Item
 from .discover import find_items
 from .fetch import Job
 from .ports import UI, Option, ZabbixClient
-from .servers import ServerSelection
 
-SelectServers = Callable[[str | Choice[str] | None], ServerSelection]
+SelectServer = Callable[[str | Choice[str] | None], Server]
 Connect = Callable[[Server], Awaitable[ZabbixClient]]
 
 PICKER_LIMIT = 100
@@ -42,41 +42,44 @@ async def collect(
     query: Query,
     ui: UI,
     *,
-    select_servers: SelectServers,
+    select_server: SelectServer,
     connect: Connect,
     yes: bool = False,
 ) -> Plan:
-    """Resolve each request's servers and items into download jobs.
+    """Resolve the query's server and each request's items into download jobs.
 
-    Items matched by several requests (on the same server) are fetched once.
-    Connections are kept in the plan for downloading; close it when done.
+    Items matched by several requests are fetched once. The connection is kept in
+    the plan for downloading; close it when done.
     """
     plan = Plan()
-    jobs: dict[tuple[str, int], Job] = {}
+    jobs: dict[int, Job] = {}
+    server = select_server(query.server)
+    if _asked(query.server, server):
+        query.answers.server = server.label
+    client = await connect(server)
+    plan.clients[server] = client
     try:
         for request in query.requests:
-            selection = select_servers(request.server)
-            for index, server in enumerate(selection.servers):
-                try:
-                    client = await _client(plan, server, connect)
-                except ConnectionFailed as err:
-                    if not selection.failover or index == len(selection.servers) - 1:
-                        raise
-                    ui.warning(f"{err.message} Trying the next server.")
-                    continue
-                items = await _items(client, request, ui)
-                items = _limit(items, query.max_items, ui, yes=yes, label=request.label)
-                for item in items:
-                    key = (server.url, item.itemid)
-                    if key in jobs:
-                        previous = jobs[key]
-                        jobs[key] = Job(
-                            server, item, (*previous.requests, request.label)
-                        )
-                    else:
-                        jobs[key] = Job(server, item, (request.label,))
-                if selection.failover:
-                    break
+            items = await _items(client, request, ui, query.answers)
+            items = _limit(
+                items,
+                query.max_items,
+                ui,
+                yes=yes,
+                label=request.label,
+                answers=query.answers,
+            )
+            for item in items:
+                previous = jobs.get(item.itemid)
+                labels = (
+                    (request.label,)
+                    if previous is None
+                    else (
+                        *previous.requests,
+                        request.label,
+                    )
+                )
+                jobs[item.itemid] = Job(server, item, labels)
     except BaseException:
         await plan.close()
         raise
@@ -84,26 +87,35 @@ async def collect(
     return plan
 
 
-async def _client(plan: Plan, server: Server, connect: Connect) -> ZabbixClient:
-    for known, client in plan.clients.items():
-        if known.url == server.url:
-            return client
-    client = await connect(server)
-    plan.clients[server] = client
-    return client
+def _asked(configured: str | Choice[str] | None, server: Server) -> bool:
+    """Whether choosing the server involved asking the user."""
+    if isinstance(configured, str):
+        # Asked only if the name was unknown and the user chose another.
+        return configured not in (server.name, server.url)
+    return True
 
 
-async def _items(client: ZabbixClient, request: Request, ui: UI) -> list[Item]:
+async def _items(
+    client: ZabbixClient, request: Request, ui: UI, answers: Answers
+) -> list[Item]:
     if request.items:
         items = await find_items(client, request.items, ui)
         if not items:
             ui.warning(f"Nothing matched the items of {_describe(request.label)}.")
         return items
-    return await pick_items(client, ui)
+    items, specs = await pick_items(client, ui)
+    answers.items[request.label] = specs
+    return items
 
 
-async def pick_items(client: ZabbixClient, ui: UI) -> list[Item]:
-    """Ask the user to search for and pick items."""
+async def pick_items(
+    client: ZabbixClient, ui: UI
+) -> tuple[list[Item], tuple[ItemSpec, ...]]:
+    """Ask the user to search for and pick items.
+
+    Returns the items and specs that select them: the search pattern if every match
+    was picked, otherwise the picked items' IDs.
+    """
     if not ui.interactive:
         raise InputRequired("Which items?", fix=ITEMS_FIX)
     while True:
@@ -120,15 +132,24 @@ async def pick_items(client: ZabbixClient, ui: UI) -> list[Item]:
         ui.warning(f"No items match {pattern!r}; try another search.")
     if len(found) == PICKER_LIMIT:
         ui.info(f"Showing the first {PICKER_LIMIT} matches.")
-    return ui.choose_many(
+    chosen = ui.choose_many(
         "Which items?",
         [Option(f"{i.host}: {i.name}", i, f"{i.key} ({i.itemid})") for i in found],
         fix=ITEMS_FIX,
     )
+    if len(chosen) == len(found) < PICKER_LIMIT:
+        return chosen, (ItemSpec(name=pattern),)
+    return chosen, _ids(chosen)
 
 
 def _limit(
-    items: list[Item], max_items: int, ui: UI, *, yes: bool, label: str
+    items: list[Item],
+    max_items: int,
+    ui: UI,
+    *,
+    yes: bool,
+    label: str,
+    answers: Answers,
 ) -> list[Item]:
     if len(items) <= max_items or yes:
         return items
@@ -152,12 +173,19 @@ def _limit(
     if choice == "cancel":
         raise Cancelled()
     if choice == "choose":
-        return ui.choose_many(
+        chosen = ui.choose_many(
             "Which items?",
             [Option(f"{i.host}: {i.name}", i, f"{i.key} ({i.itemid})") for i in items],
             fix="",
         )
+        answers.items[label] = _ids(chosen)
+        return chosen
+    answers.all_items = True
     return items
+
+
+def _ids(items: list[Item]) -> tuple[ItemSpec, ...]:
+    return tuple(ItemSpec(itemid=item.itemid) for item in items)
 
 
 def _describe(label: str) -> str:

@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..errors import Cancelled, ZabgrabError
+from ..model.answers import Answers
 from ..model.config import Format
 from ..model.query import Query
 from ..model.series import FetchResult, Skipped
@@ -21,7 +22,7 @@ MAT_TEXT_BYTES = 480
 MAT_TEXT_WRITE_SECONDS = 60e-6
 
 FORMAT_FIX = (
-    "Pass --format, give --output a file name ending in .mat, .h5, .tsv or .csv, or "
+    "Pass --format, give --output a file name ending in .h5, .mat, .tsv or .csv, or "
     "set format in the template or [defaults]."
 )
 
@@ -72,7 +73,7 @@ def auto_name(query: Query, *, hosts: Sequence[str], servers: Sequence[str]) -> 
     return output_name(
         query.output_pattern,
         hosts=hosts,
-        templates=query.templates,
+        templates=[query.template] if query.template else [],
         custom=query.custom,
         start=query.start,
         end=query.end,
@@ -100,18 +101,18 @@ def targets(
         if not ui.interactive:
             ui.warning("The data wasn't saved; pass --output to save it.")
             return []
-        formats = choose_formats(query.formats, options.format, None, ui)
+        formats = choose_formats(query.formats, options.format, None, ui, query.answers)
         shown = ", ".join(f"{name}{EXTENSIONS[f]}" for f in formats)
         if not ui.confirm(f"Save the data to {shown}?", fix="", default=True):
             return []
         directory, file = Path(query.output_dir), None
     elif output == "" or output.endswith(("/", "\\")) or Path(output).is_dir():
         directory, file = Path(output or query.output_dir), None
-        formats = choose_formats(query.formats, options.format, None, ui)
+        formats = choose_formats(query.formats, options.format, None, ui, query.answers)
     else:
         file = Path(output)
         directory = file.parent
-        formats = choose_formats(query.formats, options.format, file, ui)
+        formats = choose_formats(query.formats, options.format, file, ui, query.answers)
 
     if options.append and any(f not in STRUCTURED for f in formats):
         raise ZabgrabError(
@@ -134,10 +135,14 @@ def targets(
 
 
 def choose_formats(
-    configured: Sequence[Format], cli_format: Format | None, file: Path | None, ui: UI
+    configured: Sequence[Format],
+    cli_format: Format | None,
+    file: Path | None,
+    ui: UI,
+    answers: Answers | None = None,
 ) -> tuple[Format, ...]:
     """The output format(s): ``--format``, else the file's extension, else the
-    configured ones, else asked."""
+    configured ones, else asked (the answer is recorded in ``answers``)."""
     if cli_format is not None:
         if file is not None and format_for(file) not in (None, cli_format):
             ui.warning(f"Saving {cli_format} data to {file}, despite its extension.")
@@ -146,19 +151,20 @@ def choose_formats(
         return (from_extension,)
     if configured:
         return tuple(configured)
-    return (
-        ui.choose(
-            "Which format should the data be saved in?",
-            [
-                Option("mat", Format.MAT, "MATLAB (v7.3)"),
-                Option("h5", Format.H5, "HDF5"),
-                Option("tsv", Format.TSV, "tab-separated values"),
-                Option("csv", Format.CSV, "comma-separated values"),
-            ],
-            fix=FORMAT_FIX,
-            default=0,
-        ),
+    chosen = ui.choose(
+        "Which format should the data be saved in?",
+        [
+            Option("h5", Format.H5, "HDF5"),
+            Option("mat", Format.MAT, "MATLAB (v7.3)"),
+            Option("tsv", Format.TSV, "tab-separated values"),
+            Option("csv", Format.CSV, "comma-separated values"),
+        ],
+        fix=FORMAT_FIX,
+        default=0,
     )
+    if answers is not None:
+        answers.settings["format"] = [chosen.value]
+    return (chosen,)
 
 
 def existing_target(path: Path, format: Format, ui: UI, options: SaveOptions) -> Target:

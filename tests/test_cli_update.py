@@ -8,8 +8,9 @@ from pathlib import Path
 import h5py
 import pytest
 
-from zabgrab.adapters.formats.hdf5 import group_names, read_fetches
+from zabgrab.adapters.formats.hdf5 import group_names, read_fetches, write_fetch
 from zabgrab.errors import EXIT_ERROR, EXIT_PARTIAL
+from zabgrab.model.series import FetchResult
 
 from .cli_support import CONFIG, NOW, Servers, run, table_rows
 from .fakezabbix import T0, FakeItem, FakeZabbix, seeded
@@ -237,11 +238,66 @@ def test_unreachable_server(data: Path, servers: Servers) -> None:
 def test_rematch_with_several_servers(
     zabbix: FakeZabbix, servers: Servers, tmp_path: Path
 ) -> None:
-    path = tmp_path / "both.h5"
-    ok(run("fetch", "-s", "demo", "-s", "lab", "-i", "20004", *TIMES, "-o", str(path)))
+    # Fetches used to be able to use several servers; such groups can still be
+    # updated, but not looked up again.
+    single, both = tmp_path / "single.h5", tmp_path / "both.h5"
+    ok(run("fetch", "-s", "demo", "-i", "20004", *TIMES, "-o", str(single)))
+    (group,) = read_fetches(single)
+    metadata = group.metadata
+    lab = "https://lab.example.org"
+    metadata["items"].append({**metadata["items"][0], "server": lab})
+    metadata["servers"].append({"name": "lab", "url": lab})
+    write_fetch(
+        both,
+        FetchResult(series=group.series),
+        metadata,
+        mat=False,
+        t_from=group.t_from,
+        t_to=group.t_to,
+    )
     later(servers)
-    result = ok(run("update", str(path), "--rematch", "--dry-run"))
+    result = run("update", str(both), "--rematch", "--dry-run")
+    assert result.exit_code == EXIT_ERROR
+    assert "was fetched from several servers" in result.stderr
+    result = ok(run("update", str(both), "--dry-run"))
     assert [row[0] for row in table_rows(result.stdout)] == ["demo", "lab"]
+
+
+def test_server_chosen_when_fetched(
+    zabbix: FakeZabbix,
+    servers: Servers,
+    user_config: Path,
+    tmp_path: Path,
+    interactive: None,
+) -> None:
+    user_config.write_text(
+        CONFIG
+        + '[templates.either]\nserver = { choices = ["lab", "demo"] }\n'
+        + "items = [{ itemid = 20001 }]\n",
+        encoding="utf-8",
+    )
+    path = tmp_path / "chosen.h5"
+    ok(run("fetch", "-t", "either", *TIMES, "-o", str(path), input="2\n"))
+    later(servers)
+    for rematch in ([], ["--rematch"]):
+        result = ok(run("update", str(path), *rematch, "--dry-run"))
+        assert "Which Zabbix server?" not in result.stderr
+        assert [row[0] for row in table_rows(result.stdout)] == ["20001"]
+
+    # A group that found no items has no server to go back to: ask.
+    (group,) = read_fetches(path)
+    empty = tmp_path / "empty.h5"
+    write_fetch(
+        empty,
+        FetchResult(),
+        group.metadata | {"items": [], "servers": []},
+        mat=False,
+        t_from=group.t_from,
+        t_to=group.t_to,
+    )
+    result = ok(run("update", str(empty), "--rematch", "--dry-run", input="2\n"))
+    assert "Which Zabbix server?" in result.stderr
+    assert [row[0] for row in table_rows(result.stdout)] == ["20001"]
 
 
 def test_rematch_with_server_override(data: Path, servers: Servers) -> None:

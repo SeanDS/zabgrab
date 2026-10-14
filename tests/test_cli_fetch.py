@@ -15,7 +15,7 @@ from zabgrab.adapters.formats.hdf5 import group_names, large_text_accepted, read
 from zabgrab.errors import EXIT_ERROR, EXIT_INTERRUPTED, EXIT_PARTIAL
 
 from .cli_support import CONFIG, Servers, run, table_rows
-from .fakezabbix import T0, TOKEN, seeded
+from .fakezabbix import T0, seeded
 
 TEMPLATES = """
 [templates.particles]
@@ -36,7 +36,7 @@ from = "2 hours ago"
 to = "now"
 
 [templates.either]
-server = { choices = ["lab", "demo"], select = "first" }
+server = { choices = ["lab", "demo"] }
 items = [{ itemid = 20004 }]
 from = "2 hours ago"
 to = "now"
@@ -73,7 +73,8 @@ class TestExplainAndDryRun:
         rows = {row[0]: row[1:] for row in table_rows(result.stdout)}
         assert rows["from"][1] == "template 'particles'"
         assert rows["jobs"] == ["2", "command line (--jobs)"]
-        assert rows["particles"] == ["demo", "host=demo1,name=Particles *"]
+        assert rows["server"] == ["demo", "template 'particles'"]
+        assert rows["particles"] == ["host=demo1,name=Particles *"]
         assert configured.by_url == {}  # nothing was contacted
 
     def test_dry_run(self, configured: Servers) -> None:
@@ -305,18 +306,46 @@ class TestExistingFile:
 
 
 class TestItems:
-    def test_stacked_templates_share_items(
+    def test_template_and_command_line_share_items(
         self, configured: Servers, tmp_path: Path
     ) -> None:
         path = tmp_path / "out.tsv"
-        ok(run("fetch", "-t", "particles", "-t", "uptime", "-o", str(path)))
+        ok(
+            run(
+                "fetch",
+                "-t",
+                "uptime",
+                "--to",
+                "now",
+                "-i",
+                "host=demo1,name=Particles *",
+                "-o",
+                str(path),
+            )
+        )
         metadata, _ = read(path)
         requests = {item["itemid"]: item["requests"] for item in metadata["items"]}
         assert requests == {
-            20001: ["particles", "uptime"],
-            20002: ["particles"],
+            20001: ["uptime", "__custom"],
+            20002: ["__custom"],
             20004: ["uptime"],
         }
+
+    @pytest.mark.parametrize(
+        ("option", "reason"),
+        [
+            ("-t", "Only one template can be fetched at a time."),
+            ("-s", "zabgrab fetches from one server at a time."),
+        ],
+    )
+    def test_only_one_template_and_server(
+        self, configured: Servers, option: str, reason: str
+    ) -> None:
+        values = ["particles", "uptime"] if option == "-t" else ["demo", "lab"]
+        result = run("fetch", option, values[0], option, values[1])
+        assert result.exit_code == 2
+        long = "--template" if option == "-t" else "--server"
+        assert f"{long} can only be given once: {reason}" in result.stderr
 
     def test_nothing_matches(self, configured: Servers) -> None:
         result = run("fetch", "-s", "demo", "-i", "name=nothing", *TIMES)
@@ -410,21 +439,29 @@ class TestProblems:
         assert "Nothing was fetched." in result.stderr
 
     def test_skipped_items_are_reported(self, configured: Servers) -> None:
-        result = ok(run("fetch", "-t", "logs", "-t", "particles", "--resolution", "1h"))
+        result = ok(run("fetch", "-t", "logs", "-i", "20001", "--resolution", "1h"))
         assert (
             "Skipped demo1: Syslog (20005): log items have no hourly trends."
             in result.stderr
         )
 
-    def test_failover(self, configured: Servers) -> None:
-        configured.down.add("https://lab.example.org")
-        result = ok(run("fetch", "-t", "either"))
-        assert "Trying the next server." in result.stderr
+    def test_server_choice_is_asked(
+        self, configured: Servers, interactive: None
+    ) -> None:
+        result = ok(run("fetch", "-t", "either", "--format", "tsv", input="2\nn\n"))
+        assert "Which Zabbix server?" in result.stderr
         assert "from 'demo'" in result.stderr
 
-    def test_failover_all_down(self, configured: Servers) -> None:
-        configured.down |= {"https://lab.example.org", "https://demo.example.org"}
-        assert run("fetch", "-t", "either").exit_code == EXIT_ERROR
+    def test_server_choice_non_interactive(self, configured: Servers) -> None:
+        result = run("fetch", "-t", "either")
+        assert result.exit_code == EXIT_ERROR
+        assert "Which Zabbix server?" in result.stderr
+        assert "Pass --server NAME." in result.stderr
+
+    def test_server_within_the_choice(self, configured: Servers) -> None:
+        result = ok(run("fetch", "-t", "either", "-s", "demo"))
+        assert "overrides" not in result.stderr
+        assert "from 'demo'" in result.stderr
 
     def test_invalid_option_value(self, configured: Servers) -> None:
         result = run("fetch", "-t", "particles", "--timezone", "Mars/Olympus")
@@ -439,27 +476,6 @@ class TestProblems:
         )
         assert "from 'lab'" in result.stderr
 
-    def test_several_servers_in_summary(
-        self, configured: Servers, tmp_path: Path
-    ) -> None:
-        configured.secrets.tokens["https://other.example.org"] = TOKEN
-        path = tmp_path / "out.tsv"
-        result = ok(
-            run(
-                "fetch",
-                "-t",
-                "particles",
-                "-s",
-                "demo",
-                "-s",
-                "https://other.example.org",
-                "-o",
-                str(path),
-            )
-        )
-        assert "from 'demo', https://other.example.org" in result.stderr
-        assert read(path)[1][0][0].startswith("demo/demo1")
-
 
 class TestDisplayDetails:
     def test_explain_choices_and_unknowns(
@@ -470,7 +486,7 @@ class TestDisplayDetails:
             + TEMPLATES
             + """
 [templates.choosy]
-server = { choices = ["demo", "lab"], select = "all" }
+server = { choices = ["demo", "lab"] }
 items = [
     { host = { choices = ["demo1", "demo2"] } },
     { host = { choices = ["demo1"], select = "first" }, key = "k" },
@@ -479,19 +495,16 @@ items = [
         )
         result = ok(run("fetch", "-t", "choosy", "-i", "1", *TIMES, "--explain"))
         rows = table_rows(result.stdout)
-        assert ["choosy", "demo or lab (all)", "host=demo1 or demo2 (prompt)"] in rows
-        assert ["", "", "host=demo1 (first),key=k"] in rows
-        assert ["command line", "(asked)", "1"] in rows
+        assert ["server", "demo or lab (asked)", "template 'choosy'"] in rows
+        assert ["choosy", "host=demo1 or demo2 (prompt)"] in rows
+        assert ["", "host=demo1 (first),key=k"] in rows
+        assert ["command line", "1"] in rows
 
     def test_explain_nothing_given(self, configured: Servers) -> None:
         result = ok(run("fetch", *TIMES, "--explain"))
-        assert ["command line", "(asked)", "(asked)"] in table_rows(result.stdout)
-
-    def test_dry_run_several_servers(self, configured: Servers) -> None:
-        result = ok(
-            run("fetch", "-s", "demo", "-s", "lab", "-i", "20004", *TIMES, "--dry-run")
-        )
-        assert [row[0] for row in table_rows(result.stdout)] == ["demo", "lab"]
+        rows = table_rows(result.stdout)
+        assert ["server", "(asked)", ""] in rows
+        assert ["command line", "(asked)"] in rows
 
     def test_picker_shows_limit(
         self, configured: Servers, interactive: None, monkeypatch: pytest.MonkeyPatch
@@ -646,8 +659,8 @@ class TestLargeText:
     ) -> None:
         result = run(
             *self.ARGS,
-            "-t",
-            "particles",
+            "-i",
+            "host=demo1,name=Particles *",
             "-o",
             str(tmp_path / "logs.mat"),
             input=f"{answer}\n",

@@ -353,6 +353,7 @@ def explain_table(query: Query) -> Table:
     def row(key: str, value: str) -> None:
         table.add_row(key, value, query.sources.get(key, ""))
 
+    row("server", _server_text(query.server))
     row("from", f"{query.from_text} ({format_time(query.start, query.tz)})")
     row("to", f"{query.to_text} ({format_time(query.end, query.tz)})")
     row("resolution", str(query.resolution))
@@ -367,24 +368,23 @@ def explain_table(query: Query) -> Table:
 
 
 def requests_table(query: Query) -> Table:
-    """What will be fetched from where, before items are looked up."""
+    """What will be fetched, before items are looked up."""
     table = DataTable(title="Requests", title_justify="left")
     table.add_column("From", style="bold")
-    table.add_column("Server")
     table.add_column("Items")
     for request in query.requests:
-        server = request.server
-        if isinstance(server, Choice):
-            shown = f"{' or '.join(server.choices)} ({server.select})"
-        else:
-            shown = server or "(asked)"
         items = [format_item_spec_safe(spec) for spec in request.items] or ["(asked)"]
         table.add_row(
             "command line" if request.label == CUSTOM else request.label,
-            shown,
             "\n".join(items),
         )
     return table
+
+
+def _server_text(server: str | Choice[str] | None) -> str:
+    if isinstance(server, Choice):
+        return f"{' or '.join(server.choices)} (asked)"
+    return server or "(asked)"
 
 
 def format_item_spec_safe(spec: ItemSpec) -> str:
