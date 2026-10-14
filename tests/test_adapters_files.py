@@ -14,7 +14,7 @@ from zabgrab.adapters.formats.delimited import write_delimited
 from zabgrab.adapters.formats.hdf5 import write_fetch
 from zabgrab.model.series import FetchResult
 
-Writer = Callable[[Path], None]
+Writer = Callable[[Path], object]
 
 WRITERS: dict[str, Writer] = {
     "data.tsv": lambda p: write_delimited(
