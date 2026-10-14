@@ -802,8 +802,6 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Raw downloads are chunked by day and trends by 30 days; network errors are retried
   three times with backoff; each item downloads its chunks in order, `jobs` items at
   a time.
-- Still to do from phase 3's scope (deferred): a warning when raw data is requested
-  beyond an item's history retention.
 - `--save-template` saves a self-contained template (the templates used, the command
   line and prompt answers; never `[defaults]` or built-in values), rather than only
   the command line's values, which would leave a template built on another one
@@ -829,6 +827,19 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   be UK time (CI sets it with `tzutil`), and the tests stop with an error otherwise.
 - Files written via a temporary file get normal permissions (the umask, or the
   replaced file's), not the temporary file's private 0600.
+
+- Code is commented wherever it isn't trivial, and every module, class, function and
+  method has a NumPy-style docstring (Sphinx/napoleon sections such as `Parameters`,
+  `Returns`, `Raises`). New and changed code follows this from phase 5 on.
+
+## Follow-up tasks
+
+- Retrofit comments and NumPy-style docstrings to the existing code in
+  `src/zabgrab/` (module by module, behaviour unchanged, coverage kept at 100%).
+  Then consider enforcing it with ruff's pydocstyle rules (`D`, `convention =
+  "numpy"`).
+- A warning when raw data is requested beyond an item's history retention (deferred
+  from phase 3).
 
 ## Open questions
 
