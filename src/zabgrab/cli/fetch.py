@@ -39,8 +39,10 @@ from ..services.output import (
     guard_large_text,
     targets,
 )
+from ..services.plotting import plot_spec
 from ..services.resolve import CliRequest, resolve_query
 from ..services.templates import equivalent_command, template_table
+from ..ui import plot
 from ..ui.render import explain_table, format_time, plan_table, requests_table
 from .app import AppContext, global_options, pass_app
 from .config import EDIT_TARGETS, edit_target_path
@@ -132,6 +134,13 @@ from .discovery import ItemSpecType
     is_flag=True,
     help="Don't warn about writing lots of text to a .mat file.",
 )
+@click.option(
+    "--plot",
+    "plot_",
+    is_flag=True,
+    help="Plot the data (without saving it, unless --output is given). Needs "
+    "matplotlib: pip install 'zabgrab[plot]'.",
+)
 @click.option("-y", "--yes", is_flag=True, help="Fetch however many items match.")
 @click.option("--dry-run", is_flag=True, help="Show what would be fetched, then stop.")
 @click.option(
@@ -173,6 +182,7 @@ def fetch_command(
     group: str | None,
     in_place: bool,
     allow_large_text: bool,
+    plot_: bool,
     yes: bool,
     dry_run: bool,
     explain: bool,
@@ -210,6 +220,7 @@ def fetch_command(
         group=group,
         in_place=in_place,
         allow_large_text=allow_large_text,
+        plot=plot_,
     )
     if not explain:
         save.check(output)
@@ -394,6 +405,10 @@ def _fetch_and_save(
     if saved:
         summary += "; saved to " + ", ".join(saved)
     app.ui.success(summary + ".")
+    if options.plot:
+        # The whole requested range was fetched, so lines join up across it.
+        coverage = [(query.start.timestamp(), stored_end(query))]
+        plot.show_or_save(plot_spec(result.series, coverage, app.ui), query.tz)
     return bool(result.failed)
 
 

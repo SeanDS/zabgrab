@@ -1,0 +1,161 @@
+"""Drawing plots with matplotlib (the optional ``plot`` extra).
+
+matplotlib is imported only when a plot is drawn, so zabgrab works without it.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, tzinfo
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
+
+from ..errors import ZabgrabError
+from ..services.plotting import PlotSpec
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
+INSTALL_HINT = "Install it with: pip install 'zabgrab[plot]'"
+
+
+def _pyplot(*, interactive: bool) -> Any:
+    """Import ``matplotlib.pyplot``.
+
+    Parameters
+    ----------
+    interactive : bool
+        Whether a window will be shown. If not, the non-interactive Agg backend is
+        used, so saving works without a display.
+
+    Raises
+    ------
+    ZabgrabError
+        If matplotlib isn't installed.
+    """
+    try:
+        import matplotlib
+    except ImportError:
+        raise ZabgrabError("Plotting needs matplotlib.", hint=INSTALL_HINT) from None
+    if not interactive:
+        matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    return plt
+
+
+def draw(spec: PlotSpec, tz: tzinfo | None, *, interactive: bool = False) -> Figure:
+    """Draw a plot.
+
+    Parameters
+    ----------
+    spec : PlotSpec
+        What to draw (see :func:`zabgrab.services.plotting.plot_spec`).
+    tz : tzinfo or None
+        The time zone to show times in (``None`` for local time).
+    interactive : bool, optional
+        Whether the figure will be shown in a window.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        One subplot per axis in ``spec``, sharing the time axis.
+    """
+    plt = _pyplot(interactive=interactive)
+    figure, subplots = plt.subplots(
+        len(spec.axes),
+        1,
+        sharex=True,
+        squeeze=False,
+        figsize=(10, 2.5 + 2.5 * len(spec.axes)),
+        layout="constrained",
+    )
+    colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    for axis, (subplot,) in zip(spec.axes, subplots, strict=True):
+        for number, line in enumerate(axis.lines):
+            colour = colours[number % len(colours)]
+            for index, segment in enumerate(line.segments):
+                times = [_wall_clock(t, tz) for t in segment.times]
+                subplot.plot(
+                    times,
+                    segment.values,
+                    color=colour,
+                    # One legend entry per line, not per segment.
+                    label=line.label if index == 0 else None,
+                    marker="." if len(times) == 1 else None,
+                )
+                if segment.low is None or segment.high is None:
+                    continue
+                if len(times) == 1:
+                    # A band needs two points; show a lone one's range as a bar.
+                    (value,) = segment.values
+                    subplot.errorbar(
+                        times,
+                        segment.values,
+                        yerr=[[value - segment.low[0]], [segment.high[0] - value]],
+                        color=colour,
+                        alpha=0.5,
+                    )
+                else:
+                    subplot.fill_between(
+                        times,
+                        segment.low,
+                        segment.high,
+                        color=colour,
+                        alpha=0.2,
+                        linewidth=0,
+                    )
+        subplot.set_ylabel(axis.units)
+        subplot.grid(alpha=0.3)
+        subplot.legend(loc="best", fontsize="small")
+    subplots[-1][0].set_xlabel(f"Time ({_zone_name(tz)})")
+    if spec.title:
+        figure.suptitle(spec.title)
+    return cast("Figure", figure)
+
+
+def show_or_save(spec: PlotSpec, tz: tzinfo | None, output: Path | None = None) -> None:
+    """Show a plot in a window, or save it to a file.
+
+    Parameters
+    ----------
+    spec : PlotSpec
+        What to draw.
+    tz : tzinfo or None
+        The time zone to show times in (``None`` for local time).
+    output : Path, optional
+        The image file to save to (its extension picks the format, e.g. ``.png``,
+        ``.pdf`` or ``.svg``). If not given, the plot is shown in a window.
+
+    Raises
+    ------
+    ZabgrabError
+        If matplotlib isn't installed, or the file can't be written.
+    """
+    figure = draw(spec, tz, interactive=output is None)
+    plt = _pyplot(interactive=output is None)
+    try:
+        if output is None:
+            plt.show()
+        else:
+            try:
+                figure.savefig(output)
+            except (OSError, ValueError) as exc:
+                raise ZabgrabError(
+                    f"Can't save the plot to {output}.", details=[str(exc)]
+                ) from exc
+    finally:
+        plt.close(figure)
+
+
+def _wall_clock(time: float, tz: tzinfo | None) -> datetime:
+    """POSIX seconds as a naive wall-clock time in ``tz``.
+
+    matplotlib shows naive datetimes as they are, so converting each time
+    separately keeps the axis right across daylight saving changes (a single fixed
+    offset wouldn't).
+    """
+    return datetime.fromtimestamp(time, tz).replace(tzinfo=None)
+
+
+def _zone_name(tz: tzinfo | None) -> str:
+    return "local time" if tz is None else str(tz)

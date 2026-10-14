@@ -641,11 +641,21 @@ reading operation sees **one merged dataset** (`services/dataset.py`):
 
 ### Plotting (`pip install 'zabgrab[plot]'`)
 
-- `zabgrab plot FILE [--item PATTERN] [--from] [--to] [--group NAME]...` plots the
-  merged dataset. `--from`/`--to` set the plotted window.
-- `zabgrab fetch ... --plot` plots the fetched data without saving.
-- One axis per unit, labelled from the metadata as `host: name [units]`.
-- Trends are drawn as the avg line with a min/max band.
+- `zabgrab plot FILE [--item PATTERN] [--from] [--to] [--group NAME]... [-o IMAGE]`
+  plots the merged dataset (the same selection options as `export`).
+  `--from`/`--to` set the plotted window. `-o` saves an image instead of showing a
+  window, which also works without a display.
+- `zabgrab fetch ... --plot` plots the fetched data without saving (or asking to),
+  unless `--output` is given too.
+- One axis per unit, lines labelled `host: name [units]`, plus `(hourly)` for
+  trends and the server when the plot has several.
+- Trends are drawn as the avg line (else whichever statistic was fetched) with a
+  min/max band; a lone point's range is drawn as an error bar. A trend point (timed
+  at the start of its hour) belongs to the fetched range its hour overlaps.
+- Times are shown in the configured time zone, as wall-clock times (right across
+  daylight saving changes).
+- The logic (`services/plotting.py`) is separate from the matplotlib drawing
+  (`ui/plot.py`), which is imported only when plotting.
 - **Text items:**
   - If the selection contains only text items, error: `item 12345 (demo1: Syslog) is
     a log item; text items can't be plotted`.
@@ -748,7 +758,7 @@ alongside the MATLAB check files.
 | 3 ✅ | `services/resolve.py` (provenance, override logs, choices, stacked-template rules), `services/fetch.py` (async, chunked, raw + 1h trends, all value types), progress bars, summary, exit codes, TSV/CSV, auto naming, `--dry-run`/`--explain` | End-to-end fetch to TSV |
 | 4 ✅ | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
 | 5 ✅ | `--save-template` (tomlkit), "Next time" hint | Round-trip tests pass |
-| 6 | `plot` extra (merged view, coverage gaps, text-item errors) | Plots from live fetch and from multi-group files |
+| 6 ✅ | `plot` extra (merged view, coverage gaps, text-item errors) | Plots from live fetch and from multi-group files |
 | 7 | Full README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
 
 Each phase includes its tests and docstrings. The old code is deleted in phase 1.
