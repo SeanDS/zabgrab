@@ -61,6 +61,7 @@ jobs:
       # Expected local times in the tests are UK times. Elsewhere the tests set TZ,
       # which Windows ignores.
       - if: runner.os == 'Windows'
+        shell: pwsh  # Git Bash would turn /s into a path
         run: tzutil /s "GMT Standard Time"
       # Coverage below 100% fails the run (see [tool.coverage.report]).
       - run: pytest --cov --cov-report=term --cov-report=xml
