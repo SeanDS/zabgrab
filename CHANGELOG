@@ -6,6 +6,11 @@ PLAN.md for the design.
 - New layered TOML configuration (system, user, project, explicit) with validation
   errors that point at the offending file and key.
 - New `zabgrab config paths|show|edit` commands.
+- New `zabgrab hosts` and `zabgrab items` commands to find hosts and items.
+- Multiple servers can be configured; servers are chosen with `--server`, the
+  config, or a prompt (custom URLs can be saved to the config).
+- API tokens are read from an environment variable or the system keyring, or pasted
+  at a prompt; username/password login is also supported.
 
 # 0.1.2 (2023-12-12)
 - Changed CSV output format to display retrieved timeseries in parallel columns instead

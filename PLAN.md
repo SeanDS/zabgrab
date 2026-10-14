@@ -28,7 +28,7 @@ libraries only. Prefer a small amount of our own code over a niche library.
 |---|---|
 | CLI | click |
 | Colour, tables, progress bars, tracebacks | rich |
-| Zabbix API (official library, async) | zabbix_utils[async] (pulls in aiohttp) |
+| HTTP for the Zabbix API (own thin JSON-RPC client) | aiohttp |
 | Config validation and errors | pydantic v2 |
 | TOML reading | tomllib (stdlib) |
 | TOML editing that keeps formatting | tomlkit |
@@ -44,7 +44,7 @@ ourselves; see below), tqdm (rich covers progress).
 ## Architecture
 
 The code is split into layers, and dependencies only point inwards. The model and
-service layers never import click, rich, matplotlib, zabbix_utils or h5py.
+service layers never import click, rich, matplotlib, aiohttp or h5py.
 
 ```
 src/zabgrab/
@@ -54,7 +54,10 @@ src/zabgrab/
                        #   Cancelled, exit codes
 
   model/               # pure data, no I/O
-    item.py            # Item (server, itemid, host, name, key, units, value_type), ItemSpec
+    item.py            # ItemSpec (how users select items)
+    itemspec.py        # --item string <-> ItemSpec
+    zabbix.py          # Host, Item, ValueType
+    server.py          # Server (a resolved server: name + ServerConfig)
     series.py          # Series (numeric raw / trend / text / log columns), FetchRecord, Coverage
     query.py           # Query (fully resolved fetch request) + provenance records
     choice.py          # Choice {choices, select}, choice_or()
@@ -68,7 +71,9 @@ src/zabgrab/
     config.py          # config loading with interactive repair of invalid files
     resolve.py         # CLI + templates + defaults → Query, with provenance, choice
                        #   resolution, stacked-template rules
-    discover.py        # item spec / wildcard → Items
+    servers.py         # which server(s) to use: --server, config, prompt, "Custom…"
+    session.py         # connecting and logging in (env/keyring token, paste, password)
+    discover.py        # item spec / wildcard → Items; running actions across servers
     fetch.py           # chunking, concurrency, retries → FetchRecord (drives UI progress)
     update.py          # FetchRecord metadata → follow-up Query
     dataset.py         # merged view over every FetchRecord in a file (see Plotting)
@@ -76,10 +81,12 @@ src/zabgrab/
     templates.py       # Query/CLI params → template table (for --save-template)
 
   adapters/            # implement the ports against real things
-    zabbix.py          # ZabbixClient via zabbix_utils AsyncZabbixAPI
+    zabbix/
+      transport.py     # HTTP JSON-RPC transport (aiohttp), network error hints
+      api.py           # ZabbixAPI: implements the ZabbixClient port
     configfiles.py     # path discovery, layered tomllib loading, tomlkit edits
     system.py          # SystemClock, ClickEditor
-    secrets.py         # SecretStore via env vars + keyring
+    secrets.py         # SecretStore via the keyring
     formats/
       hdf5.py          # .h5 / .mat read, write, append
       delimited.py     # .tsv / .csv write
@@ -276,7 +283,9 @@ Item spec syntax:
 - CLI: `--item 12345`, or `--item 'host=demo1,name=Particles *'`, or
   `--item 'key=particle.count[*]'`, or `--item 'tag=area:lab'`.
 - Config: the equivalent tables.
-- `*` wildcards map to Zabbix item search with wildcards enabled.
+- Patterns follow the Zabbix web UI filters: case-insensitive, matching anywhere
+  in the text, with `*` as a wildcard. Host patterns match the technical or visible
+  name.
 
 Resolution rules:
 - The history type is taken from the item's `value_type`. The user never supplies it.
@@ -341,7 +350,7 @@ default.
 
 ### Downloading
 
-- Uses zabbix_utils `AsyncZabbixAPI`, with concurrency limited by `--jobs` and retries
+- Uses zabgrab's async `ZabbixAPI` client, with concurrency limited by `--jobs` and retries
   with exponential backoff on transient errors.
 - Each item's time range is split into chunks, by default one day for raw data and
   longer for trends. This bounds response sizes and lets progress bars move.
@@ -575,9 +584,13 @@ timeseries.
 
 ## Authentication
 
-- Zabbix 7 API tokens are sent as a Bearer header by zabbix_utils.
+- Tokens and session IDs are sent as a Bearer header. Tokens are checked with
+  `user.checkAuthentication` before use.
 - Token lookup order: `token_env` environment variable, then keyring entry for the
-  server URL, then an error suggesting `zabgrab login SERVER`.
+  server URL. If neither exists (or the token is rejected), interactive users choose
+  between pasting a token (offered to be saved in the keyring) and a username and
+  password. Non-interactive runs get an error explaining how to set up `token_env`
+  (to be updated to mention `zabgrab login` in phase 5).
 - `auth = "password"`: prompt for the username (defaulting to `username` from the
   server config, if set) and the password every time. Non-interactive runs error.
 - `zabgrab login SERVER`:
@@ -635,16 +648,14 @@ alongside the MATLAB check files.
 
 ## Testing
 
-- **Mocked Zabbix server, used at two levels and fed from the same data
-  (`tests/fixtures/zabbix_seed.py`):**
-  - `FakeZabbixClient`: an in-memory implementation of the `ZabbixClient` port, for
-    service tests. It is fast, needs no network, and can inject errors, timeouts and
-    slow responses.
-  - A fake Zabbix 7 JSON-RPC HTTP server built on aiohttp's test server (no extra
-    library). It is used for tests of the zabbix_utils adapter and for CLI end-to-end
-    tests. It implements `apiinfo.version`, `user.login`/`logout`, `host.get`,
-    `item.get` (search, wildcards, filters), `history.get` and `trend.get`, including
-    authentication failures.
+- **Mocked Zabbix server** (`tests/fakezabbix.py`): `FakeZabbix` implements the
+  API methods zabgrab uses over in-memory data (`apiinfo.version`, `user.login`/
+  `logout`/`checkAuthentication`, `hostgroup.get`, `host.get`, `item.get`, and later
+  `history.get`/`trend.get`), with Zabbix's search semantics, auth failures and
+  injectable errors. It's used at two levels, with the same seed data:
+  - through `FakeTransport`, in memory, so service and CLI tests exercise the real
+    `ZabbixAPI` client without a network;
+  - served over HTTP with aiohttp's test server, to test the real `HttpTransport`.
 - **Service tests** use the fake client, a recording UI (captures messages and
   scripts the prompt answers) and a frozen clock. They need no click, rich or files
   beyond `tmp_path`.
@@ -709,7 +720,7 @@ alongside the MATLAB check files.
 | # | Scope | Done when |
 |---|---|---|
 | 1 ✅ | Project skeleton: src layout, pyproject (3.11+), ruff/mypy/pytest/pre-commit, GitLab CI matrix. Ports, model, `ui/console.py`, config adapter (paths, layering, validation), `config paths/show/edit` | CI green; config tests pass |
-| 2 | Zabbix adapter, secrets adapter (env/keyring, password prompt), `FakeZabbixClient` + fake JSON-RPC server, item spec parsing, `services/discover.py`, `hosts`/`items` commands | Can list hosts/items against fake and real servers |
+| 2 ✅ | Zabbix adapter, secrets adapter (env/keyring, password prompt), `FakeZabbixClient` + fake JSON-RPC server, item spec parsing, `services/discover.py`, `hosts`/`items` commands | Can list hosts/items against fake and real servers |
 | 3 | `services/resolve.py` (provenance, override logs, choices, stacked-template rules), `services/fetch.py` (async, chunked, raw + 1h trends, all value types), progress bars, summary, exit codes, TSV/CSV, auto naming, `--dry-run`/`--explain` | End-to-end fetch to TSV |
 | 4 | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
 | 5 | `--save-template` (tomlkit), `login`/`logout` | Round-trip tests pass |
@@ -730,6 +741,12 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Append groups are a storage detail. Reading, plotting and exporting use the merged
   view by default.
 - The untracked sample data files in the repo are out of scope.
+- zabbix_utils was dropped in favour of a thin JSON-RPC client on aiohttp
+  (phase 2). zabbix_utils closes its HTTP session after any API error, which breaks
+  retries and concurrent requests, and silently reads `ZABBIX_TOKEN` and similar
+  environment variables.
+- Search patterns use Zabbix's own semantics (substring match, `*` wildcard), so
+  results match the web UI and server-side limits are exact.
 
 ## Open questions
 

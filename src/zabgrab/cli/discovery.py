@@ -119,7 +119,7 @@ def hosts_command(
 @click.argument("pattern", required=False)
 @click.option("-H", "--host", help="Only items on hosts matching this pattern.")
 @click.option("-k", "--key", help="Only items whose key matches this pattern.")
-@click.option("-t", "--tag", help="Only items with this tag ('name' or 'name:value').")
+@click.option("--tag", help="Only items with this tag ('name' or 'name:value').")
 @click.option(
     "-i",
     "--item",

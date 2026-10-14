@@ -2,11 +2,11 @@
 Command line tool for Zabbix data retrieval.
 
 > **Zabgrab is being rewritten for version 1.0.0.** See [PLAN.md](PLAN.md) for the
-> design. Only the configuration commands below work so far; data retrieval returns in
-> a later phase. The full documentation will be written before the release.
+> design. Configuration and finding hosts/items work so far; data retrieval returns
+> in a later phase. The full documentation will be written before the release.
 
 ## Installation
-Requires Python 3.11 or later.
+Requires Python 3.11 or later, and a Zabbix 7.0 or later server.
 
 ```bash
 pip install zabgrab
@@ -40,6 +40,43 @@ Useful commands:
   which file each value came from
 - `zabgrab config edit [--target user|project|system]`: edit a config file (created if
   needed), and check it's valid afterwards
+
+### Servers and logging in
+Define servers in your config:
+
+```toml
+[servers.demo]
+url = "https://zabbix.example.org"   # the Zabbix web frontend's URL
+token_env = "DEMO_ZABBIX_TOKEN"      # optional: environment variable holding an API token
+# auth = "password"                  # log in with username and password instead
+# username = "me"                    # default username for password login
+# verify_ssl = false                 # for self-signed certificates (insecure)
+# timeout = 30                       # seconds
+
+[defaults]
+server = "demo"                      # used when --server isn't given
+```
+
+Create API tokens in the Zabbix web UI under *User settings → API tokens*. Zabgrab
+looks for a token in the server's `token_env` variable, then in your system keyring. If
+there's none, it asks you to paste one (and offers to save it to the keyring) or to log
+in with a username and password.
+
+If no server is given or configured, zabgrab asks you to choose one, or to enter a URL
+(which it can save to your config).
+
+## Finding hosts and items
+
+```bash
+zabgrab hosts                       # all hosts
+zabgrab hosts demo --group Lab      # hosts matching "demo" in groups matching "Lab"
+zabgrab items "Particles *" --host demo1
+zabgrab items --key "net.if.in[*]" --server demo --server lab
+zabgrab items --item 12345 --item "host=demo1,key=system.uptime"
+```
+
+Patterns work like the filters in the Zabbix web UI: they're case-insensitive, match
+anywhere in the text, and `*` matches any text.
 
 ## Credits
 Sean Leavey <sean.leavey@stfc.ac.uk>
