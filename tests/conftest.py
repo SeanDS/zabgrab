@@ -85,6 +85,16 @@ def _local_time_zone(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     time.tzset()
 
 
+@pytest.fixture(autouse=True)
+def _modern_windows_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Render like Windows Terminal, as on other systems.
+
+    Without a real console (as under pytest or in CI), rich assumes an old Windows
+    console: 16 colours and plain table header borders.
+    """
+    monkeypatch.setattr("rich.console.detect_legacy_windows", lambda: False)
+
+
 @pytest.fixture
 def locked_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """A directory nothing can be created in.

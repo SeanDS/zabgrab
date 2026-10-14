@@ -225,7 +225,7 @@ class TestFormat:
         path = tmp_path / "out.csv"
         result = ok(run("fetch", "-t", "particles", "-o", str(path), "--format", "tsv"))
         assert "Saving tsv data to" in result.stderr
-        assert "\t" in path.read_text().splitlines()[-1]
+        assert "\t" in path.read_text(encoding="utf-8").splitlines()[-1]
 
     def test_unknown_extension_uses_config(
         self, configured: Servers, tmp_path: Path, user_config: Path
@@ -233,7 +233,7 @@ class TestFormat:
         user_config.write_text(CONFIG + TEMPLATES + '[defaults]\nformat = "csv"\n')
         path = tmp_path / "out.dat"
         ok(run("fetch", "-t", "particles", "-o", str(path)))
-        assert "," in path.read_text().splitlines()[-1]
+        assert "," in path.read_text(encoding="utf-8").splitlines()[-1]
 
     def test_asked_for(self, configured: Servers, interactive: None) -> None:
         ok(run("fetch", "-t", "particles", "-o", input="4\n"))
@@ -270,7 +270,7 @@ class TestExistingFile:
 
     def test_overwrite_flag(self, configured: Servers, existing: Path) -> None:
         ok(run("fetch", "-t", "particles", "-o", str(existing), "--overwrite"))
-        assert existing.read_text() != "old"
+        assert existing.read_text(encoding="utf-8") != "old"
 
     def test_non_interactive_saves_alongside(
         self, configured: Servers, existing: Path
