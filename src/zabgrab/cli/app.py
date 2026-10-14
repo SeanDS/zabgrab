@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -12,12 +13,17 @@ from ..adapters.configfiles import (
     ConfigLayer,
     Environment,
     LoadedConfig,
+    add_server,
     discover_layers,
     load_config,
+    user_config_path,
 )
 from ..errors import EXIT_ERROR, EXIT_INTERRUPTED, ZabgrabError
+from ..model.choice import Choice
+from ..model.server import Server
+from ..services import servers, session
 from ..services.config import load_with_repair
-from ..services.ports import Editor
+from ..services.ports import ClientFactory, Clock, Editor, SecretStore, ZabbixClient
 from ..ui.console import RichUI
 
 
@@ -28,6 +34,9 @@ class AppContext:
     ui: RichUI
     env: Environment
     editor: Editor
+    secrets: SecretStore
+    client_factory: ClientFactory
+    clock: Clock
     explicit_config: Path | None = None
     isolated: bool = False
     _loaded: LoadedConfig | None = field(default=None, init=False, repr=False)
@@ -48,6 +57,31 @@ class AppContext:
                 lambda: load_config(self.layers()), self.ui, self.editor
             )
         return self._loaded
+
+    def select_servers(
+        self, cli: Sequence[str], configured: str | Choice[str] | None
+    ) -> servers.ServerSelection:
+        """The servers to use (see :func:`zabgrab.services.servers.select_servers`).
+
+        Custom servers entered at a prompt can be saved to the user config.
+        """
+        return servers.select_servers(
+            cli, configured, self.config().config, self.ui, save=self.save_server
+        )
+
+    def save_server(self, name: str, url: str) -> None:
+        """Add a server to the user config file."""
+        add_server(user_config_path(self.env), name, url)
+
+    async def connect(self, server: Server) -> ZabbixClient:
+        """A logged-in client for ``server``."""
+        return await session.connect(
+            server,
+            factory=self.client_factory,
+            ui=self.ui,
+            secrets=self.secrets,
+            env=self.env.variables,
+        )
 
 
 pass_app = click.make_pass_decorator(AppContext)

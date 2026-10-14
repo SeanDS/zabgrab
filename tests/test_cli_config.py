@@ -11,7 +11,9 @@ from click.testing import CliRunner, Result
 
 from zabgrab import __version__
 from zabgrab.adapters.configfiles import Environment
-from zabgrab.cli import cli
+from zabgrab.adapters.secrets import KeyringSecrets
+from zabgrab.adapters.system import SystemClock
+from zabgrab.cli import cli, http_client
 from zabgrab.cli.app import AppContext
 from zabgrab.errors import EXIT_ERROR, EXIT_INTERRUPTED, ZabgrabError
 from zabgrab.ui.console import RichUI
@@ -275,7 +277,14 @@ class TestMoreEdit:
 
 
 def test_config_is_loaded_once(env: Environment) -> None:
-    app = AppContext(ui=RichUI(interactive=False), env=env, editor=FakeEditor())
+    app = AppContext(
+        ui=RichUI(interactive=False),
+        env=env,
+        editor=FakeEditor(),
+        secrets=KeyringSecrets(),
+        client_factory=http_client,
+        clock=SystemClock(),
+    )
     assert app.config() is app.config()
 
 

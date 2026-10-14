@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from datetime import timedelta
 from typing import ClassVar
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from zabgrab.errors import Cancelled, InputRequired
 from zabgrab.services.ports import Option
 from zabgrab.ui.console import RichUI, is_interactive
+from zabgrab.ui.render import format_age
 from zabgrab.ui.selection import parse_selection
 
 
@@ -216,3 +218,21 @@ def test_choose_many_reasks(
     options = [Option("a", 1), Option("b", 2)]
     assert make_ui(capsys).choose_many("Which?", options, fix="") == [1, 2]
     assert "out of range" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("seconds", "text"),
+    [
+        (-5, "0s"),
+        (0, "0s"),
+        (59, "59s"),
+        (60, "1m"),
+        (3599, "59m"),
+        (3600, "1h"),
+        (86399, "23h"),
+        (86400, "1d"),
+        (10 * 86400, "10d"),
+    ],
+)
+def test_format_age(seconds: int, text: str) -> None:
+    assert format_age(timedelta(seconds=seconds)) == text

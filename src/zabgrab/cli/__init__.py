@@ -8,10 +8,22 @@ import click
 
 from .. import PROGRAM, __version__
 from ..adapters.configfiles import Environment
-from ..adapters.system import ClickEditor
+from ..adapters.secrets import KeyringSecrets
+from ..adapters.system import ClickEditor, SystemClock
+from ..adapters.zabbix import HttpTransport, ZabbixAPI
+from ..model.config import ServerConfig
+from ..services.ports import ZabbixClient
 from ..ui.console import RichUI, is_interactive
 from .app import AppContext, ZabgrabGroup
 from .config import config_group
+from .discovery import hosts_command, items_command
+
+
+def http_client(config: ServerConfig) -> ZabbixClient:
+    """Create a client that talks to a real server over HTTP(S)."""
+    return ZabbixAPI(
+        HttpTransport(config.url, verify_ssl=config.verify_ssl, timeout=config.timeout)
+    )
 
 
 @click.group(
@@ -77,12 +89,17 @@ def cli(
         ui=ui,
         env=env,
         editor=ClickEditor(),
+        secrets=KeyringSecrets(),
+        client_factory=http_client,
+        clock=SystemClock(),
         explicit_config=config_path,
         isolated=isolated,
     )
 
 
 cli.add_command(config_group)
+cli.add_command(hosts_command)
+cli.add_command(items_command)
 
 
 def main() -> None:

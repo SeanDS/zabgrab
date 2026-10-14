@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
+from datetime import datetime, timedelta
 from typing import Any
 
 import tomlkit
 from rich.table import Table
-from tomlkit.items import Array, InlineTable, Item
+from tomlkit.items import Array, InlineTable
+from tomlkit.items import Item as TomlItem
 
 from ..adapters.configfiles import ConfigLayer, LayerKind, LoadedConfig
+from ..model.server import Server
+from ..model.zabbix import Host, Item
 
 
 def layers_table(layers: Iterable[ConfigLayer]) -> Table:
@@ -70,7 +74,7 @@ def config_to_toml(loaded: LoadedConfig, *, sources: bool = False) -> str:
     return tomlkit.dumps(doc)
 
 
-def _item(value: Any) -> Item:
+def _item(value: Any) -> TomlItem:
     """Convert a value to a TOML item, using inline tables for nested tables."""
     if isinstance(value, Mapping):
         table: InlineTable = tomlkit.inline_table()
@@ -83,5 +87,81 @@ def _item(value: Any) -> Item:
         if any(isinstance(sub, Mapping) for sub in value):
             array.multiline(True)
         return array
-    item: Item = tomlkit.item(value)
+    item: TomlItem = tomlkit.item(value)
     return item
+
+
+def format_age(age: timedelta) -> str:
+    """A compact age such as ``45s``, ``12m``, ``3h`` or ``9d``."""
+    seconds = max(0, int(age.total_seconds()))
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds >= size:
+            return f"{seconds // size}{unit}"
+    return f"{seconds}s"
+
+
+def _shorten(text: str, width: int = 40) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
+def hosts_table(rows: Sequence[tuple[Server, Host]]) -> Table:
+    """Table of hosts, with a server column if there's more than one server."""
+    multiple = len({server for server, _ in rows}) > 1
+    table = Table()
+    if multiple:
+        table.add_column("Server", style="magenta")
+    table.add_column("Host ID", style="cyan", justify="right")
+    table.add_column("Host", style="bold")
+    table.add_column("Name")
+    table.add_column("Groups")
+    table.add_column("Status")
+
+    for server, host in rows:
+        cells = [
+            str(host.hostid),
+            host.host,
+            host.name,
+            ", ".join(host.groups),
+            "enabled" if host.enabled else "disabled",
+        ]
+        table.add_row(
+            *([server.label] if multiple else []),
+            *cells,
+            style=None if host.enabled else "dim",
+        )
+    return table
+
+
+def items_table(rows: Sequence[tuple[Server, Item]], *, now: datetime) -> Table:
+    """Table of items, with a server column if there's more than one server."""
+    multiple = len({server for server, _ in rows}) > 1
+    table = Table()
+    if multiple:
+        table.add_column("Server", style="magenta")
+    table.add_column("Item ID", style="cyan", justify="right")
+    table.add_column("Host")
+    table.add_column("Name", style="bold")
+    table.add_column("Key", overflow="fold")
+    table.add_column("Type")
+    table.add_column("Units")
+    table.add_column("Last value")
+    table.add_column("Age", justify="right")
+
+    for server, item in rows:
+        cells = [
+            str(item.itemid),
+            item.host_name,
+            item.name + ("" if item.enabled else " (disabled)"),
+            item.key,
+            item.value_type.label,
+            item.units,
+            "" if item.last_value is None else _shorten(item.last_value),
+            "" if item.last_clock is None else format_age(now - item.last_clock),
+        ]
+        table.add_row(
+            *([server.label] if multiple else []),
+            *cells,
+            style=None if item.enabled else "dim",
+        )
+    return table
