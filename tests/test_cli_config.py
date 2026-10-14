@@ -316,19 +316,14 @@ class TestMoreEdit:
         self,
         editor: FakeEditor,
         interactive: None,
-        tmp_path: Path,
+        locked_dir: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        locked = tmp_path / "locked"
-        locked.mkdir(mode=0o500)
         monkeypatch.setattr(
             "zabgrab.cli.config.system_config_path",
-            lambda env: locked / "zabgrab" / "config.toml",
+            lambda env: locked_dir / "zabgrab" / "config.toml",
         )
-        try:
-            result = run("config", "edit", "--target", "system")
-        finally:
-            locked.chmod(0o700)
+        result = run("config", "edit", "--target", "system")
         assert result.exit_code == EXIT_ERROR
         assert "permission denied" in result.stderr
         assert "administrator rights" in result.stderr
