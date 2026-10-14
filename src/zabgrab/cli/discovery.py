@@ -85,11 +85,11 @@ def _report_limit(
 
 
 @click.command("hosts")
-@global_options
 @click.argument("pattern", required=False)
 @click.option("-g", "--group", help="Only hosts in host groups matching this pattern.")
 @server_option
 @limit_option
+@global_options
 @pass_app
 def hosts_command(
     app: AppContext,
@@ -117,7 +117,6 @@ def hosts_command(
 
 
 @click.command("items")
-@global_options
 @click.argument("pattern", required=False)
 @click.option("-H", "--host", help="Only items on hosts matching this pattern.")
 @click.option("-k", "--key", help="Only items whose key matches this pattern.")
@@ -132,6 +131,7 @@ def hosts_command(
 )
 @server_option
 @limit_option
+@global_options
 @pass_app
 def items_command(
     app: AppContext,

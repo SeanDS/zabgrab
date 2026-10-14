@@ -34,8 +34,8 @@ def _server(app: AppContext, ref: str | None) -> Server:
 
 
 @token_group.command("list")
-@global_options
 @click.option("--check", is_flag=True, help="Check each token against its server.")
+@global_options
 @pass_app
 def list_command(app: AppContext, check: bool) -> None:
     """List servers and their tokens (tokens themselves are never shown)."""
@@ -69,12 +69,12 @@ def list_command(app: AppContext, check: bool) -> None:
 
 
 @token_group.command("add")
-@global_options
 @click.argument("server", required=False, metavar="[NAME|URL]")
 @click.option("--stdin", is_flag=True, help="Read the token from standard input.")
 @click.option(
     "--no-check", is_flag=True, help="Store the token without checking it first."
 )
+@global_options
 @pass_app
 def add_command(
     app: AppContext, server: str | None, stdin: bool, no_check: bool
@@ -100,9 +100,9 @@ def add_command(
 
 
 @token_group.command("delete")
-@global_options
 @click.argument("server", required=False, metavar="[NAME|URL]")
 @click.option("-y", "--yes", is_flag=True, help="Don't ask for confirmation.")
+@global_options
 @pass_app
 def delete_command(app: AppContext, server: str | None, yes: bool) -> None:
     """Delete a stored token (asks which, if not given)."""

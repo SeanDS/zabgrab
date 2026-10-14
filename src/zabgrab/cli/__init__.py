@@ -15,8 +15,8 @@ from .tokens import token_group
     cls=ZabgrabGroup,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-@global_options
 @click.version_option(__version__, "-V", "--version", prog_name=PROGRAM)
+@global_options
 def cli() -> None:
     """Retrieve data from Zabbix servers.
 

@@ -54,12 +54,12 @@ def paths_command(app: AppContext) -> None:
 
 
 @config_group.command("show")
-@global_options
 @click.option(
     "--sources",
     is_flag=True,
     help="Prefix each line with the file its value came from.",
 )
+@global_options
 @pass_app
 def show_command(app: AppContext, sources: bool) -> None:
     """Print the effective configuration (all files merged) as TOML."""
@@ -71,7 +71,6 @@ def show_command(app: AppContext, sources: bool) -> None:
 
 
 @config_group.command("edit")
-@global_options
 @click.option(
     "--target",
     type=click.Choice(list(EDIT_TARGETS)),
@@ -80,6 +79,7 @@ def show_command(app: AppContext, sources: bool) -> None:
     help="Which config file to edit. 'project' is the nearest zabgrab.toml, or a new "
     "one in the current directory.",
 )
+@global_options
 @pass_app
 def edit_command(app: AppContext, target: str) -> None:
     """Open a config file in your editor, creating it if needed."""
