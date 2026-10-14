@@ -35,6 +35,9 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +45,8 @@ jobs:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
         include:
           - os: macos-latest
+            python-version: "3.14"
+          - os: windows-latest
             python-version: "3.14"
     steps:
       - uses: actions/checkout@v5
@@ -53,6 +58,10 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
+      # Expected local times in the tests are UK times. Elsewhere the tests set TZ,
+      # which Windows ignores.
+      - if: runner.os == 'Windows'
+        run: tzutil /s "GMT Standard Time"
       # Coverage below 100% fails the run (see [tool.coverage.report]).
       - run: pytest --cov --cov-report=term --cov-report=xml
       - name: Coverage summary

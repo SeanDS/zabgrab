@@ -5,8 +5,10 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -51,9 +53,31 @@ def _isolate_environment(
     )
 
 
+UK = ZoneInfo("Europe/London")
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Windows can't change a running process's time zone, so it must be UK time.
+
+    CI sets it with ``tzutil``. Elsewhere :func:`_local_time_zone` sets it.
+    """
+    in_uk_time = all(
+        datetime(2026, month, 1, tzinfo=UTC).astimezone().utcoffset()
+        == datetime(2026, month, 1, tzinfo=UK).utcoffset()
+        for month in (1, 7)
+    )
+    if not hasattr(time, "tzset") and not in_uk_time:
+        raise pytest.UsageError(
+            'Run the tests in UK time: tzutil /s "GMT Standard Time"'
+        )
+
+
 @pytest.fixture(autouse=True)
 def _local_time_zone(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Run every test in UK time, which expected local times are written in."""
+    if not hasattr(time, "tzset"):
+        yield  # see pytest_configure
+        return
     monkeypatch.setenv("TZ", "Europe/London")
     time.tzset()
     yield
@@ -65,12 +89,13 @@ def _local_time_zone(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 def locked_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """A directory nothing can be created in.
 
-    Root ignores directory permissions (as in CI containers), so for root the
-    directory also makes :func:`os.open` and :func:`os.mkdir` fail inside it.
+    Root ignores directory permissions (as in CI containers), and Windows ignores
+    POSIX modes, so then the directory also makes :func:`os.open` and
+    :func:`os.mkdir` fail inside it.
     """
     locked = tmp_path / "locked"
     locked.mkdir(mode=0o500)
-    if os.geteuid() == 0:
+    if os.name == "nt" or os.geteuid() == 0:
         real_open, real_mkdir = os.open, os.mkdir
 
         def refuse(path: Any) -> None:
