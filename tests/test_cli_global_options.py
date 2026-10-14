@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 import pytest
+from click.testing import CliRunner
 
 from zabgrab.cli import cli
 
@@ -84,3 +85,33 @@ def test_config_anywhere(tmp_path: Path, args: list[str]) -> None:
 def test_isolated_after_command(servers: Servers) -> None:
     result = run("token", "list", "--isolated")
     assert "No servers are configured" in result.stderr
+
+
+def test_errors_use_options_given_after_the_command() -> None:
+    # The redirect/connection error is reported by the root command's error
+    # handler, which must see options given at the subcommand level.
+    result = run("hosts", "-s", "http://127.0.0.1:1", "--isolated", "--color")
+    assert result.exit_code == 1
+    assert result.stderr.startswith("\x1b[")
+
+
+@pytest.mark.parametrize(
+    ("args", "coloured"),
+    [
+        (["--color", "config", "show", "--sources", "--no-color"], False),
+        (["--no-color", "config", "show", "--sources", "--color"], True),
+        (["config", "--color", "show", "--sources"], True),
+    ],
+)
+def test_last_colour_option_wins(args: list[str], coloured: bool) -> None:
+    result = CliRunner().invoke(cli, ["--isolated", *args])
+    assert ("\x1b[" in result.stdout) is coloured
+
+
+def test_options_from_the_environment_apply(tmp_path: Path) -> None:
+    path = tmp_path / "extra.toml"
+    path.write_text("[defaults]\njobs = 3\n")
+    result = CliRunner(env={"ZABGRAB_CONFIG": str(path)}).invoke(
+        cli, ["config", "show"]
+    )
+    assert "jobs = 3" in result.stdout

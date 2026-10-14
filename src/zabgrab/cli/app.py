@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import click
+from click.core import ParameterSource
 
 from ..adapters.configfiles import (
     BUILTIN_SOURCE,
@@ -142,11 +143,17 @@ pass_app = click.make_pass_decorator(AppContext, ensure=True)
 def _set(
     apply: Callable[[GlobalOptions, Any], None],
 ) -> Callable[[click.Context, click.Parameter, Any], None]:
-    """An option callback applying a given (non-default) value to the options."""
+    """An option callback applying the option's value to the shared options.
+
+    The context object is created on the first (root) command's context even when
+    the option isn't given, so that every level shares it, including the error
+    handler, which looks for it on the root context.
+    """
 
     def callback(ctx: click.Context, param: click.Parameter, value: Any) -> None:
-        if value not in (None, False, 0):
-            apply(ctx.ensure_object(AppContext).options, value)
+        options = ctx.ensure_object(AppContext).options
+        if ctx.get_parameter_source(param.name or "") is not ParameterSource.DEFAULT:
+            apply(options, value)
 
     return callback
 
@@ -180,7 +187,7 @@ GLOBAL_OPTIONS = [
         "--debug",
         is_flag=True,
         expose_value=False,
-        callback=_set(lambda options, value: setattr(options, "debug", True)),
+        callback=_set(lambda options, value: setattr(options, "debug", value)),
         help="Show debug messages and full tracebacks for errors.",
     ),
     click.option(
@@ -205,14 +212,14 @@ GLOBAL_OPTIONS = [
         "--isolated",
         is_flag=True,
         expose_value=False,
-        callback=_set(lambda options, value: setattr(options, "isolated", True)),
+        callback=_set(lambda options, value: setattr(options, "isolated", value)),
         help="Ignore the system, user and project config files.",
     ),
     click.option(
         "--no-input",
         is_flag=True,
         expose_value=False,
-        callback=_set(lambda options, value: setattr(options, "no_input", True)),
+        callback=_set(lambda options, value: setattr(options, "no_input", value)),
         help="Never prompt; fail with instructions instead. Also enabled by "
         "$ZABGRAB_NO_INPUT or $CI.",
     ),
