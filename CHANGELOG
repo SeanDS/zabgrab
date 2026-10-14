@@ -19,7 +19,8 @@ PLAN.md for the design.
 - New `zabgrab fetch` command: stackable templates and item specs, parallel
   downloads with progress bars, raw history or hourly trends, every item value
   type, TSV/CSV output with metadata, automatic file names, `--explain` and
-  `--dry-run`.
+  `--dry-run`. `--agg` applies to hourly trends only; with raw data it's ignored
+  with a warning.
 - MATLAB v7.3 (`.mat`) and HDF5 (`.h5`) output, holding one group per fetch;
   `fetch --append` adds groups to existing files.
 - New `zabgrab update FILE` command to add the data since a file's last fetch.

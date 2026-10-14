@@ -110,6 +110,10 @@ zabgrab fetch -t particles --explain                 # show the settings and whe
 zabgrab fetch -t particles --dry-run                 # show what would be fetched
 ```
 
+`--agg` picks which of Zabbix's hourly statistics to save, so it only applies with
+`--resolution 1h`. Raw data is saved as it is; an `--agg` given with raw data (or by
+a template) is ignored with a warning.
+
 Templates define what to fetch, and can set any `fetch` option:
 
 ```toml

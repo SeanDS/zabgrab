@@ -354,6 +354,9 @@ default.
 - **`resolution`/`agg`:** the same rule as `from`/`to`. Templates that set different
   values get a warning, then a prompt when interactive or an error when not. A CLI
   `--resolution`/`--agg` wins, and a log message says the templates' values are ignored.
+  `agg` only applies to hourly trends: with raw data, an `agg` from the CLI or a
+  template gets a warning that it's ignored (one from `[defaults]` doesn't), and an
+  ignored `--agg` doesn't make the query custom.
 - Item specs and `--item` flags on the CLI are added to the templates' items.
 
 ### Downloading

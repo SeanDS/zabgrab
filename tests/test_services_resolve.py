@@ -334,6 +334,57 @@ class TestUnknownTemplate:
         assert "No templates are configured" in exc_info.value.hint
 
 
+class TestAggWithRawData:
+    """agg only applies to hourly trends; choosing it for raw data is warned about."""
+
+    IGNORED = (
+        "is ignored: statistics are only available for hourly trends "
+        "(--resolution 1h), and raw data is saved as it is."
+    )
+    CFG = config(
+        templates={
+            "a": {"items": [{"itemid": 1}], "agg": ["min"], "from": "now"},
+            "b": {"items": [{"itemid": 2}], "agg": ["max"]},
+        },
+        defaults={"to": "now"},
+    )
+
+    def test_cli(self) -> None:
+        ui = RecordingUI()
+        query = resolve("a", cfg=self.CFG, ui=ui, agg=["avg"])
+        assert ui.levels("warning") == [f"--agg {self.IGNORED}"]
+        assert not query.custom  # the data is the same as the template's
+
+    def test_template(self) -> None:
+        ui = RecordingUI()
+        resolve("a", cfg=self.CFG, ui=ui)
+        assert ui.levels("warning") == [f"agg from template 'a' {self.IGNORED}"]
+
+    def test_template_chosen_at_prompt(self) -> None:
+        ui = RecordingUI(answers=[0])
+        resolve("a", "b", cfg=self.CFG, ui=ui)
+        assert ui.levels("warning")[-1] == f"agg from template 'a' {self.IGNORED}"
+
+    @pytest.mark.parametrize(
+        "cfg",
+        [
+            config(defaults={"agg": ["avg"], "from": "now", "to": "now"}),
+            config(defaults={"from": "now", "to": "now"}),
+        ],
+        ids=["defaults", "built-in"],
+    )
+    def test_defaults_are_not_warned_about(self, cfg: Config) -> None:
+        ui = RecordingUI()
+        resolve(cfg=cfg, ui=ui, items=(ItemSpec(itemid=1),))
+        assert ui.levels("warning") == []
+
+    def test_hourly_trends(self) -> None:
+        ui = RecordingUI()
+        query = resolve("a", cfg=self.CFG, ui=ui, agg=["avg"], resolution="1h")
+        assert ui.levels("warning") == []
+        assert query.custom
+
+
 class TestValueDisplay:
     CFG = config(
         templates={
@@ -350,7 +401,14 @@ class TestValueDisplay:
     def test_lists_and_choices_in_messages(self) -> None:
         ui = RecordingUI(answers=[0])
         query = resolve(
-            "a", "b", cfg=self.CFG, ui=ui, agg=["count"], from_="now", to="now"
+            "a",
+            "b",
+            cfg=self.CFG,
+            ui=ui,
+            agg=["count"],
+            resolution="1h",
+            from_="now",
+            to="now",
         )
         assert query.agg == (Agg.COUNT,)
         assert query.formats == (Format.CSV, Format.TSV)
