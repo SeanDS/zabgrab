@@ -260,16 +260,11 @@ class TestDelimitedWriter:
             "lab/demo1: Particles avg",
         ]
 
-    def test_unwritable(self, tmp_path: Path) -> None:
-        locked = tmp_path / "locked"
-        locked.mkdir(mode=0o500)
-        try:
-            with pytest.raises(ZabgrabError, match="Can't write"):
-                write_delimited(
-                    locked / "data.tsv", result(), {}, delimiter="\t", tz=None
-                )
-        finally:
-            locked.chmod(0o700)
+    def test_unwritable(self, locked_dir: Path) -> None:
+        with pytest.raises(ZabgrabError, match="Can't write"):
+            write_delimited(
+                locked_dir / "data.tsv", result(), {}, delimiter="\t", tz=None
+            )
 
     def test_failure_leaves_no_temporary_file(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

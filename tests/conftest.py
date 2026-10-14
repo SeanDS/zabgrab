@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import time
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -45,6 +49,46 @@ def _isolate_environment(
         "zabgrab.adapters.configfiles.system_config_path",
         lambda env: tmp_path / "etc" / "zabgrab" / "config.toml",
     )
+
+
+@pytest.fixture(autouse=True)
+def _local_time_zone(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Run every test in UK time, which expected local times are written in."""
+    monkeypatch.setenv("TZ", "Europe/London")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.fixture
+def locked_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """A directory nothing can be created in.
+
+    Root ignores directory permissions (as in CI containers), so for root the
+    directory also makes :func:`os.open` and :func:`os.mkdir` fail inside it.
+    """
+    locked = tmp_path / "locked"
+    locked.mkdir(mode=0o500)
+    if os.geteuid() == 0:
+        real_open, real_mkdir = os.open, os.mkdir
+
+        def refuse(path: Any) -> None:
+            if Path(os.fsdecode(path)).is_relative_to(locked):
+                raise PermissionError(13, "Permission denied", os.fsdecode(path))
+
+        def fake_open(path: Any, *args: Any, **kwargs: Any) -> int:
+            refuse(path)
+            return real_open(path, *args, **kwargs)
+
+        def fake_mkdir(path: Any, *args: Any, **kwargs: Any) -> None:
+            refuse(path)
+            real_mkdir(path, *args, **kwargs)
+
+        monkeypatch.setattr(os, "open", fake_open)
+        monkeypatch.setattr(os, "mkdir", fake_mkdir)
+    yield locked
+    locked.chmod(0o700)
 
 
 # CLI fixtures (see tests/cli_support.py).

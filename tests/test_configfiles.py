@@ -247,14 +247,9 @@ class TestAddServer:
         with pytest.raises(ConfigError, match="Can't update"):
             add_server(path, "a", "https://b")
 
-    def test_unwritable(self, tmp_path: Path) -> None:
-        locked = tmp_path / "locked"
-        locked.mkdir(mode=0o500)
-        try:
-            with pytest.raises(ConfigError, match="Can't write"):
-                add_server(locked / "config.toml", "a", "https://b")
-        finally:
-            locked.chmod(0o700)
+    def test_unwritable(self, locked_dir: Path) -> None:
+        with pytest.raises(ConfigError, match="Can't write"):
+            add_server(locked_dir / "config.toml", "a", "https://b")
 
     def test_failed_replace_removes_temporary_file(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

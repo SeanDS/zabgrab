@@ -356,14 +356,9 @@ class TestErrors:
         assert path.read_bytes() == original
         assert list(path.parent.glob("*.tmp")) == []
 
-    def test_unwritable_directory(self, tmp_path: Path) -> None:
-        locked = tmp_path / "locked"
-        locked.mkdir(mode=0o500)
-        try:
-            with pytest.raises(ZabgrabError, match="Can't write"):
-                write(locked / "data.h5")
-        finally:
-            locked.chmod(0o700)
+    def test_unwritable_directory(self, locked_dir: Path) -> None:
+        with pytest.raises(ZabgrabError, match="Can't write"):
+            write(locked_dir / "data.h5")
 
 
 def test_large_text_flag(path: Path) -> None:
