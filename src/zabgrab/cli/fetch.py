@@ -214,7 +214,7 @@ def fetch_command(
     if result is None:
         return
 
-    _report_problems(app, result)
+    report_problems(app, result)
     if not result.series:
         raise ZabgrabError("Nothing was fetched.")
 
@@ -243,7 +243,7 @@ def fetch_command(
             command=sys.argv,
             created=now,
         )
-        saved.append(_save(target, data, metadata, query, save))
+        saved.append(save_target(target, data, metadata, query, save))
 
     count = len(result.series)
     summary = (
@@ -292,7 +292,7 @@ async def _download(
         await plan.close()
 
 
-def _save(
+def save_target(
     target: Target,
     result: FetchResult,
     metadata: dict[str, Any],
@@ -319,7 +319,7 @@ def _save(
     return f"{target.path} (group {group})"
 
 
-def _report_problems(app: AppContext, result: FetchResult) -> None:
+def report_problems(app: AppContext, result: FetchResult) -> None:
     for skipped in result.skipped:
         app.ui.warning(
             f"Skipped {skipped.item.host}: {skipped.item.name} "

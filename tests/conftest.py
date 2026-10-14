@@ -8,8 +8,7 @@ import pytest
 
 from zabgrab.adapters.configfiles import Environment
 
-from .cli_support import CONFIG, NOW, Servers
-from .fakes import FrozenClock
+from .cli_support import CONFIG, Servers
 
 
 @pytest.fixture
@@ -64,7 +63,7 @@ def servers(monkeypatch: pytest.MonkeyPatch, user_config: Path) -> Servers:
     fake = Servers()
     monkeypatch.setattr("zabgrab.cli.app.http_client", fake.factory)
     monkeypatch.setattr("zabgrab.cli.app.KeyringSecrets", lambda: fake.secrets)
-    monkeypatch.setattr("zabgrab.cli.app.SystemClock", lambda: FrozenClock(NOW))
+    monkeypatch.setattr("zabgrab.cli.app.SystemClock", lambda: fake.clock)
     return fake
 
 

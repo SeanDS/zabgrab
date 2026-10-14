@@ -12,7 +12,7 @@ from zabgrab.cli import cli
 from zabgrab.model.config import ServerConfig
 from zabgrab.services.ports import ZabbixClient
 
-from .fakes import MemorySecrets
+from .fakes import FrozenClock, MemorySecrets
 from .fakezabbix import (
     TOKEN,
     FakeTransport,
@@ -43,6 +43,8 @@ class Servers:
     redirects: dict[str, str] = field(default_factory=dict)
     #: URLs that can't be reached.
     down: set[str] = field(default_factory=set)
+    #: The time commands see as now; change it to let time pass between runs.
+    clock: FrozenClock = field(default_factory=lambda: FrozenClock(NOW))
 
     def factory(self, config: ServerConfig) -> ZabbixClient:
         if config.url in self.down:
