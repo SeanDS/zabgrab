@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from .. import __version__
@@ -13,6 +14,7 @@ from ..model.query import Query
 from ..model.series import FetchResult, Series, Skipped
 from ..model.server import Server
 from ..model.zabbix import Item
+from .dataset import Dataset
 
 FORMAT_VERSION = 1
 
@@ -100,3 +102,46 @@ def _item(url: str, item: Item) -> dict[str, Any]:
 
 def _skipped(skipped: Skipped) -> dict[str, Any]:
     return {**_item(skipped.server.url, skipped.item), "reason": skipped.reason}
+
+
+def export_metadata(
+    dataset: Dataset,
+    *,
+    source: str,
+    filters: Mapping[str, Any],
+    command: Sequence[str],
+    created: datetime,
+) -> dict[str, Any]:
+    """Metadata for data exported from a file: the last query (so the export can be
+    updated like the original), the merged items, and how it was exported.
+
+    ``dataset`` must cover some time."""
+    metadata = copy.deepcopy(dataset.last_metadata)
+    metadata["zabgrab"] = {"version": __version__, "format_version": FORMAT_VERSION}
+    metadata["created"] = created.isoformat()
+    metadata["command"] = list(command)
+    query = metadata.setdefault("query", {})
+    query["start"] = _iso(dataset.coverage[0][0])
+    query["end"] = _iso(dataset.coverage[-1][1])
+    metadata["items"] = [
+        {
+            **_item(series.server.url, series.item),
+            "requests": list(series.requests),
+            "columns": list(series.columns),
+            "points": series.points,
+        }
+        for series in dataset.series
+    ]
+    metadata["skipped"] = []
+    metadata["failed"] = []
+    metadata["export"] = {
+        "source": source,
+        "groups": dataset.groups,
+        "filters": dict(filters),
+        "coverage": [[_iso(a), _iso(b)] for a, b in dataset.coverage],
+    }
+    return metadata
+
+
+def _iso(seconds: float) -> str:
+    return datetime.fromtimestamp(seconds, UTC).isoformat()

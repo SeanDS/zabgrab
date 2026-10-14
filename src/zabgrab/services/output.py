@@ -100,18 +100,18 @@ def targets(
         if not ui.interactive:
             ui.warning("The data wasn't saved; pass --output to save it.")
             return []
-        formats = _formats(query, options.format, None, ui)
+        formats = choose_formats(query.formats, options.format, None, ui)
         shown = ", ".join(f"{name}{EXTENSIONS[f]}" for f in formats)
         if not ui.confirm(f"Save the data to {shown}?", fix="", default=True):
             return []
         directory, file = Path(query.output_dir), None
     elif output == "" or output.endswith(("/", "\\")) or Path(output).is_dir():
         directory, file = Path(output or query.output_dir), None
-        formats = _formats(query, options.format, None, ui)
+        formats = choose_formats(query.formats, options.format, None, ui)
     else:
         file = Path(output)
         directory = file.parent
-        formats = _formats(query, options.format, file, ui)
+        formats = choose_formats(query.formats, options.format, file, ui)
 
     if options.append and any(f not in STRUCTURED for f in formats):
         raise ZabgrabError(
@@ -122,7 +122,7 @@ def targets(
     chosen = []
     for format in formats:
         if file is not None and len(formats) == 1:
-            chosen.append(_existing(file, format, ui, options))
+            chosen.append(existing_target(file, format, ui, options))
         else:
             stem = file.stem if file is not None else name
             path = directory / f"{stem}{EXTENSIONS[format]}"
@@ -133,17 +133,19 @@ def targets(
     return chosen
 
 
-def _formats(
-    query: Query, cli_format: Format | None, file: Path | None, ui: UI
+def choose_formats(
+    configured: Sequence[Format], cli_format: Format | None, file: Path | None, ui: UI
 ) -> tuple[Format, ...]:
+    """The output format(s): ``--format``, else the file's extension, else the
+    configured ones, else asked."""
     if cli_format is not None:
         if file is not None and format_for(file) not in (None, cli_format):
             ui.warning(f"Saving {cli_format} data to {file}, despite its extension.")
         return (cli_format,)
     if file is not None and (from_extension := format_for(file)) is not None:
         return (from_extension,)
-    if query.formats:
-        return query.formats
+    if configured:
+        return tuple(configured)
     return (
         ui.choose(
             "Which format should the data be saved in?",
@@ -159,7 +161,8 @@ def _formats(
     )
 
 
-def _existing(path: Path, format: Format, ui: UI, options: SaveOptions) -> Target:
+def existing_target(path: Path, format: Format, ui: UI, options: SaveOptions) -> Target:
+    """Where to save to ``path``, asking what to do if it exists."""
     if options.overwrite or options.append or not path.exists():
         return Target(path, format, append=options.append)
     alternative = unique_path(path)
