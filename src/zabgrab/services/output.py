@@ -46,6 +46,9 @@ class SaveOptions:
     group: str | None = None
     in_place: bool = False
     allow_large_text: bool = False
+    plot: bool = False
+    """The data will be plotted, so without --output it's neither saved nor asked
+    about."""
 
     def check(self, output: str | None) -> None:
         """Reject options that don't make sense together."""
@@ -98,6 +101,8 @@ def targets(
     """
     options.check(output)
     if output is None:
+        if options.plot:
+            return []
         if not ui.interactive:
             ui.warning("The data wasn't saved; pass --output to save it.")
             return []

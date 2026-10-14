@@ -31,6 +31,8 @@ PLAN.md for the design.
 - New `zabgrab export FILE` command to merge a file's groups into a new file,
   optionally converting, filtering items and times.
 - New MATLAB function `matlab/zabgrab_load.m` to load a file's merged data.
+- New `zabgrab plot FILE` command and `fetch --plot` option (with the `plot`
+  extra) to plot data, merged across groups, showing or saving the figure.
 - Fixed: the old CSV output's columns shifted when timeseries had different
   lengths.
 

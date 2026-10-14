@@ -3,14 +3,15 @@ Command line tool for Zabbix data retrieval.
 
 > **Zabgrab is being rewritten for version 1.0.0.** See [PLAN.md](PLAN.md) for the
 > design. Configuration, finding hosts/items, fetching data (MATLAB, HDF5, TSV, CSV),
-> saving fetches as templates, and updating and exporting files work so far. The full documentation will be written
-> before the release.
+> saving fetches as templates, updating, exporting and plotting files work so far.
+> The full documentation will be written before the release.
 
 ## Installation
 Requires Python 3.11 or later, and a Zabbix 7.0 or later server.
 
 ```bash
 pip install zabgrab
+pip install 'zabgrab[plot]'    # with plotting (matplotlib)
 ```
 
 For development:
@@ -214,6 +215,24 @@ once), optionally converting it and filtering items or times:
 ```bash
 zabgrab export particles.mat -o particles.csv --item "*0.3um" --from "2 days ago"
 ```
+
+## Plotting
+
+With the `plot` extra installed (`pip install 'zabgrab[plot]'`):
+
+```bash
+zabgrab plot particles.h5                          # show a file's data in a window
+zabgrab plot particles.h5 -o particles.png         # or save it (.png, .pdf, .svg, ...)
+zabgrab plot particles.h5 --item "*0.3um" --from "2 days ago"
+zabgrab fetch -t particles --plot                  # plot a fetch without saving it
+```
+
+All of a file's groups are plotted as one dataset; `--item`, `--from`, `--to` and
+`--group` select what to plot, as for `export`. Items with the same units share an
+axis. Hourly trends are drawn as the average with a min/max band. Lines only break
+over times that no fetch covered, so sparse data and appended groups join up. Text
+items can't be plotted: they're left out with a warning, or it's an error if nothing
+else is selected.
 
 ## Credits
 Sean Leavey <sean.leavey@stfc.ac.uk>

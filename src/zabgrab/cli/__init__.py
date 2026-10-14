@@ -10,6 +10,7 @@ from .config import config_group
 from .discovery import hosts_command, items_command
 from .export import export_command
 from .fetch import fetch_command
+from .plot import plot_command
 from .tokens import token_group
 from .update import update_command
 
@@ -33,6 +34,7 @@ cli.add_command(export_command)
 cli.add_command(fetch_command)
 cli.add_command(hosts_command)
 cli.add_command(items_command)
+cli.add_command(plot_command)
 cli.add_command(token_group)
 cli.add_command(update_command)
 
