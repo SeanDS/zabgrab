@@ -46,11 +46,12 @@ def _isolate_environment(
     for name in ("ZABGRAB_CONFIG", "ZABGRAB_NO_INPUT", "CI", "NO_COLOR", "FORCE_COLOR"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.chdir(tmp_path)
-    # Never look at the real /etc.
-    monkeypatch.setattr(
-        "zabgrab.adapters.configfiles.system_config_path",
-        lambda env: tmp_path / "etc" / "zabgrab" / "config.toml",
-    )
+    # Never look at (or write to) the real /etc, wherever the path is looked up.
+    for module in ("zabgrab.adapters.configfiles", "zabgrab.cli.config"):
+        monkeypatch.setattr(
+            f"{module}.system_config_path",
+            lambda env: tmp_path / "etc" / "zabgrab" / "config.toml",
+        )
 
 
 UK = ZoneInfo("Europe/London")
