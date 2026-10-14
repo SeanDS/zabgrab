@@ -1,9 +1,12 @@
-function check_files()
+function check_files(folder)
 %CHECK_FILES Check that zabgrab's sample files read correctly in MATLAB.
 %   First write the samples, from the repository root:
 %       python tests/matlab/generate.py
 %   then, in MATLAB, from tests/matlab:
 %       check_files
+%
+%   CHECK_FILES(FOLDER) checks samples written to FOLDER instead of
+%   tests/matlab/files. tests/test_matlab.py runs it this way.
 %
 %   Checks .mat files with load, .h5 files with h5read, and both with
 %   zabgrab_load, against expected.json. Also times loading large.mat.
@@ -11,7 +14,9 @@ function check_files()
 
     here = fileparts(mfilename('fullpath'));
     addpath(fullfile(here, '..', '..', 'matlab'));
-    folder = fullfile(here, 'files');
+    if nargin < 1
+        folder = fullfile(here, 'files');
+    end
     expected = jsondecode(read_utf8(fullfile(folder, 'expected.json')));
 
     checks = 0;
