@@ -133,7 +133,7 @@ class TestToken:
         client = harness.connect(server(), ui)
         hosts(client)
         assert ui.levels("error") == [
-            "The API token from your keyring was rejected for demo."
+            "The API token from your keyring was rejected for 'demo'."
         ]
         assert harness.secrets.tokens == {URL: "old"}
 
@@ -218,7 +218,7 @@ class TestConnection:
         ui = RecordingUI()
         harness.connect(server(verify_ssl=False), ui)
         assert ui.levels("warning") == [
-            "SSL certificate verification is disabled for demo."
+            "SSL certificate verification is disabled for 'demo'."
         ]
 
     def test_version_failure_closes_client(self) -> None:

@@ -106,8 +106,8 @@ async def add_token(
     )
     if server.config.auth is AuthMethod.PASSWORD:
         ui.warning(
-            f'{server.label} is configured with auth = "password"; the token will only '
-            'be used if you change it to auth = "token".'
+            f'{server.display} is configured with auth = "password"; the token will '
+            'only be used if you change it to auth = "token".'
         )
 
     if token is None:
@@ -131,7 +131,7 @@ async def add_token(
         token = ui.prompt("API token", fix=fix, parse=non_empty, secret=True)
 
     secrets.set_token(server.url, token)
-    ui.success(f"Saved the token for {server.label} in your keyring.")
+    ui.success(f"Saved the token for {server.display} in your keyring.")
 
     variable = server.config.token_env
     if variable and env.get(variable):
@@ -156,15 +156,15 @@ def choose_stored(statuses: list[TokenStatus], ui: UI) -> Server:
 def delete_token(server: Server, *, ui: UI, secrets: SecretStore, yes: bool) -> None:
     """Delete the stored token for ``server``, confirming first unless ``yes``."""
     if secrets.get_token(server.url) is None:
-        raise ZabgrabError(f"No token is stored for {server.label}.")
+        raise ZabgrabError(f"No token is stored for {server.display}.")
     if not yes and not ui.confirm(
-        f"Delete the stored token for {server.label}?",
+        f"Delete the stored token for {server.display}?",
         fix="Pass --yes to delete it without asking.",
         default=False,
     ):
         raise Cancelled()
     secrets.delete_token(server.url)
-    ui.success(f"Deleted the token for {server.label}.")
+    ui.success(f"Deleted the token for {server.display}.")
 
 
 def reset_tokens(*, ui: UI, secrets: SecretStore, yes: bool) -> None:

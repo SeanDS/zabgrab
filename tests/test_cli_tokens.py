@@ -71,7 +71,7 @@ class TestAdd:
         result = run("token", "add", "demo", "-", input=TOKEN + "\n", tokens=False)
         assert result.exit_code == 0, result.output
         assert servers.secrets.tokens == {DEMO: TOKEN}
-        assert "Saved the token for demo in your keyring." in result.stderr
+        assert "Saved the token for 'demo' in your keyring." in result.stderr
         assert "Create an API token" not in result.stderr
 
     def test_from_stdin_literal_url(self, servers: Servers) -> None:
@@ -208,7 +208,7 @@ class TestDelete:
         result = run("token", "delete", "demo", "--yes")
         assert result.exit_code == 0, result.output
         assert servers.secrets.tokens == {LAB: TOKEN}
-        assert "Deleted the token for demo." in result.stderr
+        assert "Deleted the token for 'demo'." in result.stderr
 
     def test_literal_url(self, servers: Servers) -> None:
         servers.secrets.tokens[OTHER] = TOKEN
@@ -218,7 +218,7 @@ class TestDelete:
     def test_nothing_stored(self, servers: Servers) -> None:
         result = run("token", "delete", "demo", "--yes")
         assert result.exit_code == EXIT_ERROR
-        assert "No token is stored for demo." in result.stderr
+        assert "No token is stored for 'demo'." in result.stderr
 
     def test_non_interactive_needs_yes(self, servers: Servers) -> None:
         servers.secrets.tokens[DEMO] = TOKEN

@@ -48,7 +48,7 @@ class TestHosts:
     def test_limit_warning(self, servers: Servers) -> None:
         result = run("hosts", "-s", "demo", "--limit", "2")
         assert len(table_rows(result.stdout)) == 2
-        assert "Showing only the first 2 results from demo" in result.stderr
+        assert "Showing only the first 2 results from 'demo'" in result.stderr
 
     def test_default_server_from_config(
         self, servers: Servers, user_config: Path

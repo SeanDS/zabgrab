@@ -39,7 +39,7 @@ def test_every_command_has_global_options(path: str, command: click.Command) -> 
     assert names >= GLOBAL, f"{path} is missing {GLOBAL - names}"
 
 
-CONNECTED = "Connected to demo (Zabbix 7.0.5)."
+CONNECTED = "Connected to 'demo' (Zabbix 7.0.5)."
 
 
 @pytest.mark.parametrize(

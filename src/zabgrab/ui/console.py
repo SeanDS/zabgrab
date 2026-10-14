@@ -29,23 +29,41 @@ THEME = Theme(
         "zabgrab.warning": "yellow",
         "zabgrab.error": "bold red",
         "zabgrab.hint": "bold",
-        "zabgrab.quoted": "bold",
-        "zabgrab.url": "cyan",
+        # Highlighted details in messages (see MessageHighlighter): locations are
+        # cyan, things to type green, names and values magenta, numbers bold.
+        "zabgrab.url": "cyan underline",
         "zabgrab.path": "cyan",
-        "zabgrab.code": "cyan",
+        "zabgrab.code": "green",
+        "zabgrab.option": "green",
+        "zabgrab.toml": "green",
+        "zabgrab.quoted": "bold magenta",
+        "zabgrab.envvar": "bold magenta",
+        "zabgrab.number": "bold",
     }
 )
 
 
 class MessageHighlighter(RegexHighlighter):
-    """Highlights URLs, paths, `code` and quoted strings in plain-text messages."""
+    """Highlights the specific, useful details in plain-text messages.
+
+    Later patterns take precedence where matches overlap.
+    """
 
     base_style = "zabgrab."
     highlights = [  # noqa: RUF012 - rich's API uses a mutable class attribute
-        r"(?P<url>https?://[^\s'\"]+)",
+        # Counts, IDs, versions, line numbers (not parts of names, paths or URLs).
+        r"(?<![\w.$/:'\[-])(?P<number>\d+(?:\.\d+)*)(?![\w/:'\]-])",
+        # 'quoted' names and values (not apostrophes inside words).
+        r"(?<!\w)(?P<quoted>'[^'\s][^']*')(?!\w)",
+        r"(?P<envvar>\$[A-Za-z_][A-Za-z0-9_]*)",
+        # Command line options.
+        r"(?<![\w/.-])(?P<option>--[a-z][a-z0-9-]*|-[a-zA-Z])(?![\w-])",
+        # Config snippets: [servers.name] and key = "value".
+        r"(?P<toml>\[[A-Za-z][\w.-]*\])",
+        r"(?P<toml>\b[a-z_]+ = (?:\"[^\"]*\"|true|false|\d+))",
+        r"(?:^|(?<=[\s(]))(?P<path>~?/[^\s'\"]*[^\s'\".,;:!?)])",
+        r"(?P<url>https?://[^\s'\"]*[^\s'\".,;:!?)])",
         r"(?P<code>`[^`]+`)",
-        r"(?P<quoted>'[^'\s][^']*')",
-        r"(?:^|\s)(?P<path>~?/[^\s'\"]+)",
     ]
 
 
@@ -95,7 +113,8 @@ class RichUI:
             options["force_terminal"] = True
         elif color is False:
             options["color_system"] = None
-        self.err = Console(stderr=True, highlighter=MessageHighlighter(), **options)
+        self._highlighter = MessageHighlighter()
+        self.err = Console(stderr=True, **options)
         self.out = Console(**options)
 
     @property
@@ -104,9 +123,22 @@ class RichUI:
 
     # Messages.
 
-    def _message(self, message: str, style: str | None, prefix: str = "") -> None:
-        text = Text(prefix, style=style or "") if prefix else Text()
-        text.append_text(self.err.highlighter(Text(message, style=style or "")))
+    def highlight(self, message: str, style: str = "") -> Text:
+        """``message`` as plain text (never markup) with its details highlighted."""
+        return self._highlighter(Text(message, style=style))
+
+    def _message(
+        self,
+        message: str,
+        style: str | None,
+        prefix: str = "",
+        prefix_style: str | None = None,
+    ) -> None:
+        # Style the parts separately: a style given to Text() would apply to all
+        # of it.
+        text = Text()
+        text.append(prefix, style=prefix_style or style or "")
+        text.append_text(self.highlight(message, style or ""))
         self.err.print(text, soft_wrap=True)
 
     def debug(self, message: str) -> None:
@@ -130,9 +162,9 @@ class RichUI:
     ) -> None:
         self._message(message, "zabgrab.error", "Error: ")
         for detail in details:
-            self._message(detail, None, "  • ")
+            self._message(detail, None, "  • ", "dim")
         if hint:
-            self._message(hint, None, "  Fix: ")
+            self._message(hint, None, "  Fix: ", "zabgrab.hint")
 
     def print_exception(self) -> None:
         """Print the current exception's traceback (for ``--debug``)."""
@@ -165,7 +197,9 @@ class RichUI:
     def confirm(self, question: str, *, fix: str, default: bool = True) -> bool:
         self._require_interactive(question, fix)
         return self._ask(
-            lambda: Confirm.ask(question, console=self.err, default=default)
+            lambda: Confirm.ask(
+                self.highlight(question), console=self.err, default=default
+            )
         )
 
     def prompt(
@@ -181,7 +215,10 @@ class RichUI:
         while True:
             answer = self._ask(
                 lambda: Prompt.ask(
-                    question, console=self.err, default=default, password=secret
+                    self.highlight(question),
+                    console=self.err,
+                    default=default,
+                    password=secret,
                 )
             )
             try:
@@ -190,13 +227,14 @@ class RichUI:
                 self._message(str(exc), "zabgrab.error")
 
     def _show_options(self, question: str, options: Sequence[Option[Any]]) -> None:
-        self.err.print(Text(question, style="bold"))
+        self.err.print(self.highlight(question, "bold"), soft_wrap=True)
         width = len(str(len(options)))
         for number, option in enumerate(options, start=1):
             line = Text(f"  {number:>{width}}. ")
             line.append(option.label, style="bold")
             if option.description:
-                line.append(f"  {option.description}", style="dim")
+                line.append("  ")
+                line.append_text(self.highlight(option.description, "dim"))
             self.err.print(line, soft_wrap=True)
 
     def choose(

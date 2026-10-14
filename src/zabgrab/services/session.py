@@ -91,7 +91,7 @@ async def connect(
     password; otherwise an error explains how to provide one.
     """
     if not server.config.verify_ssl:
-        ui.warning(f"SSL certificate verification is disabled for {server.label}.")
+        ui.warning(f"SSL certificate verification is disabled for {server.display}.")
 
     for _ in range(MAX_REDIRECTS + 1):
         client = factory(server.config)
@@ -107,12 +107,12 @@ async def connect(
         break
     else:
         raise ConnectionFailed(
-            f"Too many redirects from {server.label}.",
+            f"Too many redirects from {server.display}.",
             hint="Check the server URL in a web browser.",
         )
 
     try:
-        ui.debug(f"Connected to {server.label} (Zabbix {version}).")
+        ui.debug(f"Connected to {server.display} (Zabbix {version}).")
         if server.config.auth is AuthMethod.PASSWORD:
             await _password_login(client, server, ui)
         else:
@@ -186,13 +186,13 @@ async def _token_login(
                     server
                 )
                 raise
-            ui.error(f"The API token from {source} was rejected for {server.label}.")
+            ui.error(f"The API token from {source} was rejected for {server.display}.")
         else:
-            ui.debug(f"Logged in to {server.label} with the API token from {source}.")
+            ui.debug(f"Logged in to {server.display} with the API token from {source}.")
             return
 
     method = ui.choose(
-        f"How do you want to log in to {server.label}?",
+        f"How do you want to log in to {server.display}?",
         [
             Option("Paste an API token", _TOKEN, f"create one at {server.token_page}"),
             Option("Username and password", _PASSWORD),

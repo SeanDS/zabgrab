@@ -79,7 +79,7 @@ def _report_limit(
     for server, rows in results:
         if len(rows) >= limit:
             app.ui.warning(
-                f"Showing only the first {limit} results from {server.label}; narrow "
+                f"Showing only the first {limit} results from {server.display}; narrow "
                 "the search or raise --limit."
             )
 

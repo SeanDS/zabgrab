@@ -192,5 +192,5 @@ def _ask_for_url(config: Config, ui: UI, *, save: SaveServer | None) -> Server:
         default=suggest_name(url, list(config.servers)),
     )
     save(name, url)
-    ui.success(f"Saved server {name!r}; use it with --server {name}.")
+    ui.success(f"Saved server {name!r}; use it with `--server {name}`.")
     return Server(name, ServerConfig(url=url))

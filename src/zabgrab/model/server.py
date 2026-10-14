@@ -25,6 +25,11 @@ class Server:
         return self.name or self.url
 
     @property
+    def display(self) -> str:
+        """How to refer to the server in sentences: a quoted name, or the URL."""
+        return f"'{self.name}'" if self.name else self.url
+
+    @property
     def frontend_url(self) -> str:
         """The web frontend's base URL (without ``api_jsonrpc.php``)."""
         return frontend_url(self.url)
