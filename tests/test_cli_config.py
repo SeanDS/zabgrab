@@ -133,11 +133,36 @@ class TestShow:
         result = run("--isolated", "config", "show", "--sources")
         assert result.stdout.splitlines()[3] == 'built-in │ from = "1 hour ago"'
 
-    def test_sources_are_coloured(self, user_config: Path) -> None:
-        write(user_config, "[defaults]\njobs = 2\n")
-        result = CliRunner().invoke(cli, ["--color", "config", "show", "--sources"])
-        line = next(line for line in result.stdout.splitlines() if "jobs = 2" in line)
-        assert line.startswith(f"\x1b[35m{user_config}\x1b[0m")
+    @pytest.mark.parametrize(
+        ("layer", "colour"),
+        [("user", "32"), ("project", "33"), ("explicit", "35"), ("system", "34")],
+    )
+    def test_lines_are_coloured_by_layer(
+        self,
+        user_config: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        layer: str,
+        colour: str,
+    ) -> None:
+        paths = {
+            "user": user_config,
+            "project": tmp_path / "zabgrab.toml",
+            "explicit": tmp_path / "explicit.toml",
+            "system": tmp_path / "etc" / "zabgrab" / "config.toml",
+        }
+        path = write(paths[layer], "[defaults]\njobs = 2\n")
+        args = ["--color", "config", "show", "--sources"]
+        if layer == "explicit":
+            args += ["--config", str(path)]
+        result = CliRunner().invoke(cli, args)
+        lines = result.stdout.splitlines()
+
+        line = next(line for line in lines if "jobs = 2" in line)
+        assert line.startswith(f"\x1b[1;{colour}m{path}\x1b[0m")
+        assert line.endswith(f"\x1b[{colour}mjobs = 2\x1b[0m")
+        builtin = next(line for line in lines if "from = " in line)
+        assert builtin.startswith("\x1b[1;90mbuilt-in")
 
     def test_explicit_config_via_env(self, tmp_path: Path) -> None:
         extra = write(tmp_path / "extra.toml", "[defaults]\njobs = 3\n")

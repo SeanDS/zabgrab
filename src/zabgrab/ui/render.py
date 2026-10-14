@@ -51,8 +51,16 @@ def layers_table(layers: Iterable[ConfigLayer]) -> Table:
 ConfigLine = tuple[str | None, str]
 """A line of TOML and the source of its value (``None`` for structural lines)."""
 
-SOURCE_STYLE = "magenta"
 SOURCE_SEPARATOR = " │ "
+
+#: Colour of config lines by the layer they came from.
+LAYER_STYLES = {
+    LayerKind.BUILTIN: "bright_black",
+    LayerKind.SYSTEM: "blue",
+    LayerKind.USER: "green",
+    LayerKind.PROJECT: "yellow",
+    LayerKind.EXPLICIT: "magenta",
+}
 
 
 def config_lines(loaded: LoadedConfig) -> list[ConfigLine]:
@@ -94,15 +102,19 @@ def config_to_toml(loaded: LoadedConfig) -> str:
 def config_with_sources(loaded: LoadedConfig) -> Text:
     """The merged config as TOML, each line prefixed by the source of its value.
 
-    The source column is as wide as the widest source.
+    The source column is as wide as the widest source. Each line is coloured by the
+    layer it came from (see :data:`LAYER_STYLES`), with the source in bold.
     """
+    kinds = {layer.source: layer.kind for layer in loaded.layers if layer.active}
     lines = config_lines(loaded)
     width = max((len(source) for source, _ in lines if source), default=0)
     rendered = []
     for source, line in lines:
-        text = Text(f"{source or '':<{width}}", style=SOURCE_STYLE)
+        style = LAYER_STYLES[kinds[source]] if source else ""
+        text = Text()
+        text.append(f"{source or '':<{width}}", style=f"bold {style}".strip())
         text.append(SOURCE_SEPARATOR, style="dim")
-        text.append(line)
+        text.append(line, style=style)
         rendered.append(text)
     return Text("\n").join(rendered)
 
