@@ -96,7 +96,8 @@ class TestShow:
 
         shown = tomllib.loads(result.stdout)
         assert shown["defaults"]["jobs"] == 2
-        assert shown["defaults"]["format"] == "mat"
+        assert shown["defaults"]["resolution"] == "raw"
+        assert "format" not in shown["defaults"]
         assert shown["servers"]["demo"]["url"] == "https://demo.example.org"
         template = shown["templates"]["t"]
         assert template["server"] == {"choices": ["demo"], "select": "all"}
@@ -119,7 +120,7 @@ class TestShow:
             == " " * width + " │ # Effective zabgrab configuration (all layers merged)."
         )
         assert f"{user_config} │ jobs = 2" in lines
-        assert f'{"built-in":<{width}} │ format = "mat"' in lines
+        assert f'{"built-in":<{width}} │ resolution = "raw"' in lines
         assert " " * width + " │ [defaults]" in lines
         template = lines[lines.index(f"{user_config} │ [templates.t]") :]
         assert template[1:5] == [
@@ -131,7 +132,7 @@ class TestShow:
 
     def test_sources_width_follows_widest_source(self) -> None:
         result = run("--isolated", "config", "show", "--sources")
-        assert result.stdout.splitlines()[3] == 'built-in │ from = "1 hour ago"'
+        assert result.stdout.splitlines()[3] == 'built-in │ resolution = "raw"'
 
     @pytest.mark.parametrize(
         ("layer", "colour"),
@@ -161,7 +162,7 @@ class TestShow:
         line = next(line for line in lines if "jobs = 2" in line)
         assert line.startswith(f"\x1b[1;{colour}m{path}\x1b[0m")
         assert line.endswith(f"\x1b[{colour}mjobs = 2\x1b[0m")
-        builtin = next(line for line in lines if "from = " in line)
+        builtin = next(line for line in lines if "resolution = " in line)
         assert builtin.startswith("\x1b[1;90mbuilt-in")
 
     def test_explicit_config_via_env(self, tmp_path: Path) -> None:

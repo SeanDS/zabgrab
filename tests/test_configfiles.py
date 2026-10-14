@@ -125,8 +125,14 @@ class TestDiscoverLayers:
 class TestLoadConfig:
     def test_builtin_only(self, env: Environment) -> None:
         loaded = load_config(discover_layers(env))
-        assert loaded.config.defaults.from_ == BUILTIN_DEFAULTS["from"]
-        assert loaded.source_of("defaults", "from") == BUILTIN_SOURCE
+        assert loaded.config.defaults.jobs == BUILTIN_DEFAULTS["jobs"]
+        assert loaded.source_of("defaults", "jobs") == BUILTIN_SOURCE
+
+    @pytest.mark.parametrize("key", ["from", "to", "format"])
+    def test_no_builtin_time_range_or_format(self, env: Environment, key: str) -> None:
+        loaded = load_config(discover_layers(env))
+        assert key not in BUILTIN_DEFAULTS
+        assert loaded.source_of("defaults", key) is None
 
     def test_precedence(self, env: Environment, tmp_path: Path) -> None:
         system = write(

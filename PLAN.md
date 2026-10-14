@@ -263,6 +263,8 @@ suggests adding `--save-template NAME`.
 | No items (no template, no `--item`) | Item picker: enter a search pattern (and optionally a host, chosen from a list) → table of matches → pick numbers/ranges (`1,3,5-8`) or "all" | `--item SPEC` examples, or `-t NAME`; lists available templates |
 | Wildcard matches more than `max_items` | Choose: fetch all / narrow to a host (from the matched hosts) / pick from table / cancel | `--yes`, or a narrower spec (e.g. `host=`) |
 | Unknown template or server name | If close matches exist: "Did you mean X?". Otherwise choose from all names | Lists the close matches and `zabgrab templates list` / `config show` |
+| No `from`/`to` (no built-in default) | Ask for each, with examples (e.g. "24 hours ago", "2026-10-14 09:00", "now") | `--from`/`--to`, or set `from`/`to` in the template or `[defaults]` |
+| No `format` (no built-in default) | Use the output file's extension if it has a known one; otherwise choose from mat / h5 / tsv / csv | `--format`, an `--output` path with a known extension, or `format` in the template or `[defaults]` |
 | Unparseable `--from`/`--to` | Re-ask with the parse error and examples | Error with examples of supported formats |
 | Stacked templates disagree on from/to/resolution/agg | Show each template's value, then ask for the value to use | Error naming the flag to set |
 | No token for the server | Choose: paste a token now (opens the token page; offer to save to keyring) / use username+password / cancel | `zabgrab token add SERVER`, or set `token_env`'s variable |
@@ -743,6 +745,9 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   then prompt (interactive) or error (non-interactive). CLI values win, with a log
   message.
 - Release version: 1.0.0.
+- No built-in defaults for `from`, `to` or `format`: they come from the CLI, a
+  template or `[defaults]`, else the user is asked (format is first inferred from the
+  output file extension).
 - Text items (value types 1, 2, 4) are supported in v1. Plotting them is an error.
 - Text in `.mat` is always a cell array. Large volumes trigger a prompt
   (`--allow-large-text` skips it). Non-interactive runs continue with a warning.

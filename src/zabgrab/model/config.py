@@ -160,12 +160,12 @@ class Config(BaseModel):
 
 
 #: Values used when no config layer sets them. Keys are ``[defaults]`` keys.
+#:
+#: ``from``, ``to`` and ``format`` deliberately have no built-in value: when nothing
+#: sets them, the user is asked (or the format is taken from the output file name).
 BUILTIN_DEFAULTS: dict[str, Any] = {
-    "from": "1 hour ago",
-    "to": "now",
     "resolution": "raw",
     "agg": ["min", "avg", "max"],
-    "format": "mat",
     "output_dir": ".",
     "output_pattern": "{hosts}_{templates}_{from}--{to}",
     "timezone": "local",
