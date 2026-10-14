@@ -30,6 +30,8 @@ dependencies = [
   "aiohttp >=3.9",
   "keyring >=24",
   "dateparser >=1.2",
+  "numpy >=1.26",
+  "h5py >=3.10",
 ]
 dynamic = ["version"]
 
@@ -84,7 +86,7 @@ plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-module = ["dateparser", "dateparser.*"]
+module = ["dateparser", "dateparser.*", "h5py", "h5py.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
