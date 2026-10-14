@@ -19,6 +19,14 @@ PLAN.md for the design.
   downloads with progress bars, raw history or hourly trends, every item value
   type, TSV/CSV output with metadata, automatic file names, `--explain` and
   `--dry-run`.
+- MATLAB v7.3 (`.mat`) and HDF5 (`.h5`) output, holding one group per fetch;
+  `fetch --append` adds groups to existing files.
+- New `zabgrab update FILE` command to add the data since a file's last fetch.
+- New `zabgrab export FILE` command to merge a file's groups into a new file,
+  optionally converting, filtering items and times.
+- New MATLAB function `matlab/zabgrab_load.m` to load a file's merged data.
+- Fixed: the old CSV output's columns shifted when timeseries had different
+  lengths.
 
 # 0.1.2 (2023-12-12)
 - Changed CSV output format to display retrieved timeseries in parallel columns instead

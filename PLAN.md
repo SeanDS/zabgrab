@@ -739,7 +739,7 @@ alongside the MATLAB check files.
 | 1 ✅ | Project skeleton: src layout, pyproject (3.11+), ruff/mypy/pytest/pre-commit, GitLab CI matrix. Ports, model, `ui/console.py`, config adapter (paths, layering, validation), `config paths/show/edit` | CI green; config tests pass |
 | 2 ✅ | Zabbix adapter, secrets adapter (env/keyring, password prompt), `FakeZabbixClient` + fake JSON-RPC server, item spec parsing, `services/discover.py`, `hosts`/`items` commands | Can list hosts/items against fake and real servers |
 | 3 ✅ | `services/resolve.py` (provenance, override logs, choices, stacked-template rules), `services/fetch.py` (async, chunked, raw + 1h trends, all value types), progress bars, summary, exit codes, TSV/CSV, auto naming, `--dry-run`/`--explain` | End-to-end fetch to TSV |
-| 4 | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
+| 4 ✅ | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
 | 5 | `--save-template` (tomlkit) | Round-trip tests pass |
 | 6 | `plot` extra (merged view, coverage gaps, text-item errors) | Plots from live fetch and from multi-group files |
 | 7 | Full README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
@@ -795,6 +795,20 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Still to do from phase 3's scope (deferred): the "Next time: zabgrab fetch ..."
   hint after interactive answers (phase 5, with `--save-template`), and a warning
   when raw data is requested beyond an item's history retention.
+
+- `.mat`/`.h5` files are written with HDF5's earliest file format so that MATLAB's
+  older HDF5 library can read them. The layout passed `tests/matlab/check_files.m`
+  in MATLAB R2023b and R2026b; the verified files are kept in
+  `tests/matlab/reference/` and the test suite checks new files match them exactly.
+- `mat_text_warn_entries` defaults to 200,000: MATLAB loads text quickly (about
+  100,000-190,000 entries a second), so the real costs are size (480 bytes each) and
+  write time (60 µs each).
+- Updates of raw data start immediately after the previous group's end (not 1 s
+  later), since raw values have sub-second times.
+- Items in a group are named `item_<id>`, with `_2`, `_3`, ... when items on
+  different servers share an ID; readers use the stored server and ID, not the names.
+- Files written via a temporary file get normal permissions (the umask, or the
+  replaced file's), not the temporary file's private 0600.
 
 ## Open questions
 

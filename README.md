@@ -2,9 +2,9 @@
 Command line tool for Zabbix data retrieval.
 
 > **Zabgrab is being rewritten for version 1.0.0.** See [PLAN.md](PLAN.md) for the
-> design. Configuration, finding hosts/items and fetching data as TSV/CSV work so
-> far; MATLAB/HDF5 output comes next. The full documentation will be written before
-> the release.
+> design. Configuration, finding hosts/items, fetching data (MATLAB, HDF5, TSV, CSV),
+> updating and exporting files work so far. The full documentation will be written
+> before the release.
 
 ## Installation
 Requires Python 3.11 or later, and a Zabbix 7.0 or later server.
@@ -132,6 +132,59 @@ automatic name built from `output_pattern` (default
 extension, or the `format` setting. Saved files start with `#` comment lines
 containing metadata (as JSON) describing exactly what was fetched; numpy and pandas
 skip them with `comment="#"`.
+
+## Output formats
+
+| Extension | Format | Notes |
+|---|---|---|
+| `.mat` | MATLAB v7.3 | Load with `load` or `zabgrab_load` (below) |
+| `.h5` | HDF5 | Same layout; read with h5py, or `h5read`/`zabgrab_load` in MATLAB |
+| `.tsv`, `.csv` | Tab/comma-separated | Metadata in leading `#` lines |
+
+`.mat` and `.h5` files hold one group per fetch (`fetch_0001`, `fetch_0002`, ...),
+each with its metadata and one struct per item:
+
+```matlab
+S = load('particles.mat');
+S.fetch_0001.items.item_12345.value      % N x 1 values
+S.fetch_0001.items.item_12345.time       % POSIX seconds (UTC)
+```
+
+Text items are cell arrays in `.mat` files. Each text value takes about 480 bytes
+there (several times more than in `.h5`), so zabgrab warns before writing more than
+`mat_text_warn_entries` (default 200,000); `--allow-large-text` skips the warning.
+
+## Keeping a file up to date
+
+```bash
+# Initial fetch of the last week into a MATLAB file
+zabgrab fetch -t particles --from "7 days ago" --to now --output particles.mat
+
+# Later (e.g. daily from cron): append everything since the last fetch
+zabgrab update particles.mat
+```
+
+`update` repeats the last fetch from where it ended, with the same items and settings,
+and adds the new data as another group. `--rematch` looks items up again from the
+original templates (picking up new items); `--to`, `--server` and `--dry-run` are also
+available. `zabgrab fetch ... --append` adds a fetch of your choice to a file.
+
+The groups are only a storage detail. To load all of a file's data as one
+continuous dataset in MATLAB, use `matlab/zabgrab_load.m` from this repository:
+
+```matlab
+addpath('/path/to/zabgrab/matlab')
+S = zabgrab_load('particles.mat');       % one struct per item
+plot(S(1).time, S(1).value)              % time is a UTC datetime
+title(sprintf('%s: %s [%s]', S(1).host, S(1).name, S(1).units))
+```
+
+Or flatten a file into a new one with all groups merged (repeated points are kept
+once), optionally converting it and filtering items or times:
+
+```bash
+zabgrab export particles.mat -o particles.csv --item "*0.3um" --from "2 days ago"
+```
 
 ## Credits
 Sean Leavey <sean.leavey@stfc.ac.uk>
