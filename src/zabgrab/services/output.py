@@ -235,8 +235,8 @@ def guard_large_text(
     message = (
         f"{target.path} would hold {total:,} text values, more than "
         f"mat_text_warn_entries ({threshold:,}). In .mat files each is stored "
-        f"separately, adding about {new * MAT_TEXT_BYTES / 1e6:.0f} MB now and "
-        "making the file slow to write and to load in MATLAB."
+        f"separately: this adds about {new * MAT_TEXT_BYTES / 1e6:.0f} MB (several "
+        "times more than .h5) and makes the file slower to write and load."
     )
     if not ui.interactive:
         ui.warning(

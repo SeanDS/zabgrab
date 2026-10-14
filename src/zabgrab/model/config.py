@@ -171,5 +171,7 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
     "timezone": "local",
     "jobs": 6,
     "max_items": 50,
-    "mat_text_warn_entries": 50_000,
+    # Each text entry costs about 480 bytes and 60 us to write in a .mat file
+    # (MATLAB loads around 100,000 a second); see benchmarks/mat_text.py.
+    "mat_text_warn_entries": 200_000,
 }
