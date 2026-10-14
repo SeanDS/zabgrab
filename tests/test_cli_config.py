@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import runpy
 import tomllib
 from pathlib import Path
 
@@ -9,8 +10,11 @@ import pytest
 from click.testing import CliRunner, Result
 
 from zabgrab import __version__
+from zabgrab.adapters.configfiles import Environment
 from zabgrab.cli import cli
-from zabgrab.errors import EXIT_ERROR
+from zabgrab.cli.app import AppContext
+from zabgrab.errors import EXIT_ERROR, EXIT_INTERRUPTED, ZabgrabError
+from zabgrab.ui.console import RichUI
 
 from .fakes import FakeEditor
 
@@ -206,3 +210,83 @@ class TestErrorHandling:
         result = run("--debug", "config", "paths")
         assert "Traceback" in result.stderr
         assert "kaboom" in result.stderr
+
+
+class TestMoreErrorHandling:
+    def test_zabgrab_error_with_debug_shows_traceback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fail(*args: object, **kwargs: object) -> None:
+            raise ZabgrabError("expected failure", hint="try again")
+
+        monkeypatch.setattr("zabgrab.cli.config.layers_table", fail)
+        result = run("--debug", "config", "paths")
+        assert result.exit_code == EXIT_ERROR
+        assert "Traceback" in result.stderr
+        assert "Error: expected failure" in result.stderr
+        assert "Fix: try again" in result.stderr
+
+    def test_keyboard_interrupt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def interrupt(*args: object, **kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("zabgrab.cli.config.layers_table", interrupt)
+        result = run("config", "paths")
+        assert result.exit_code == EXIT_INTERRUPTED
+        assert "Interrupted." in result.stderr
+
+    def test_missing_explicit_config_shown_in_paths(self, tmp_path: Path) -> None:
+        result = run("--config", str(tmp_path / "nope.toml"), "config", "paths")
+        explicit = next(
+            line for line in result.stdout.splitlines() if "explicit" in line
+        )
+        assert "missing" in explicit
+
+
+class TestMoreEdit:
+    def test_existing_file_is_kept(
+        self, user_config: Path, editor: FakeEditor, interactive: None
+    ) -> None:
+        write(user_config, "[defaults]\njobs = 2\n")
+        assert run("config", "edit").exit_code == 0
+        assert user_config.read_text() == "[defaults]\njobs = 2\n"
+
+    def test_system_target_permission_denied(
+        self,
+        editor: FakeEditor,
+        interactive: None,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        locked = tmp_path / "locked"
+        locked.mkdir(mode=0o500)
+        monkeypatch.setattr(
+            "zabgrab.cli.config.system_config_path",
+            lambda env: locked / "zabgrab" / "config.toml",
+        )
+        try:
+            result = run("config", "edit", "--target", "system")
+        finally:
+            locked.chmod(0o700)
+        assert result.exit_code == EXIT_ERROR
+        assert "permission denied" in result.stderr
+        assert "administrator rights" in result.stderr
+        assert editor.opened == []
+
+
+def test_config_is_loaded_once(env: Environment) -> None:
+    app = AppContext(ui=RichUI(interactive=False), env=env, editor=FakeEditor())
+    assert app.config() is app.config()
+
+
+def test_python_dash_m(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["zabgrab", "--version"])
+    with pytest.raises(SystemExit) as exc_info:
+        runpy.run_module("zabgrab", run_name="__main__")
+    assert exc_info.value.code == 0
+
+
+def test_usage_errors_are_left_to_click() -> None:
+    result = run("config", "edit", "--target", "bogus")
+    assert result.exit_code == 2
+    assert "Invalid value for '--target'" in result.stderr

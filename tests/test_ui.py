@@ -197,3 +197,22 @@ class TestPrompts:
         monkeypatch.setattr("sys.stdin", io.StringIO(""))
         with pytest.raises(Cancelled):
             make_ui(capsys).confirm("Sure?", fix="")
+
+
+def test_success_hidden_when_quiet(capsys: pytest.CaptureFixture[str]) -> None:
+    make_ui(capsys, verbosity=-1).success("done")
+    assert capsys.readouterr().err == ""
+
+
+def test_forced_colour(capsys: pytest.CaptureFixture[str]) -> None:
+    RichUI(interactive=False, color=True).warning("careful")
+    assert "\x1b[" in capsys.readouterr().err
+
+
+def test_choose_many_reasks(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("5\nall\n"))
+    options = [Option("a", 1), Option("b", 2)]
+    assert make_ui(capsys).choose_many("Which?", options, fix="") == [1, 2]
+    assert "out of range" in capsys.readouterr().err
