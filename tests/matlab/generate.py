@@ -191,42 +191,48 @@ def main() -> None:
         "--large", type=int, default=100_000, help="entries in large.mat"
     )
     args = parser.parse_args()
+    generate(FILES, large=args.large)
+    print(f"Wrote sample files to {FILES}.")
 
-    FILES.mkdir(exist_ok=True)
+
+def generate(folder: Path, *, large: int = 100_000) -> None:
+    """Write the sample files and expected.json to ``folder``."""
+    folder.mkdir(parents=True, exist_ok=True)
     basic = [(GROUP_1, None), (GROUP_2, None), (GROUP_3, "custom_name")]
     expected = {
-        "basic.mat": write(FILES / "basic.mat", basic, "raw"),
-        "basic.h5": write(FILES / "basic.h5", basic, "raw"),
-        "trends.mat": write(FILES / "trends.mat", [(TRENDS, None)], "1h"),
-        "trends.h5": write(FILES / "trends.h5", [(TRENDS, None)], "1h"),
+        "basic.mat": write(folder / "basic.mat", basic, "raw"),
+        "basic.h5": write(folder / "basic.h5", basic, "raw"),
+        "trends.mat": write(folder / "trends.mat", [(TRENDS, None)], "1h"),
+        "trends.h5": write(folder / "trends.h5", [(TRENDS, None)], "1h"),
     }
     merged = {
         "time": [T0, T0 + 60.25, T0 + 120, T0 + 180],
         "value": [1.5, 2.5, 30.5, 4.5],
     }
-    large = FetchResult(
+    entries = FetchResult(
         series=[
             Series(
                 DEMO,
                 item(6, ValueType.TEXT, "Large log"),
                 Resolution.RAW,
                 {
-                    "time": [T0 + n for n in range(args.large)],
-                    "value": [f"entry {n}" for n in range(args.large)],
+                    "time": [T0 + n for n in range(large)],
+                    "value": [f"entry {n}" for n in range(large)],
                 },
             )
         ]
     )
-    write(FILES / "large.mat", [(large, None)], "raw")
-    (FILES / "expected.json").write_text(
+    write(folder / "large.mat", [(entries, None)], "raw")
+    (folder / "expected.json").write_text(
         json.dumps(
-            {"files": expected, "merged_item_1": merged, "large_entries": args.large},
-            ensure_ascii=False,
+            {"files": expected, "merged_item_1": merged, "large_entries": large},
+            # Escaped, since older MATLAB can't read non-BMP characters as UTF-8.
+            ensure_ascii=True,
             indent=1,
-        ),
+        )
+        + "\n",
         encoding="utf-8",
     )
-    print(f"Wrote sample files to {FILES}.")
 
 
 if __name__ == "__main__":

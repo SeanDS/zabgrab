@@ -1,0 +1,531 @@
+{
+ "files": {
+  "basic.mat": [
+   {
+    "name": "fetch_0001",
+    "t_from": 1760000000.0,
+    "t_to": 1760001000.0,
+    "items": {
+     "item_1": {
+      "itemid": 1,
+      "hostid": 10001,
+      "value_type": 0,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Particles 0.3\u00b5m \u2713",
+      "key": "particles[0.3]",
+      "units": "#/m\u00b3",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000000.0,
+        1760000060.25,
+        1760000120.0
+       ],
+       "value": [
+        1.5,
+        2.5,
+        3.5
+       ]
+      }
+     },
+     "item_2": {
+      "itemid": 2,
+      "hostid": 10001,
+      "value_type": 3,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Big counter",
+      "key": "counter",
+      "units": "B",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000000.0,
+        1760000001.0,
+        1760000002.0
+       ],
+       "value": [
+        "0",
+        "9007199254740993",
+        "18446744073709551615"
+       ]
+      }
+     },
+     "item_3": {
+      "itemid": 3,
+      "hostid": 10001,
+      "value_type": 2,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Syslog",
+      "key": "log[/var/log/syslog,,,]",
+      "units": "",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000000.0,
+        1760000001.0,
+        1760000002.0
+       ],
+       "value": [
+        "kernel: boot",
+        "tab\there, comma, \"quote\"\nnew line",
+        "\ud834\udd1e outside the BMP, \u2713"
+       ],
+       "log_time": [
+        1759999995,
+        null,
+        1760000002
+       ],
+       "source": [
+        "kern",
+        "",
+        "systemd"
+       ],
+       "severity": [
+        1,
+        0,
+        4
+       ],
+       "event_id": [
+        7,
+        0,
+        9
+       ]
+      }
+     },
+     "item_4": {
+      "itemid": 4,
+      "hostid": 10001,
+      "value_type": 1,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Agent version",
+      "key": "agent.version",
+      "units": "",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000000.0
+       ],
+       "value": [
+        "7.0.5"
+       ]
+      }
+     },
+     "item_5": {
+      "itemid": 5,
+      "hostid": 10001,
+      "value_type": 4,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Never set",
+      "key": "nothing",
+      "units": "",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [],
+       "value": []
+      }
+     },
+     "item_1_2": {
+      "itemid": 1,
+      "hostid": 10001,
+      "value_type": 0,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Same ID, other server",
+      "key": "k",
+      "units": "",
+      "server": "https://other.example.org",
+      "server_name": "",
+      "columns": {
+       "time": [
+        1760000000.0
+       ],
+       "value": [
+        42.0
+       ]
+      }
+     }
+    }
+   },
+   {
+    "name": "fetch_0002",
+    "t_from": 1760001000.0,
+    "t_to": 1760002000.0,
+    "items": {
+     "item_1": {
+      "itemid": 1,
+      "hostid": 10001,
+      "value_type": 0,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Particles 0.3\u00b5m \u2713",
+      "key": "particles[0.3]",
+      "units": "#/m\u00b3",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000120.0,
+        1760000180.0
+       ],
+       "value": [
+        30.5,
+        4.5
+       ]
+      }
+     }
+    }
+   },
+   {
+    "name": "custom_name",
+    "t_from": 1760002000.0,
+    "t_to": 1760003000.0,
+    "items": {
+     "item_4": {
+      "itemid": 4,
+      "hostid": 10001,
+      "value_type": 1,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Agent version",
+      "key": "agent.version",
+      "units": "",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000300.0
+       ],
+       "value": [
+        "7.0.6"
+       ]
+      }
+     }
+    }
+   }
+  ],
+  "basic.h5": [
+   {
+    "name": "fetch_0001",
+    "t_from": 1760000000.0,
+    "t_to": 1760001000.0,
+    "items": {
+     "item_1": {
+      "itemid": 1,
+      "hostid": 10001,
+      "value_type": 0,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Particles 0.3\u00b5m \u2713",
+      "key": "particles[0.3]",
+      "units": "#/m\u00b3",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000000.0,
+        1760000060.25,
+        1760000120.0
+       ],
+       "value": [
+        1.5,
+        2.5,
+        3.5
+       ]
+      }
+     },
+     "item_2": {
+      "itemid": 2,
+      "hostid": 10001,
+      "value_type": 3,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Big counter",
+      "key": "counter",
+      "units": "B",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000000.0,
+        1760000001.0,
+        1760000002.0
+       ],
+       "value": [
+        "0",
+        "9007199254740993",
+        "18446744073709551615"
+       ]
+      }
+     },
+     "item_3": {
+      "itemid": 3,
+      "hostid": 10001,
+      "value_type": 2,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Syslog",
+      "key": "log[/var/log/syslog,,,]",
+      "units": "",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000000.0,
+        1760000001.0,
+        1760000002.0
+       ],
+       "value": [
+        "kernel: boot",
+        "tab\there, comma, \"quote\"\nnew line",
+        "\ud834\udd1e outside the BMP, \u2713"
+       ],
+       "log_time": [
+        1759999995,
+        null,
+        1760000002
+       ],
+       "source": [
+        "kern",
+        "",
+        "systemd"
+       ],
+       "severity": [
+        1,
+        0,
+        4
+       ],
+       "event_id": [
+        7,
+        0,
+        9
+       ]
+      }
+     },
+     "item_4": {
+      "itemid": 4,
+      "hostid": 10001,
+      "value_type": 1,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Agent version",
+      "key": "agent.version",
+      "units": "",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000000.0
+       ],
+       "value": [
+        "7.0.5"
+       ]
+      }
+     },
+     "item_5": {
+      "itemid": 5,
+      "hostid": 10001,
+      "value_type": 4,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Never set",
+      "key": "nothing",
+      "units": "",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [],
+       "value": []
+      }
+     },
+     "item_1_2": {
+      "itemid": 1,
+      "hostid": 10001,
+      "value_type": 0,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Same ID, other server",
+      "key": "k",
+      "units": "",
+      "server": "https://other.example.org",
+      "server_name": "",
+      "columns": {
+       "time": [
+        1760000000.0
+       ],
+       "value": [
+        42.0
+       ]
+      }
+     }
+    }
+   },
+   {
+    "name": "fetch_0002",
+    "t_from": 1760001000.0,
+    "t_to": 1760002000.0,
+    "items": {
+     "item_1": {
+      "itemid": 1,
+      "hostid": 10001,
+      "value_type": 0,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Particles 0.3\u00b5m \u2713",
+      "key": "particles[0.3]",
+      "units": "#/m\u00b3",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000120.0,
+        1760000180.0
+       ],
+       "value": [
+        30.5,
+        4.5
+       ]
+      }
+     }
+    }
+   },
+   {
+    "name": "custom_name",
+    "t_from": 1760002000.0,
+    "t_to": 1760003000.0,
+    "items": {
+     "item_4": {
+      "itemid": 4,
+      "hostid": 10001,
+      "value_type": 1,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Agent version",
+      "key": "agent.version",
+      "units": "",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000300.0
+       ],
+       "value": [
+        "7.0.6"
+       ]
+      }
+     }
+    }
+   }
+  ],
+  "trends.mat": [
+   {
+    "name": "fetch_0001",
+    "t_from": 1760000000.0,
+    "t_to": 1760001000.0,
+    "items": {
+     "item_1": {
+      "itemid": 1,
+      "hostid": 10001,
+      "value_type": 0,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Particles 0.3\u00b5m \u2713",
+      "key": "particles[0.3]",
+      "units": "#/m\u00b3",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000000.0,
+        1760003600.0
+       ],
+       "min": [
+        1.0,
+        1.5
+       ],
+       "avg": [
+        2.0,
+        2.5
+       ],
+       "max": [
+        3.0,
+        3.5
+       ],
+       "count": [
+        60,
+        58
+       ]
+      }
+     }
+    }
+   }
+  ],
+  "trends.h5": [
+   {
+    "name": "fetch_0001",
+    "t_from": 1760000000.0,
+    "t_to": 1760001000.0,
+    "items": {
+     "item_1": {
+      "itemid": 1,
+      "hostid": 10001,
+      "value_type": 0,
+      "host": "demo1",
+      "host_name": "DEMO 1 \u2713",
+      "name": "Particles 0.3\u00b5m \u2713",
+      "key": "particles[0.3]",
+      "units": "#/m\u00b3",
+      "server": "https://demo.example.org",
+      "server_name": "demo",
+      "columns": {
+       "time": [
+        1760000000.0,
+        1760003600.0
+       ],
+       "min": [
+        1.0,
+        1.5
+       ],
+       "avg": [
+        2.0,
+        2.5
+       ],
+       "max": [
+        3.0,
+        3.5
+       ],
+       "count": [
+        60,
+        58
+       ]
+      }
+     }
+    }
+   }
+  ]
+ },
+ "merged_item_1": {
+  "time": [
+   1760000000.0,
+   1760000060.25,
+   1760000120.0,
+   1760000180.0
+  ],
+  "value": [
+   1.5,
+   2.5,
+   30.5,
+   4.5
+  ]
+ },
+ "large_entries": 100000
+}
