@@ -8,6 +8,7 @@ from typing import Any
 
 import tomlkit
 from rich.table import Table
+from rich.text import Text
 from tomlkit.items import Array, InlineTable
 from tomlkit.items import Item as TomlItem
 
@@ -45,33 +46,70 @@ def layers_table(layers: Iterable[ConfigLayer]) -> Table:
     return table
 
 
-def config_to_toml(loaded: LoadedConfig, *, sources: bool = False) -> str:
-    """The merged config as TOML, optionally commented with each value's source."""
-    data = loaded.config.model_dump(mode="json", by_alias=True, exclude_none=True)
-    doc = tomlkit.document()
-    doc.add(tomlkit.comment("Effective zabgrab configuration (all layers merged)."))
+ConfigLine = tuple[str | None, str]
+"""A line of TOML and the source of its value (``None`` for structural lines)."""
 
-    defaults = tomlkit.table()
+SOURCE_STYLE = "magenta"
+SOURCE_SEPARATOR = " │ "
+
+
+def config_lines(loaded: LoadedConfig) -> list[ConfigLine]:
+    """The merged config as lines of TOML, each with the source of its value.
+
+    ``[defaults]`` keys have individual sources; each server and template takes the
+    source of the file that defined it.
+    """
+    data = loaded.config.model_dump(mode="json", by_alias=True, exclude_none=True)
+    lines: list[ConfigLine] = [
+        (None, "# Effective zabgrab configuration (all layers merged)."),
+        (None, ""),
+        (None, "[defaults]"),
+    ]
+
     for key, value in data["defaults"].items():
-        defaults.add(key, _item(value))
-        if sources and (source := loaded.source_of("defaults", key)):
-            defaults[key].comment(f"from {source}")
-    doc.add("defaults", defaults)
+        source = loaded.source_of("defaults", key)
+        lines += [(source, line) for line in _dump({key: _item(value)})]
 
     for section in ("servers", "templates"):
-        if not data[section]:
-            continue
-        outer = tomlkit.table(is_super_table=True)
         for name, entry in data[section].items():
             table = tomlkit.table()
-            if sources and (source := loaded.source_of(section, name)):
-                table.add(tomlkit.comment(f"from {source}"))
             for key, value in entry.items():
                 table.add(key, _item(value))
+            outer = tomlkit.table(is_super_table=True)
             outer.add(name, table)
-        doc.add(section, outer)
+            source = loaded.source_of(section, name)
+            lines.append((None, ""))
+            lines += [(source, line) for line in _dump({section: outer})]
 
-    return tomlkit.dumps(doc)
+    return lines
+
+
+def config_to_toml(loaded: LoadedConfig) -> str:
+    """The merged config as TOML."""
+    return "".join(f"{line}\n" for _, line in config_lines(loaded))
+
+
+def config_with_sources(loaded: LoadedConfig) -> Text:
+    """The merged config as TOML, each line prefixed by the source of its value.
+
+    The source column is as wide as the widest source.
+    """
+    lines = config_lines(loaded)
+    width = max((len(source) for source, _ in lines if source), default=0)
+    rendered = []
+    for source, line in lines:
+        text = Text(f"{source or '':<{width}}", style=SOURCE_STYLE)
+        text.append(SOURCE_SEPARATOR, style="dim")
+        text.append(line)
+        rendered.append(text)
+    return Text("\n").join(rendered)
+
+
+def _dump(data: Mapping[str, Any]) -> list[str]:
+    document = tomlkit.document()
+    for key, value in data.items():
+        document.add(key, value)
+    return tomlkit.dumps(document).splitlines()
 
 
 def _item(value: Any) -> TomlItem:

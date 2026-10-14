@@ -15,7 +15,7 @@ from ..adapters.configfiles import (
     user_config_path,
 )
 from ..errors import ConfigError, ZabgrabError
-from ..ui.render import config_to_toml, layers_table
+from ..ui.render import config_to_toml, config_with_sources, layers_table
 from .app import AppContext, pass_app
 
 STARTER_CONFIG = """\
@@ -53,12 +53,18 @@ def paths_command(app: AppContext) -> None:
 
 @config_group.command("show")
 @click.option(
-    "--sources", is_flag=True, help="Annotate values with the file they came from."
+    "--sources",
+    is_flag=True,
+    help="Prefix each line with the file its value came from.",
 )
 @pass_app
 def show_command(app: AppContext, sources: bool) -> None:
     """Print the effective configuration (all files merged) as TOML."""
-    app.ui.print_data(config_to_toml(app.config(), sources=sources))
+    loaded = app.config()
+    if sources:
+        app.ui.print_data(config_with_sources(loaded))
+    else:
+        app.ui.print_data(config_to_toml(loaded))
 
 
 @config_group.command("edit")

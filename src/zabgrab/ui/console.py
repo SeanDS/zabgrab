@@ -143,7 +143,9 @@ class RichUI:
     def print_data(self, data: RenderableType) -> None:
         """Print command output (not diagnostics) to stdout."""
         if isinstance(data, str):
-            self.out.print(data, markup=False, highlight=False, soft_wrap=True)
+            self.out.print(data, markup=False, highlight=False, soft_wrap=True, end="")
+        elif isinstance(data, Text):
+            self.out.print(data, highlight=False, soft_wrap=True)
         else:
             self.out.print(data)
 

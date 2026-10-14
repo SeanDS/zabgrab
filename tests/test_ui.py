@@ -130,7 +130,7 @@ class TestMessages:
     def test_print_data_goes_to_stdout(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        make_ui(capsys).print_data("a = [1]")
+        make_ui(capsys).print_data("a = [1]\n")
         assert capsys.readouterr() == ("a = [1]\n", "")
 
 

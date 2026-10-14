@@ -107,11 +107,40 @@ class TestShow:
         assert template["from"] == "2 days ago"
 
     def test_sources(self, user_config: Path) -> None:
-        write(user_config, "[defaults]\njobs = 2\n[templates.t]\n")
+        write(
+            user_config,
+            "[defaults]\njobs = 2\n"
+            '[templates.t]\nitems = [{ itemid = 1 }, { name = "x" }]\n',
+        )
         result = run("config", "show", "--sources")
-        assert f"jobs = 2 # from {user_config}" in result.stdout
-        assert 'format = "mat" # from built-in' in result.stdout
-        assert f"[templates.t]\n# from {user_config}" in result.stdout
+        assert result.exit_code == 0, result.output
+
+        width = len(str(user_config))
+        lines = result.stdout.splitlines()
+        assert (
+            lines[0]
+            == " " * width + " │ # Effective zabgrab configuration (all layers merged)."
+        )
+        assert f"{user_config} │ jobs = 2" in lines
+        assert f'{"built-in":<{width}} │ format = "mat"' in lines
+        assert " " * width + " │ [defaults]" in lines
+        template = lines[lines.index(f"{user_config} │ [templates.t]") :]
+        assert template[1:5] == [
+            f"{user_config} │ items = [",
+            f"{user_config} │     {{itemid = 1}},",
+            f'{user_config} │     {{name = "x"}},',
+            f"{user_config} │ ]",
+        ]
+
+    def test_sources_width_follows_widest_source(self) -> None:
+        result = run("--isolated", "config", "show", "--sources")
+        assert result.stdout.splitlines()[3] == 'built-in │ from = "1 hour ago"'
+
+    def test_sources_are_coloured(self, user_config: Path) -> None:
+        write(user_config, "[defaults]\njobs = 2\n")
+        result = CliRunner().invoke(cli, ["--color", "config", "show", "--sources"])
+        line = next(line for line in result.stdout.splitlines() if "jobs = 2" in line)
+        assert line.startswith(f"\x1b[35m{user_config}\x1b[0m")
 
     def test_explicit_config_via_env(self, tmp_path: Path) -> None:
         extra = write(tmp_path / "extra.toml", "[defaults]\njobs = 3\n")
