@@ -136,15 +136,10 @@ class TestShow:
 
     @pytest.mark.parametrize(
         ("layer", "colour"),
-        [("user", "32"), ("project", "33"), ("explicit", "35"), ("system", "34")],
+        [("user", "208"), ("project", "220"), ("explicit", "180"), ("system", "196")],
     )
-    def test_lines_are_coloured_by_layer(
-        self,
-        user_config: Path,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        layer: str,
-        colour: str,
+    def test_source_column_is_coloured_by_layer(
+        self, user_config: Path, tmp_path: Path, layer: str, colour: str
     ) -> None:
         paths = {
             "user": user_config,
@@ -156,14 +151,26 @@ class TestShow:
         args = ["--color", "config", "show", "--sources"]
         if layer == "explicit":
             args += ["--config", str(path)]
-        result = CliRunner().invoke(cli, args)
+        result = CliRunner(env={"TERM": "xterm-256color"}).invoke(cli, args)
         lines = result.stdout.splitlines()
 
-        line = next(line for line in lines if "jobs = 2" in line)
-        assert line.startswith(f"\x1b[1;{colour}m{path}\x1b[0m")
-        assert line.endswith(f"\x1b[{colour}mjobs = 2\x1b[0m")
-        builtin = next(line for line in lines if "resolution = " in line)
-        assert builtin.startswith("\x1b[1;90mbuilt-in")
+        line = next(line for line in lines if "jobs" in line)
+        assert line.startswith(f"\x1b[1;38;5;{colour}m{path}")
+        builtin = next(line for line in lines if "resolution" in line)
+        assert builtin.startswith("\x1b[1;38;5;244mbuilt-in")
+
+    def test_lines_are_highlighted_like_plain_show(self, user_config: Path) -> None:
+        write(user_config, '[defaults]\njobs = 2\n[servers.s]\nurl = "https://x"\n')
+        env = {"TERM": "xterm-256color"}
+        plain = CliRunner(env=env).invoke(cli, ["--color", "config", "show"]).stdout
+        sources = (
+            CliRunner(env=env)
+            .invoke(cli, ["--color", "config", "show", "--sources"])
+            .stdout
+        )
+        separator = "\x1b[2m │ \x1b[0m"
+        content = [line.split(separator, 1)[1] for line in sources.splitlines()]
+        assert content == plain.splitlines()
 
     def test_explicit_config_via_env(self, tmp_path: Path) -> None:
         extra = write(tmp_path / "extra.toml", "[defaults]\njobs = 3\n")

@@ -76,12 +76,14 @@ SOURCE_SEPARATOR = " │ "
 
 #: Colour of config lines by the layer they came from.
 LAYER_STYLES = {
-    LayerKind.BUILTIN: "bright_black",
-    LayerKind.SYSTEM: "blue",
-    LayerKind.USER: "green",
-    LayerKind.PROJECT: "yellow",
-    LayerKind.EXPLICIT: "magenta",
+    LayerKind.BUILTIN: "bold grey50",
+    LayerKind.SYSTEM: "bold red1",
+    LayerKind.USER: "bold dark_orange",
+    LayerKind.PROJECT: "bold gold1",
+    LayerKind.EXPLICIT: "bold tan",
 }
+"""Styles of the source column in ``config show --sources``, by layer. They avoid
+the colours used to highlight TOML, so the two can't be confused."""
 
 
 def config_lines(loaded: LoadedConfig) -> list[ConfigLine]:
@@ -122,33 +124,34 @@ def config_to_toml(loaded: LoadedConfig) -> str:
 
 def highlighted_toml(text: str) -> Text:
     """TOML with its sections, keys, values and comments highlighted."""
-    highlighter = TomlHighlighter()
-    lines = []
-    for line in text.splitlines(keepends=True):
-        if line.lstrip().startswith("#"):
-            content = line.rstrip("\n")
-            lines.append(Text.assemble((content, "toml.comment"), line[len(content) :]))
-        else:
-            lines.append(highlighter(Text(line)))
-    return Text("", end="").join(lines)
+    return Text("\n").join(_highlight_toml_line(line) for line in text.splitlines())
+
+
+def _highlight_toml_line(line: str) -> Text:
+    if line.lstrip().startswith("#"):
+        return Text(line, style="toml.comment")
+    return TomlHighlighter()(Text(line))
 
 
 def config_with_sources(loaded: LoadedConfig) -> Text:
     """The merged config as TOML, each line prefixed by the source of its value.
 
-    The source column is as wide as the widest source. Each line is coloured by the
-    layer it came from (see :data:`LAYER_STYLES`), with the source in bold.
+    The source column is as wide as the widest source, and styled by the layer the
+    value came from (see :data:`LAYER_STYLES`). The TOML is highlighted as by
+    :func:`highlighted_toml`.
     """
     kinds = {layer.source: layer.kind for layer in loaded.layers if layer.active}
     lines = config_lines(loaded)
     width = max((len(source) for source, _ in lines if source), default=0)
     rendered = []
     for source, line in lines:
-        style = LAYER_STYLES[kinds[source]] if source else ""
         text = Text()
-        text.append(f"{source or '':<{width}}", style=f"bold {style}".strip())
+        text.append(
+            f"{source or '':<{width}}",
+            style=LAYER_STYLES[kinds[source]] if source else "",
+        )
         text.append(SOURCE_SEPARATOR, style="dim")
-        text.append(line, style=style)
+        text.append_text(_highlight_toml_line(line))
         rendered.append(text)
     return Text("\n").join(rendered)
 
