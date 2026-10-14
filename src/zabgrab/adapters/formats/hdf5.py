@@ -40,6 +40,7 @@ from ...model.config import Resolution, ServerConfig
 from ...model.series import FetchResult, Series
 from ...model.server import Server
 from ...model.zabbix import Item, ValueType
+from ..files import match_permissions
 
 GROUP_PATTERN = re.compile(r"fetch_(\d+)")
 IDENTIFIER = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,62}")
@@ -103,6 +104,7 @@ def write_fetch(
     group: str | None = None,
     in_place: bool = False,
     large_text_accepted: bool = False,
+    created: datetime | None = None,
 ) -> str:
     """Write a fetch as a new group, creating the file or appending to it.
 
@@ -140,7 +142,7 @@ def write_fetch(
             if large_text_accepted:
                 file.attrs[LARGE_TEXT_ACCEPTED] = np.uint8(1)
         if mat and not exists:
-            _write_mat_header(target)
+            _write_mat_header(target, created or datetime.now(UTC))
     return name
 
 
@@ -196,6 +198,7 @@ def _writing(path: Path, *, copy: bool, direct: bool) -> Iterator[Path]:
             if copy:
                 shutil.copy2(path, temporary)
             yield temporary
+            match_permissions(temporary, path)
             os.replace(temporary, path)
         except BaseException:
             temporary.unlink(missing_ok=True)
@@ -282,8 +285,8 @@ def _numbers(values: Sequence[Any], kind: str) -> np.ndarray:
     return np.array(values, dtype=np.uint64 if kind == "uint64" else np.int64)
 
 
-def _write_mat_header(path: Path) -> None:
-    created = datetime.now(UTC).strftime("%a %b %d %H:%M:%S %Y")
+def _write_mat_header(path: Path, time: datetime) -> None:
+    created = time.strftime("%a %b %d %H:%M:%S %Y")
     text = (
         f"MATLAB 7.3 MAT-file, Platform: zabgrab, Created on: {created} "
         "HDF5 schema 1.00 ."

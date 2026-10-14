@@ -43,6 +43,7 @@ from ..model.config import (
     Template,
 )
 from ..model.item import ItemSpec
+from .files import match_permissions
 
 CONFIG_NAME = "config.toml"
 PROJECT_CONFIG_NAME = f"{PROGRAM}.toml"
@@ -397,6 +398,7 @@ def write_atomically(path: Path, text: str) -> None:
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as file:
                 file.write(text)
+            match_permissions(Path(temporary), path)
             os.replace(temporary, path)
         except BaseException:
             Path(temporary).unlink(missing_ok=True)

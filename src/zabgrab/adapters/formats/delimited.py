@@ -28,6 +28,7 @@ from typing import Any
 
 from ...errors import ZabgrabError
 from ...model.series import FetchResult, Series
+from ..files import match_permissions
 
 TIME_COLUMNS = frozenset({"time", "log_time"})
 
@@ -47,6 +48,7 @@ def write_delimited(
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as file:
                 _write(file, result, metadata, delimiter=delimiter, tz=tz)
+            match_permissions(Path(temporary), path)
             os.replace(temporary, path)
         except BaseException:
             Path(temporary).unlink(missing_ok=True)
