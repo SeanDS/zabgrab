@@ -721,7 +721,7 @@ alongside the MATLAB check files.
 - **CI (GitHub Actions, `.github/workflows/ci.yml`):**
   - pre-commit hooks (ruff check and format, etc.) and mypy
   - pytest with 100% coverage on Python 3.11 to 3.14 (Linux), plus the newest Python
-    on macOS, where the tests run as a normal user rather than root
+    on macOS, where the tests run as a normal user rather than root, and on Windows
   - build the package, then smoke-test the installed wheel
 
 ## Documentation
@@ -815,7 +815,9 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Items in a group are named `item_<id>`, with `_2`, `_3`, ... when items on
   different servers share an ID; readers use the stored server and ID, not the names.
 - CI moved from GitLab to GitHub Actions, with no release or deployment jobs yet.
-  Windows isn't tested in CI yet.
+- Tests run in UK time, which their expected local times are written in. Windows
+  can't change a running process's time zone, so there the system time zone must
+  be UK time (CI sets it with `tzutil`), and the tests stop with an error otherwise.
 - Files written via a temporary file get normal permissions (the umask, or the
   replaced file's), not the temporary file's private 0600.
 
