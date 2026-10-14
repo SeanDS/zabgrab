@@ -11,12 +11,14 @@ from typing import Any, TypeVar
 import click
 
 from ..adapters.configfiles import (
+    BUILTIN_SOURCE,
     ConfigLayer,
     Environment,
     LoadedConfig,
     add_server,
     discover_layers,
     load_config,
+    set_server_url,
     user_config_path,
 )
 from ..adapters.secrets import KeyringSecrets
@@ -115,6 +117,13 @@ class AppContext:
         """Add a server to the user config file."""
         add_server(user_config_path(self.env), name, url)
 
+    def update_server_url(self, name: str, url: str) -> None:
+        """Change a configured server's URL in the config file that defines it."""
+        source = self.config().source_of("servers", name)
+        if source is None or source == BUILTIN_SOURCE:  # pragma: no cover
+            raise ZabgrabError(f"Server {name!r} isn't defined in a config file.")
+        set_server_url(Path(source), name, url)
+
     async def connect(self, server: Server) -> ZabbixClient:
         """A logged-in client for ``server``."""
         return await session.connect(
@@ -123,6 +132,7 @@ class AppContext:
             ui=self.ui,
             secrets=self.secrets,
             env=self.env.variables,
+            update_url=self.update_server_url,
         )
 
 

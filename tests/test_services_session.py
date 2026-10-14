@@ -13,6 +13,7 @@ from zabgrab.errors import (
     AuthenticationFailed,
     ConnectionFailed,
     InputRequired,
+    Redirected,
     ZabgrabError,
 )
 from zabgrab.model.config import AuthMethod, ServerConfig
@@ -21,7 +22,15 @@ from zabgrab.services.ports import ZabbixClient
 from zabgrab.services.session import connect
 
 from .fakes import MemorySecrets, RecordingUI
-from .fakezabbix import PASSWORD, TOKEN, USERNAME, FakeTransport, FakeZabbix, seeded
+from .fakezabbix import (
+    PASSWORD,
+    TOKEN,
+    USERNAME,
+    FakeTransport,
+    FakeZabbix,
+    RedirectingTransport,
+    seeded,
+)
 
 URL = "https://demo.example.org"
 
@@ -32,13 +41,29 @@ class Harness:
     secrets: MemorySecrets = field(default_factory=MemorySecrets)
     env: dict[str, str] = field(default_factory=dict)
     transports: list[FakeTransport] = field(default_factory=list)
+    redirects: dict[str, str] = field(default_factory=dict)
+    updates: list[tuple[str, str]] = field(default_factory=list)
+    update_fails: bool = False
 
     def factory(self, config: ServerConfig) -> ZabbixClient:
-        transport = FakeTransport(self.zabbix)
+        transport: FakeTransport
+        if config.url in self.redirects:
+            transport = RedirectingTransport(
+                self.zabbix, config.url, self.redirects[config.url]
+            )
+        else:
+            transport = FakeTransport(self.zabbix)
         self.transports.append(transport)
         return ZabbixAPI(transport)
 
-    def connect(self, server: Server, ui: RecordingUI) -> ZabbixClient:
+    def update_url(self, name: str, url: str) -> None:
+        if self.update_fails:
+            raise ZabgrabError("Can't write config.", hint="Check permissions.")
+        self.updates.append((name, url))
+
+    def connect(
+        self, server: Server, ui: RecordingUI, *, update: bool = True
+    ) -> ZabbixClient:
         return asyncio.run(
             connect(
                 server,
@@ -46,6 +71,7 @@ class Harness:
                 ui=ui,
                 secrets=self.secrets,
                 env=self.env,
+                update_url=self.update_url if update else None,
             )
         )
 
@@ -220,3 +246,78 @@ class TestConnection:
                     env={},
                 )
             )
+
+
+HTTP = "http://demo.example.org"
+
+
+class TestRedirects:
+    @staticmethod
+    def harness() -> Harness:
+        return Harness(secrets=MemorySecrets({URL: TOKEN}), redirects={HTTP: URL})
+
+    def test_follow_and_update_config(self) -> None:
+        harness = self.harness()
+        ui = RecordingUI(answers=[True, True])
+        client = harness.connect(Server("demo", ServerConfig(url=HTTP)), ui)
+        assert hosts(client) == ["demo1", "demo2", "web01"]
+        assert ui.questions == [
+            f"{HTTP}/api_jsonrpc.php redirects to {URL}/api_jsonrpc.php. Use {URL} "
+            "instead?",
+            f"Update the URL of server 'demo' in your config to {URL}?",
+        ]
+        assert harness.updates == [("demo", URL)]
+        assert ui.levels("success") == ["Updated server 'demo' in your config."]
+        assert harness.transports[0].closed
+
+    def test_follow_without_updating(self) -> None:
+        harness = self.harness()
+        ui = RecordingUI(answers=[True, False])
+        hosts(harness.connect(Server("demo", ServerConfig(url=HTTP)), ui))
+        assert harness.updates == []
+
+    def test_update_failure_is_a_warning(self) -> None:
+        harness = self.harness()
+        harness.update_fails = True
+        ui = RecordingUI(answers=[True, True])
+        hosts(harness.connect(Server("demo", ServerConfig(url=HTTP)), ui))
+        assert ui.levels("warning") == ["Can't write config. Check permissions."]
+
+    def test_literal_url_is_not_offered_for_update(self) -> None:
+        harness = self.harness()
+        ui = RecordingUI(answers=[True])
+        hosts(harness.connect(Server(None, ServerConfig(url=HTTP)), ui))
+        assert len(ui.questions) == 1
+
+    def test_no_update_callback(self) -> None:
+        harness = self.harness()
+        ui = RecordingUI(answers=[True])
+        server = Server("demo", ServerConfig(url=HTTP))
+        hosts(harness.connect(server, ui, update=False))
+        assert len(ui.questions) == 1
+
+    def test_declined(self) -> None:
+        ui = RecordingUI(answers=[False])
+        with pytest.raises(Redirected, match="redirects to"):
+            self.harness().connect(Server("demo", ServerConfig(url=HTTP)), ui)
+
+    def test_non_interactive_errors(self) -> None:
+        ui = RecordingUI(interactive=False)
+        with pytest.raises(Redirected) as exc_info:
+            self.harness().connect(Server("demo", ServerConfig(url=HTTP)), ui)
+        assert exc_info.value.hint is not None
+        assert exc_info.value.hint.startswith(f"Use {URL} as the server URL instead")
+
+    def test_different_host_is_flagged(self) -> None:
+        harness = Harness(redirects={HTTP: "https://elsewhere.example.com"})
+        ui = RecordingUI(answers=[False])
+        with pytest.raises(Redirected):
+            harness.connect(Server("demo", ServerConfig(url=HTTP)), ui)
+        assert "That's a different host" in ui.questions[0]
+
+    def test_too_many_redirects(self) -> None:
+        harness = Harness(redirects={HTTP: URL, URL: HTTP})
+        ui = RecordingUI(answers=[True, False] * 10)
+        with pytest.raises(ConnectionFailed, match="Too many redirects"):
+            harness.connect(Server("demo", ServerConfig(url=HTTP)), ui)
+        assert all(transport.closed for transport in harness.transports)

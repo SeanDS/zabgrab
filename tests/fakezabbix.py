@@ -20,6 +20,8 @@ from typing import Any
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
+from zabgrab.errors import Redirected
+
 NOT_AUTHORIZED = {
     "code": -32602,
     "message": "Invalid params.",
@@ -326,3 +328,21 @@ def seeded() -> FakeZabbix:
             ),
         ],
     )
+
+
+class RedirectingTransport(FakeTransport):
+    """A transport for a URL that redirects, like a real server's HTTP to HTTPS."""
+
+    def __init__(self, server: FakeZabbix, url: str, target: str) -> None:
+        super().__init__(server)
+        self.url = url
+        self.target = target
+
+    async def post(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
+        endpoint = f"{self.url}/api_jsonrpc.php"
+        raise Redirected(
+            f"{endpoint} redirects to {self.target}/api_jsonrpc.php.",
+            target=self.target,
+            hint=f"Use {self.target} as the server URL instead (with --server, or as "
+            "the server's url in your config).",
+        )

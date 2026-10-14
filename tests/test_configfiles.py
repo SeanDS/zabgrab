@@ -17,6 +17,7 @@ from zabgrab.adapters.configfiles import (
     discover_layers,
     find_project_config,
     load_config,
+    set_server_url,
     user_config_path,
 )
 from zabgrab.errors import ConfigError
@@ -266,3 +267,27 @@ class TestAddServer:
         with pytest.raises(ConfigError, match="Can't write"):
             add_server(directory / "config.toml", "a", "https://b")
         assert list(directory.iterdir()) == []
+
+
+class TestSetServerUrl:
+    def test_preserves_formatting(self, tmp_path: Path) -> None:
+        original = (
+            "# Servers.\n[servers.demo]  # the main one\n"
+            'url = "http://demo.example.org"   # old\ntoken_env = "T"\n'
+        )
+        path = write(tmp_path / "config.toml", original)
+        set_server_url(path, "demo", "https://demo.example.org")
+        assert path.read_text() == original.replace("http://", "https://")
+
+    @pytest.mark.parametrize(
+        "text",
+        ["", "servers = 1\n", "[servers.other]\nurl = 'x'\n", "[servers.demo]\n"],
+    )
+    def test_server_not_defined(self, tmp_path: Path, text: str) -> None:
+        path = write(tmp_path / "config.toml", text)
+        with pytest.raises(ConfigError, match="isn't defined"):
+            set_server_url(path, "demo", "https://x")
+
+    def test_unreadable(self, tmp_path: Path) -> None:
+        with pytest.raises(ConfigError, match="Can't update"):
+            set_server_url(tmp_path / "missing.toml", "demo", "https://x")

@@ -82,6 +82,15 @@ class ConnectionFailed(ZabbixError):
     """The server couldn't be reached, or didn't respond like a Zabbix server."""
 
 
+class Redirected(ConnectionFailed):
+    """The API endpoint redirected elsewhere (e.g. HTTP to HTTPS)."""
+
+    def __init__(self, message: str, *, target: str, hint: str | None = None) -> None:
+        super().__init__(message, hint=hint)
+        #: The frontend base URL the server redirected to.
+        self.target = target
+
+
 class ZabbixAPIError(ZabbixError):
     """The Zabbix API returned an error."""
 

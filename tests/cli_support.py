@@ -13,7 +13,13 @@ from zabgrab.model.config import ServerConfig
 from zabgrab.services.ports import ZabbixClient
 
 from .fakes import MemorySecrets
-from .fakezabbix import TOKEN, FakeTransport, FakeZabbix, seeded
+from .fakezabbix import (
+    TOKEN,
+    FakeTransport,
+    FakeZabbix,
+    RedirectingTransport,
+    seeded,
+)
 
 NOW = datetime.fromtimestamp(1_760_000_000 + 300, UTC)
 
@@ -32,8 +38,14 @@ token_env = "LAB_TOKEN"
 class Servers:
     by_url: dict[str, FakeZabbix] = field(default_factory=dict)
     secrets: MemorySecrets = field(default_factory=MemorySecrets)
+    #: URLs that redirect, and where to.
+    redirects: dict[str, str] = field(default_factory=dict)
 
     def factory(self, config: ServerConfig) -> ZabbixClient:
+        if config.url in self.redirects:
+            return ZabbixAPI(
+                RedirectingTransport(seeded(), config.url, self.redirects[config.url])
+            )
         if config.url not in self.by_url:
             self.by_url[config.url] = seeded()
         return ZabbixAPI(FakeTransport(self.by_url[config.url]))

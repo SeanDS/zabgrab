@@ -22,7 +22,7 @@ import difflib
 import os
 import tempfile
 import tomllib
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -363,6 +363,29 @@ def add_server(path: Path, name: str, url: str) -> None:
     server = tomlkit.table()
     server.add("url", url)
     servers.add(name, server)
+    write_atomically(path, tomlkit.dumps(document))
+
+
+def set_server_url(path: Path, name: str, url: str) -> None:
+    """Change the URL of ``[servers.NAME]`` in a config file, keeping its formatting.
+
+    Raises
+    ------
+    ConfigError
+        If the file can't be parsed or written, or doesn't define the server.
+    """
+    try:
+        document = tomlkit.parse(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomlkit.exceptions.ParseError) as exc:
+        raise ConfigError(
+            f"Can't update config file {path}.", path=path, details=[str(exc)]
+        ) from exc
+
+    servers = document.get("servers")
+    server = servers.get(name) if isinstance(servers, MutableMapping) else None
+    if not isinstance(server, MutableMapping) or "url" not in server:
+        raise ConfigError(f"Server {name!r} isn't defined in {path}.", path=path)
+    server["url"] = url
     write_atomically(path, tomlkit.dumps(document))
 
 

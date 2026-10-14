@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
-from ..errors import AuthenticationFailed, ZabgrabError
+from ..errors import AuthenticationFailed, ConnectionFailed, Redirected, ZabgrabError
 from ..model.config import AuthMethod
 from ..model.server import Server
 from .ports import UI, ClientFactory, Option, SecretStore, ZabbixClient
@@ -64,6 +65,12 @@ def non_empty(text: str) -> str:
     return text.strip()
 
 
+UpdateServerUrl = Callable[[str, str], None]
+"""Changes a configured server's URL (name, new URL) in the config file defining it."""
+
+MAX_REDIRECTS = 5
+
+
 async def connect(
     server: Server,
     *,
@@ -71,8 +78,13 @@ async def connect(
     ui: UI,
     secrets: SecretStore,
     env: Mapping[str, str],
+    update_url: UpdateServerUrl | None = None,
 ) -> ZabbixClient:
     """Return a logged-in client for ``server``.
+
+    If the server redirects (e.g. from HTTP to HTTPS), interactive users are asked
+    whether to follow, and whether to update the server's URL in their config via
+    ``update_url``; otherwise the redirect is an error.
 
     Tokens come from the server's ``token_env`` variable, then the keyring. If there
     is none (or it's rejected), interactive users can paste a token or log in with a
@@ -81,9 +93,25 @@ async def connect(
     if not server.config.verify_ssl:
         ui.warning(f"SSL certificate verification is disabled for {server.label}.")
 
-    client = factory(server.config)
+    for _ in range(MAX_REDIRECTS + 1):
+        client = factory(server.config)
+        try:
+            version = await client.check_version()
+        except Redirected as err:
+            await client.close()
+            server = _follow_redirect(server, err, ui, update_url)
+            continue
+        except BaseException:
+            await client.close()
+            raise
+        break
+    else:
+        raise ConnectionFailed(
+            f"Too many redirects from {server.label}.",
+            hint="Check the server URL in a web browser.",
+        )
+
     try:
-        version = await client.check_version()
         ui.debug(f"Connected to {server.label} (Zabbix {version}).")
         if server.config.auth is AuthMethod.PASSWORD:
             await _password_login(client, server, ui)
@@ -93,6 +121,47 @@ async def connect(
         await client.close()
         raise
     return client
+
+
+def _follow_redirect(
+    server: Server,
+    redirect: Redirected,
+    ui: UI,
+    update_url: UpdateServerUrl | None,
+) -> Server:
+    """Ask whether to follow a redirect; return the server at its target."""
+    if not ui.interactive:
+        raise redirect
+
+    question = f"{redirect.message} Use {redirect.target} instead?"
+    if urlsplit(redirect.target).hostname != urlsplit(server.url).hostname:
+        question = (
+            f"{redirect.message} That's a different host; only continue if you "
+            f"trust it. Use {redirect.target} instead?"
+        )
+    if not ui.confirm(question, fix=redirect.hint or "", default=True):
+        raise redirect
+
+    followed = Server(
+        server.name, server.config.model_copy(update={"url": redirect.target})
+    )
+    if (
+        server.name is not None
+        and update_url is not None
+        and ui.confirm(
+            f"Update the URL of server {server.name!r} in your config to "
+            f"{redirect.target}?",
+            fix="",
+            default=True,
+        )
+    ):
+        try:
+            update_url(server.name, redirect.target)
+        except ZabgrabError as err:
+            ui.warning(f"{err.message} {err.hint or ''}".strip())
+        else:
+            ui.success(f"Updated server {server.name!r} in your config.")
+    return followed
 
 
 async def _token_login(

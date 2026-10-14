@@ -112,6 +112,34 @@ class TestHosts:
         assert "Did you mean 'demo'?" in result.stderr
 
 
+class TestRedirect:
+    HTTP = "http://demo.example.org"
+    HTTPS = "https://demo.example.org"
+
+    @pytest.fixture
+    def redirecting(self, servers: Servers, user_config: Path) -> Servers:
+        user_config.write_text(CONFIG.replace(self.HTTPS, self.HTTP))
+        servers.redirects[self.HTTP] = self.HTTPS
+        return servers
+
+    def test_follow_and_update(
+        self, redirecting: Servers, user_config: Path, interactive: None
+    ) -> None:
+        result = run("hosts", "-s", "demo", input="y\ny\n")
+        assert result.exit_code == 0, result.output
+        assert len(table_rows(result.stdout)) == 3
+        assert user_config.read_text() == CONFIG
+        # Next time, there's no redirect to ask about.
+        assert run("hosts", "-s", "demo").exit_code == 0
+
+    def test_non_interactive(self, redirecting: Servers, user_config: Path) -> None:
+        result = run("hosts", "-s", "demo")
+        assert result.exit_code == EXIT_ERROR
+        assert f"redirects to {self.HTTPS}/api_jsonrpc.php" in result.stderr
+        assert f"Use {self.HTTPS} as the server URL instead" in result.stderr
+        assert self.HTTP in user_config.read_text()
+
+
 class TestItems:
     def test_lists_items(self, servers: Servers) -> None:
         result = run("items", "-s", "demo", "particles", "--host", "demo1")

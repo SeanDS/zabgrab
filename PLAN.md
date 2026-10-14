@@ -763,8 +763,11 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   server plus an index.
 - Global options are accepted by every command, before or after it (a shared
   decorator whose callbacks update the click context object).
-- API endpoint redirects are reported (with the URL to use) rather than followed:
-  following turns the POST into a GET and could leak credentials to another host.
+- API endpoint redirects (e.g. HTTP to HTTPS) are never followed automatically:
+  that turns the POST into a GET and could leak credentials to another host.
+  Interactive users are asked whether to use the new URL (with a warning if the host
+  differs) and, for configured servers, whether to update the URL in the config file
+  that defines the server. Non-interactive runs fail with the URL to use.
 - Search patterns use Zabbix's own semantics (substring match, `*` wildcard), so
   results match the web UI and server-side limits are exact.
 

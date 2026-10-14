@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlsplit
 
 import aiohttp
 
-from ...errors import ConnectionFailed
+from ...errors import ConnectionFailed, Redirected
 from ...model.names import frontend_url
 
 API_PATH = "api_jsonrpc.php"
@@ -63,8 +63,9 @@ class HttpTransport:
                     target = urljoin(
                         self.endpoint, response.headers.get("Location", "")
                     )
-                    raise ConnectionFailed(
+                    raise Redirected(
                         f"{self.endpoint} redirects to {target}.",
+                        target=frontend_url(target),
                         hint=f"Use {frontend_url(target)} as the server URL instead "
                         "(with --server, or as the server's url in your config).",
                     )
