@@ -1,3 +1,12 @@
+# 1.0.0 (unreleased)
+Complete rewrite; not compatible with earlier versions' CLI or configuration. See
+PLAN.md for the design.
+
+- Requires Python 3.11+ and Zabbix 7.0+.
+- New layered TOML configuration (system, user, project, explicit) with validation
+  errors that point at the offending file and key.
+- New `zabgrab config paths|show|edit` commands.
+
 # 0.1.2 (2023-12-12)
 - Changed CSV output format to display retrieved timeseries in parallel columns instead
   of sequentially.

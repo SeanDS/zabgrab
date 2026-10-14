@@ -2,7 +2,7 @@
 .vscode
 
 # Version file.
-zabgrab/_version.py
+src/zabgrab/_version.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,64 +1,58 @@
 ## GitLab CI configuration.
 
 stages:
-  - build
+  - lint
   - test
+  - build
 
-###############
-# Build stage #
-###############
+variables:
+  # setuptools_scm needs full history and tags to compute the version.
+  GIT_DEPTH: "0"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 
-build/any:
-  stage: build
-  image: python:3.8
-  before_script:
-    - pip install build
+default:
+  cache:
+    paths:
+      - .cache/pip
+
+lint:
+  stage: lint
+  image: python:3.14
   script:
+    - pip install -e ".[dev]"
+    - ruff check .
+    - ruff format --check .
+    - mypy
+
+test:
+  stage: test
+  image: python:${PYTHON_VERSION}
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.11", "3.12", "3.13", "3.14"]
+  script:
+    - pip install -e ".[dev]"
+    - pytest --cov --cov-report=term --cov-report=xml:coverage.xml --junitxml=report.xml
+  coverage: '/^TOTAL.*\s(\d+(?:\.\d+)?)%$/'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+build:
+  stage: build
+  image: python:3.14
+  script:
+    - pip install build
     - python -m build
+    # Smoke-test the built wheel in a clean environment.
+    - python -m venv /tmp/smoke
+    - /tmp/smoke/bin/pip install dist/zabgrab-*-py3-none-any.whl
+    - /tmp/smoke/bin/zabgrab --version
+    - /tmp/smoke/bin/zabgrab --isolated config show
   artifacts:
     paths:
       - dist
-
-##############
-# Test stage #
-##############
-
-test/py38:
-  stage: test
-  image: python:3.8
-  needs:
-    - build/any
-  before_script:
-    - pip install dist/zabgrab-*-py3-none-any.whl
-  script:
-    - python -m zabgrab --version
-
-test/py39:
-  stage: test
-  image: python:3.9
-  needs:
-    - build/any
-  before_script:
-    - pip install dist/zabgrab-*-py3-none-any.whl
-  script:
-    - python -m zabgrab --version
-
-test/py310:
-  stage: test
-  image: python:3.10
-  needs:
-    - build/any
-  before_script:
-    - pip install dist/zabgrab-*-py3-none-any.whl
-  script:
-    - python -m zabgrab --version
-
-test/py311:
-  stage: test
-  image: python:3.11
-  needs:
-    - build/any
-  before_script:
-    - pip install dist/zabgrab-*-py3-none-any.whl
-  script:
-    - python -m zabgrab --version

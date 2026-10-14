@@ -1,65 +1,45 @@
 # Zabgrab
 Command line tool for Zabbix data retrieval.
 
+> **Zabgrab is being rewritten for version 1.0.0.** See [PLAN.md](PLAN.md) for the
+> design. Only the configuration commands below work so far; data retrieval returns in
+> a later phase. The full documentation will be written before the release.
+
 ## Installation
-Zabgrab can be installed using your favourite Python package manager, e.g. `pip`:
+Requires Python 3.11 or later.
 
 ```bash
-$ pip install zabgrab
+pip install zabgrab
 ```
 
-This should automatically install the latest version of Zabgrab and its dependencies.
-There should then be a `zabgrab` command available in your terminal or console.
-
-Zabgrab can be updated later by appending the `--upgrade` option to the `pip install`
-command above. The current version can be checked with `zabgrab --version`.
-
-## Usage
-A common use for Zabgrab is to retrieve a timeseries between a start and end time from
-a remote server. This can be done with e.g.
+For development:
 
 ```bash
-$ zabgrab -o server.host="http://zabbix.example.org/" -o server.api_token="xyz" --itemid 123 0 --from "1 hour ago" --to "now"
+pip install -e ".[dev]"
+pre-commit install
 ```
-
-The `-o` flags set configuration options. At least `server.host` and `server.api_token`
-are required if Zabgrab cannot find a local user configuration file (see below). The
-`--itemid` option tells Zabgrab to retrieve the Zabbix item; it requires two values, the
-Zabbix item ID and the history type (see below). The `--from` and `--to` options specify
-the dates between which to retrieve data, and support natural language queries as well
-as standard date formats.
-
-The data can be output as text to the terminal by specifying `--print`. It can also
-be saved to file by specifying `--output` followed by a path. The following extensions
-are supported:
-
-- `.mat`: MATLAB mat
-- `.txt` (or anything else): tab separated values
-
-Type `zabgrab --help` for full usage details.
-
-### History types
-Zabbix has various internal data types. The correct data type must be specified in calls
-to the API via Zabgrab. The [Zabbix API
-documentation](https://www.zabbix.com/documentation/current/en/manual/api/reference/history/get)
-lists the available data types. Most timeseries are either "0" (numerical float) or "3"
-(numeric unsigned).
 
 ## Configuration
-Zabgrab supports configuration files to define common options such as the Zabbix server
-and API key. It can also be used to specify templates, which are groups of items with
-an associated name that can be retrieved via Zabgrab using the `--template` (or `-t`)
-option.
+Configuration is in [TOML](https://toml.io/). Zabgrab reads these files, with later
+files overriding earlier ones:
 
-The configuration file is stored in a file called `zabgrab.conf` in a directory called
-`zabgrab` in the operating system specific user configuration directory. For example, on
-Linux this file should be located at `~/.config/zabgrab/zabgrab.conf` and on Windows at
-`C:\Users\<user>\AppData\Roaming\zabgrab\zabgrab.conf`.
+1. system: `/etc/zabgrab/config.toml` (Windows: `%PROGRAMDATA%\zabgrab\config.toml`)
+2. user: `$XDG_CONFIG_HOME/zabgrab/config.toml`, by default
+   `~/.config/zabgrab/config.toml` on Linux and macOS (Windows:
+   `%APPDATA%\zabgrab\config.toml`)
+3. project: the nearest `zabgrab.toml` in the current directory or its parents (up to,
+   but not including, your home directory)
+4. `--config PATH` or `$ZABGRAB_CONFIG`
 
-The location of the configuration file can be overridden using the environment variable
-`ZABGRAB_CONFIG`.
+`--isolated` ignores files 1-3.
 
-The configuration is expected to be in [TOML](https://toml.io/) format.
+Useful commands:
+
+- `zabgrab config paths`: which files are read, and which exist
+- `zabgrab config show [--sources]`: the merged configuration, optionally showing
+  which file each value came from
+- `zabgrab config edit [--target user|project|system]`: edit a config file (created if
+  needed), and check it's valid afterwards
 
 ## Credits
 Sean Leavey <sean.leavey@stfc.ac.uk>
