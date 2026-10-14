@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 
@@ -12,13 +13,14 @@ from zabgrab.adapters.configfiles import (
     BUILTIN_SOURCE,
     Environment,
     LayerKind,
+    add_server,
     discover_layers,
     find_project_config,
     load_config,
     user_config_path,
 )
 from zabgrab.errors import ConfigError
-from zabgrab.model.config import BUILTIN_DEFAULTS
+from zabgrab.model.config import BUILTIN_DEFAULTS, Config
 
 
 def write(path: Path, text: str) -> Path:
@@ -201,3 +203,60 @@ class TestLoadConfig:
         path.write_bytes(b"\xff\xfe")
         with pytest.raises(ConfigError, match="Can't read config file"):
             load_config(discover_layers(env))
+
+
+class TestAddServer:
+    def test_creates_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "new" / "config.toml"
+        add_server(path, "demo", "https://demo.example.org")
+        loaded = Config.model_validate(tomllib.loads(path.read_text()))
+        assert loaded.servers["demo"].url == "https://demo.example.org"
+
+    def test_preserves_existing_content(self, tmp_path: Path) -> None:
+        original = (
+            "# My zabgrab config.\n\n"
+            "[defaults]\njobs   =   2  # aligned on purpose\n\n"
+            '[servers.old]\nurl = "https://old.example.org"\n'
+        )
+        path = write(tmp_path / "config.toml", original)
+        add_server(path, "new", "https://new.example.org")
+        text = path.read_text()
+        assert text.startswith(original)
+        assert '[servers.new]\nurl = "https://new.example.org"\n' in text
+        assert set(tomllib.loads(text)["servers"]) == {"old", "new"}
+
+    def test_existing_server(self, tmp_path: Path) -> None:
+        path = write(tmp_path / "config.toml", '[servers.a]\nurl = "https://a"\n')
+        with pytest.raises(ConfigError, match="already exists"):
+            add_server(path, "a", "https://b")
+
+    def test_servers_not_a_table(self, tmp_path: Path) -> None:
+        path = write(tmp_path / "config.toml", "servers = 1\n")
+        with pytest.raises(ConfigError, match="isn't a table"):
+            add_server(path, "a", "https://b")
+
+    def test_invalid_toml(self, tmp_path: Path) -> None:
+        path = write(tmp_path / "config.toml", "a = [")
+        with pytest.raises(ConfigError, match="Can't update"):
+            add_server(path, "a", "https://b")
+
+    def test_unwritable(self, tmp_path: Path) -> None:
+        locked = tmp_path / "locked"
+        locked.mkdir(mode=0o500)
+        try:
+            with pytest.raises(ConfigError, match="Can't write"):
+                add_server(locked / "config.toml", "a", "https://b")
+        finally:
+            locked.chmod(0o700)
+
+    def test_failed_replace_removes_temporary_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fail(*args: object) -> None:
+            raise OSError("disk full")
+
+        directory = tmp_path / "config"
+        monkeypatch.setattr("os.replace", fail)
+        with pytest.raises(ConfigError, match="Can't write"):
+            add_server(directory / "config.toml", "a", "https://b")
+        assert list(directory.iterdir()) == []

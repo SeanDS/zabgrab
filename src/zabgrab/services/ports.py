@@ -13,6 +13,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Generic, Protocol, TypeVar
 
+from ..model.config import ServerConfig
+from ..model.zabbix import Host, Item
+
 T = TypeVar("T")
 
 
@@ -64,9 +67,11 @@ class UI(Protocol):
         fix: str,
         parse: Callable[[str], T],
         default: str | None = None,
+        secret: bool = False,
     ) -> T:
         """Ask for free text. ``parse`` converts the answer, raising ``ValueError``
-        (whose message is shown before asking again) if it's invalid."""
+        (whose message is shown before asking again) if it's invalid. ``secret``
+        hides the input."""
         ...
 
     def choose(
@@ -99,3 +104,48 @@ class Editor(Protocol):
     """Opens a file for the user to edit."""
 
     def edit(self, path: Path) -> None: ...
+
+
+class SecretStore(Protocol):
+    """Persistent storage for API tokens, keyed by server URL."""
+
+    def get_token(self, url: str) -> str | None: ...
+
+    def set_token(self, url: str, token: str) -> None: ...
+
+
+class ZabbixClient(Protocol):
+    """A connection to one Zabbix server."""
+
+    async def check_version(self) -> str:
+        """Return the server's version, raising if it isn't supported."""
+        ...
+
+    async def login_token(self, token: str) -> None: ...
+
+    async def login_password(self, username: str, password: str) -> None: ...
+
+    async def close(self) -> None: ...
+
+    async def hosts(
+        self,
+        *,
+        pattern: str | None = None,
+        group: str | None = None,
+        limit: int | None = None,
+    ) -> list[Host]: ...
+
+    async def items(
+        self,
+        *,
+        itemids: Sequence[int] | None = None,
+        hostids: Sequence[int] | None = None,
+        name: str | None = None,
+        key: str | None = None,
+        tag: str | None = None,
+        limit: int | None = None,
+    ) -> list[Item]: ...
+
+
+ClientFactory = Callable[[ServerConfig], ZabbixClient]
+"""Creates an (unauthenticated) client for a server."""

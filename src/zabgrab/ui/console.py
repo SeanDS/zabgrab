@@ -173,11 +173,14 @@ class RichUI:
         fix: str,
         parse: Callable[[str], T],
         default: str | None = None,
+        secret: bool = False,
     ) -> T:
         self._require_interactive(question, fix)
         while True:
             answer = self._ask(
-                lambda: Prompt.ask(question, console=self.err, default=default)
+                lambda: Prompt.ask(
+                    question, console=self.err, default=default, password=secret
+                )
             )
             try:
                 return parse(answer or "")

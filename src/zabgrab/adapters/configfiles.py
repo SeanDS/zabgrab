@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import difflib
 import os
+import tempfile
 import tomllib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -27,7 +28,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+import tomlkit
 from pydantic import BaseModel, ValidationError
+from tomlkit.items import Table
 
 from .. import PROGRAM
 from ..errors import ConfigError
@@ -327,3 +330,55 @@ def _format_loc(loc: Iterable[int | str]) -> str:
         else:
             text += f".{part}" if text else part
     return text
+
+
+def add_server(path: Path, name: str, url: str) -> None:
+    """Add ``[servers.NAME]`` to a config file, keeping its existing formatting.
+
+    The file (and its directory) is created if needed.
+
+    Raises
+    ------
+    ConfigError
+        If the file can't be parsed, already defines the server, or can't be
+        written.
+    """
+    try:
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        document = tomlkit.parse(text)
+    except (OSError, UnicodeDecodeError, tomlkit.exceptions.ParseError) as exc:
+        raise ConfigError(
+            f"Can't update config file {path}.", path=path, details=[str(exc)]
+        ) from exc
+
+    servers = document.get("servers")
+    if servers is None:
+        servers = tomlkit.table(is_super_table=True)
+        document.add("servers", servers)
+    if not isinstance(servers, Table):
+        raise ConfigError(f"'servers' in {path} isn't a table.", path=path)
+    if name in servers:
+        raise ConfigError(f"Server {name!r} already exists in {path}.", path=path)
+
+    server = tomlkit.table()
+    server.add("url", url)
+    servers.add(name, server)
+    write_atomically(path, tomlkit.dumps(document))
+
+
+def write_atomically(path: Path, text: str) -> None:
+    """Write a file via a temporary file, so it's never left half-written."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+                file.write(text)
+            os.replace(temporary, path)
+        except BaseException:
+            Path(temporary).unlink(missing_ok=True)
+            raise
+    except OSError as exc:
+        raise ConfigError(
+            f"Can't write config file {path}.", path=path, details=[str(exc)]
+        ) from exc

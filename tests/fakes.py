@@ -28,6 +28,7 @@ class RecordingUI:
     interactive: bool = True
     messages: list[tuple[str, str]] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)
+    secret_questions: list[str] = field(default_factory=list)
 
     def _record(self, level: str, message: str) -> None:
         self.messages.append((level, message))
@@ -69,7 +70,10 @@ class RecordingUI:
         fix: str,
         parse: Callable[[str], T],
         default: str | None = None,
+        secret: bool = False,
     ) -> T:
+        if secret:
+            self.secret_questions.append(question)
         return parse(self._answer(question, fix))
 
     def choose(
