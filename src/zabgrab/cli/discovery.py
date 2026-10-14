@@ -13,7 +13,7 @@ from ..model.itemspec import EXAMPLE, parse_item_spec
 from ..model.server import Server
 from ..services.discover import find_items, on_servers
 from ..services.ports import ZabbixClient
-from ..ui.render import hosts_table, items_table
+from ..ui.render import ITEM_SORT_KEYS, hosts_table, items_table, sort_items
 from .app import AppContext, global_options, pass_app
 
 T = TypeVar("T")
@@ -129,6 +129,15 @@ def hosts_command(
     multiple=True,
     help=f"Item spec to include (repeat for several); {EXAMPLE}.",
 )
+@click.option(
+    "--sort",
+    type=click.Choice(list(ITEM_SORT_KEYS), case_sensitive=False),
+    default="Item ID",
+    show_default=True,
+    metavar="COLUMN",
+    help="Sort by this column, named as in the table header, in any case (e.g. "
+    f"'last value'): {', '.join(ITEM_SORT_KEYS)}. Ties are sorted by item ID.",
+)
 @server_option
 @limit_option
 @global_options
@@ -140,6 +149,7 @@ def items_command(
     key: str | None,
     tag: str | None,
     items: tuple[ItemSpec, ...],
+    sort: str,
     servers: tuple[str, ...],
     limit: int,
 ) -> None:
@@ -157,7 +167,9 @@ def items_command(
         return await find_items(client, specs, app.ui, limit=limit)
 
     results = _query(app, servers, action)
-    rows = [(server, item) for server, found in results for item in found]
+    rows = sort_items(
+        ((server, item) for server, found in results for item in found), sort
+    )
     if not rows:
         app.ui.info("No items found.")
         return

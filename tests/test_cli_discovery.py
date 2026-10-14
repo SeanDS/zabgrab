@@ -210,6 +210,34 @@ class TestItems:
             ["lab", "20004"],
         ]
 
+    def test_sorted_by_item_id(self, servers: Servers) -> None:
+        servers.by_url["https://demo.example.org"] = zabbix = seeded()
+        zabbix.items.reverse()
+        result = run("items", "-s", "demo", "particles")
+        assert [row[0] for row in table_rows(result.stdout)] == [
+            "20001",
+            "20002",
+            "20003",
+        ]
+
+    @pytest.mark.parametrize("column", ["Last value", "last VALUE"])
+    def test_sort_by_column_in_any_case(self, servers: Servers, column: str) -> None:
+        servers.by_url["https://demo.example.org"] = zabbix = seeded()
+        zabbix.items[3].lastvalue = "99"
+        zabbix.items[3].lastclock = 1_760_000_000
+        result = run("items", "-s", "demo", "--sort", column)
+        assert result.exit_code == 0, result.output
+        assert [row[0] for row in table_rows(result.stdout)][:3] == [
+            "20004",
+            "20001",
+            "20002",
+        ]
+
+    def test_unknown_sort_column(self, servers: Servers) -> None:
+        result = run("items", "-s", "demo", "--sort", "colour")
+        assert result.exit_code == 2
+        assert "'colour' is not one of" in result.stderr
+
     def test_long_values_are_shortened(self, servers: Servers) -> None:
         servers.by_url["https://demo.example.org"] = zabbix = seeded()
         zabbix.items[0].lastvalue = "x" * 100

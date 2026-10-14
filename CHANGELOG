@@ -7,6 +7,7 @@ PLAN.md for the design.
   errors that point at the offending file and key.
 - New `zabgrab config paths|show|edit` commands.
 - New `zabgrab hosts` and `zabgrab items` commands to find hosts and items.
+  Items are sorted by item ID, or by any column with `items --sort`.
 - Multiple servers can be configured; servers are chosen with `--server`, the
   config, or a prompt (custom URLs can be saved to the config).
 - API tokens are read from an environment variable or the system keyring, or pasted

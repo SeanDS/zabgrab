@@ -90,10 +90,14 @@ zabgrab hosts demo --group Lab      # hosts matching "demo" in groups matching "
 zabgrab items "Particles *" --host demo1
 zabgrab items --key "net.if.in[*]" --server demo --server lab
 zabgrab items --item 12345 --item "host=demo1,key=system.uptime"
+zabgrab items --host demo1 --sort "last value"
 ```
 
 Patterns work like the filters in the Zabbix web UI: they're case-insensitive, match
 anywhere in the text, and `*` matches any text.
+
+Items are listed by item ID. `--sort` takes any column header instead, in any case.
+Last values sort numbers in numeric order, and ages put the newest first.
 
 ## Fetching data
 
