@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from typing import Any
 
 import tomlkit
@@ -14,8 +14,14 @@ from tomlkit.items import Array, InlineTable
 from tomlkit.items import Item as TomlItem
 
 from ..adapters.configfiles import ConfigLayer, LayerKind, LoadedConfig
+from ..model.choice import Choice
+from ..model.config import Resolution
+from ..model.item import ItemSpec
+from ..model.itemspec import format_item_spec
+from ..model.query import CUSTOM, Query
 from ..model.server import Server
 from ..model.zabbix import Host, Item
+from ..services.fetch import Job, skip_reason
 from ..services.tokens import CheckResult, CheckState, TokenStatus
 
 
@@ -257,4 +263,94 @@ def tokens_table(
             text = f"{result.state} {result.detail}".strip()
             cells.append(f"[{_CHECK_STYLES[result.state]}]{escape(text)}[/]")
         table.add_row(*cells)
+    return table
+
+
+def format_time(time: datetime, tz: tzinfo | None) -> str:
+    """A time for display, in ``tz`` (``None`` for local time)."""
+    return time.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S %Z").rstrip()
+
+
+def explain_table(query: Query) -> Table:
+    """The resolved settings, and where each came from."""
+    table = Table(title="Settings", title_justify="left")
+    table.add_column("Setting", style="bold")
+    table.add_column("Value")
+    table.add_column("Source", style="magenta")
+
+    def row(key: str, value: str) -> None:
+        table.add_row(key, escape(value), escape(query.sources.get(key, "")))
+
+    row("from", f"{query.from_text} ({format_time(query.start, query.tz)})")
+    row("to", f"{query.to_text} ({format_time(query.end, query.tz)})")
+    row("resolution", str(query.resolution))
+    row("agg", ", ".join(map(str, query.agg)))
+    row("format", ", ".join(map(str, query.formats)) or "(from --output, or asked)")
+    row("output_dir", query.output_dir)
+    row("output_pattern", query.output_pattern)
+    row("timezone", query.timezone)
+    row("jobs", str(query.jobs))
+    row("max_items", str(query.max_items))
+    return table
+
+
+def requests_table(query: Query) -> Table:
+    """What will be fetched from where, before items are looked up."""
+    table = Table(title="Requests", title_justify="left")
+    table.add_column("From", style="bold")
+    table.add_column("Server")
+    table.add_column("Items")
+    for request in query.requests:
+        server = request.server
+        if isinstance(server, Choice):
+            shown = f"{' or '.join(server.choices)} ({server.select})"
+        else:
+            shown = server or "(asked)"
+        items = [format_item_spec_safe(spec) for spec in request.items] or ["(asked)"]
+        table.add_row(
+            "command line" if request.label == CUSTOM else request.label,
+            escape(shown),
+            escape("\n".join(items)),
+        )
+    return table
+
+
+def format_item_spec_safe(spec: ItemSpec) -> str:
+    """An item spec for display (including host choices)."""
+    try:
+        return format_item_spec(spec)
+    except ValueError:
+        assert isinstance(spec.host, Choice)
+        hosts = " or ".join(spec.host.choices)
+        parts = [f"host={hosts} ({spec.host.select})"]
+        if any((spec.name, spec.key, spec.tag)):
+            parts.append(format_item_spec(spec.model_copy(update={"host": None})))
+        return ",".join(parts)
+
+
+def plan_table(jobs: Sequence[Job], resolution: Resolution) -> Table:
+    """The items that would be fetched (for --dry-run)."""
+    multiple = len({job.server for job in jobs}) > 1
+    table = Table()
+    if multiple:
+        table.add_column("Server", style="magenta")
+    table.add_column("Item ID", style="cyan", justify="right")
+    table.add_column("Host")
+    table.add_column("Name", style="bold")
+    table.add_column("Type")
+    table.add_column("From")
+    table.add_column("Status")
+    for job in jobs:
+        reason = skip_reason(job.item, resolution)
+        table.add_row(
+            *([job.server.label] if multiple else []),
+            str(job.item.itemid),
+            job.item.host,
+            job.item.name,
+            job.item.value_type.label,
+            ", ".join(
+                "command line" if label == CUSTOM else label for label in job.requests
+            ),
+            f"[yellow]skip: {escape(reason)}[/]" if reason else "[green]fetch[/]",
+        )
     return table

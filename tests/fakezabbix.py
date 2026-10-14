@@ -87,6 +87,8 @@ class FakeZabbix:
     history: dict[int, list[dict[str, str]]] = field(default_factory=dict)
     #: Hourly trend rows by item ID, in API form.
     trends: dict[int, list[dict[str, str]]] = field(default_factory=dict)
+    #: Items whose history.get/trend.get calls fail.
+    failing_items: set[int] = field(default_factory=set)
 
     def add_history(self, itemid: int, *points: tuple[float, Any]) -> None:
         """Add raw values as (POSIX time, value) pairs."""
@@ -263,7 +265,18 @@ class FakeZabbix:
             rows.append(row)
         return _finish(rows, params)
 
+    def _check_failing(self, params: dict[str, Any]) -> None:
+        if self.failing_items & set(map(int, params.get("itemids", []))):
+            raise _Error(
+                {
+                    "code": -32500,
+                    "message": "Application error.",
+                    "data": "Item broken.",
+                }
+            )
+
     def _history_get(self, params: dict[str, Any], auth: str | None) -> list[Any]:
+        self._check_failing(params)
         types = {item.itemid: item.value_type for item in self.items}
         rows = [
             row
@@ -278,6 +291,7 @@ class FakeZabbix:
         return rows[: int(params["limit"])] if "limit" in params else rows
 
     def _trend_get(self, params: dict[str, Any], auth: str | None) -> list[Any]:
+        self._check_failing(params)
         rows = [
             row
             for itemid in map(int, params.get("itemids", []))

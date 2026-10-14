@@ -17,6 +17,7 @@ from .fakezabbix import (
     TOKEN,
     FakeTransport,
     FakeZabbix,
+    FlakyTransport,
     RedirectingTransport,
     seeded,
 )
@@ -40,8 +41,12 @@ class Servers:
     secrets: MemorySecrets = field(default_factory=MemorySecrets)
     #: URLs that redirect, and where to.
     redirects: dict[str, str] = field(default_factory=dict)
+    #: URLs that can't be reached.
+    down: set[str] = field(default_factory=set)
 
     def factory(self, config: ServerConfig) -> ZabbixClient:
+        if config.url in self.down:
+            return ZabbixAPI(FlakyTransport(seeded(), failures=10**9))
         if config.url in self.redirects:
             return ZabbixAPI(
                 RedirectingTransport(seeded(), config.url, self.redirects[config.url])
