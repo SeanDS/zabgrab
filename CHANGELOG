@@ -15,6 +15,10 @@ PLAN.md for the design.
   keyring.
 - Global options (`-v`, `-q`, `--debug`, `--config`, ...) work before or after the
   command.
+- New `zabgrab fetch` command: stackable templates and item specs, parallel
+  downloads with progress bars, raw history or hourly trends, every item value
+  type, TSV/CSV output with metadata, automatic file names, `--explain` and
+  `--dry-run`.
 
 # 0.1.2 (2023-12-12)
 - Changed CSV output format to display retrieved timeseries in parallel columns instead

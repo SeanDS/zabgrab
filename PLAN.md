@@ -738,7 +738,7 @@ alongside the MATLAB check files.
 |---|---|---|
 | 1 ✅ | Project skeleton: src layout, pyproject (3.11+), ruff/mypy/pytest/pre-commit, GitLab CI matrix. Ports, model, `ui/console.py`, config adapter (paths, layering, validation), `config paths/show/edit` | CI green; config tests pass |
 | 2 ✅ | Zabbix adapter, secrets adapter (env/keyring, password prompt), `FakeZabbixClient` + fake JSON-RPC server, item spec parsing, `services/discover.py`, `hosts`/`items` commands | Can list hosts/items against fake and real servers |
-| 3 | `services/resolve.py` (provenance, override logs, choices, stacked-template rules), `services/fetch.py` (async, chunked, raw + 1h trends, all value types), progress bars, summary, exit codes, TSV/CSV, auto naming, `--dry-run`/`--explain` | End-to-end fetch to TSV |
+| 3 ✅ | `services/resolve.py` (provenance, override logs, choices, stacked-template rules), `services/fetch.py` (async, chunked, raw + 1h trends, all value types), progress bars, summary, exit codes, TSV/CSV, auto naming, `--dry-run`/`--explain` | End-to-end fetch to TSV |
 | 4 | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
 | 5 | `--save-template` (tomlkit) | Round-trip tests pass |
 | 6 | `plot` extra (merged view, coverage gaps, text-item errors) | Plots from live fetch and from multi-group files |
@@ -782,6 +782,19 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   under the final URL.
 - Search patterns use Zabbix's own semantics (substring match, `*` wildcard), so
   results match the web UI and server-side limits are exact.
+
+- Times: ISO 8601 is parsed exactly first (dateparser alone, with day-first order,
+  reads `2026-10-01` as 10 January); everything else goes to
+  dateparser, day-first.
+- Non-interactive runs never write files unasked: without `--output`, they warn that
+  the data wasn't saved. An existing explicit output file is saved alongside under a
+  new name, with a warning (`--overwrite` replaces it).
+- Raw downloads are chunked by day and trends by 30 days; network errors are retried
+  three times with backoff; each item downloads its chunks in order, `jobs` items at
+  a time.
+- Still to do from phase 3's scope (deferred): the "Next time: zabgrab fetch ..."
+  hint after interactive answers (phase 5, with `--save-template`), and a warning
+  when raw data is requested beyond an item's history retention.
 
 ## Open questions
 
