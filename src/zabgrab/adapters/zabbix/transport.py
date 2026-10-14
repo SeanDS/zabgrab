@@ -54,37 +54,13 @@ class HttpTransport:
 
     async def post(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
         try:
-            async with self._client().post(
-                self.endpoint, json=body, headers=headers, allow_redirects=False
-            ) as response:
-                if 300 <= response.status < 400:
-                    # Following a redirect would turn the POST into a GET (losing
-                    # the request) or could send credentials to another host.
-                    target = urljoin(
-                        self.endpoint, response.headers.get("Location", "")
-                    )
-                    raise Redirected(
-                        f"{self.endpoint} redirects to {target}.",
-                        target=frontend_url(target),
-                        hint=f"Use {frontend_url(target)} as the server URL instead "
-                        "(with --server, or as the server's url in your config).",
-                    )
-                if response.status != 200:
-                    raise ConnectionFailed(
-                        f"{self.endpoint} returned HTTP {response.status} "
-                        f"{response.reason or ''}".rstrip()
-                        + ".",
-                        hint="Check the server URL points at the Zabbix frontend, "
-                        "e.g. https://example.org/zabbix.",
-                    )
-                try:
-                    return await response.json(content_type=None)
-                except ValueError:
-                    raise ConnectionFailed(
-                        f"{self.endpoint} didn't return a Zabbix API response.",
-                        hint="Check the server URL points at the Zabbix frontend, "
-                        "e.g. https://example.org/zabbix.",
-                    ) from None
+            try:
+                return await self._send(body, headers)
+            except aiohttp.ServerDisconnectedError:
+                # The server closed an idle keep-alive connection that was reused
+                # (e.g. while the user was typing a token). The request didn't
+                # reach the server, so it's safe to send it again on a new one.
+                return await self._send(body, headers)
         except aiohttp.ClientConnectorCertificateError as exc:
             raise ConnectionFailed(
                 f"SSL certificate verification failed for {self.endpoint}: "
@@ -103,6 +79,37 @@ class HttpTransport:
                 hint="Check the server is reachable, or increase its timeout in your "
                 "config.",
             ) from exc
+
+    async def _send(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
+        async with self._client().post(
+            self.endpoint, json=body, headers=headers, allow_redirects=False
+        ) as response:
+            if 300 <= response.status < 400:
+                # Following a redirect would turn the POST into a GET (losing
+                # the request) or could send credentials to another host.
+                target = urljoin(self.endpoint, response.headers.get("Location", ""))
+                raise Redirected(
+                    f"{self.endpoint} redirects to {target}.",
+                    target=frontend_url(target),
+                    hint=f"Use {frontend_url(target)} as the server URL instead "
+                    "(with --server, or as the server's url in your config).",
+                )
+            if response.status != 200:
+                raise ConnectionFailed(
+                    f"{self.endpoint} returned HTTP {response.status} "
+                    f"{response.reason or ''}".rstrip()
+                    + ".",
+                    hint="Check the server URL points at the Zabbix frontend, "
+                    "e.g. https://example.org/zabbix.",
+                )
+            try:
+                return await response.json(content_type=None)
+            except ValueError:
+                raise ConnectionFailed(
+                    f"{self.endpoint} didn't return a Zabbix API response.",
+                    hint="Check the server URL points at the Zabbix frontend, "
+                    "e.g. https://example.org/zabbix.",
+                ) from None
 
     async def close(self) -> None:
         if self._session is not None:

@@ -301,6 +301,47 @@ class TestHttpTransport:
 
         assert run(scenario()) == ("7.0.5", ["demo1", "demo2"])
 
+    def test_retries_once_when_a_reused_connection_was_closed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def scenario() -> tuple[str, int]:
+            async with serve(seeded()) as url:
+                transport = HttpTransport(url)
+                session = transport._client()
+                real_post = session.post
+                attempts = 0
+
+                def post(*args: Any, **kwargs: Any) -> Any:
+                    nonlocal attempts
+                    attempts += 1
+                    if attempts == 1:
+                        raise aiohttp.ServerDisconnectedError()
+                    return real_post(*args, **kwargs)
+
+                monkeypatch.setattr(session, "post", post)
+                async with ZabbixAPI(transport) as api:
+                    return await api.version(), attempts
+
+        assert run(scenario()) == ("7.0.5", 2)
+
+    def test_gives_up_after_two_disconnects(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        transport = HttpTransport("https://flaky.example.org")
+
+        def post(*args: Any, **kwargs: Any) -> Any:
+            raise aiohttp.ServerDisconnectedError()
+
+        async def scenario() -> None:
+            monkeypatch.setattr(transport._client(), "post", post)
+            try:
+                await ZabbixAPI(transport).version()
+            finally:
+                await transport.close()
+
+        with pytest.raises(ConnectionFailed, match="Server disconnected"):
+            run(scenario())
+
     def test_close_without_requests(self) -> None:
         run(HttpTransport("https://example.org").close())
 
