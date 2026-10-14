@@ -224,6 +224,7 @@ With the `plot` extra installed (`pip install 'zabgrab[plot]'`):
 zabgrab plot particles.h5                          # show a file's data in a window
 zabgrab plot particles.h5 -o particles.png         # or save it (.png, .pdf, .svg, ...)
 zabgrab plot particles.h5 --item "*0.3um" --from "2 days ago"
+zabgrab plot particles.h5 --log-y                  # log scales for the vertical axes
 zabgrab fetch -t particles --plot                  # plot a fetch without saving it
 ```
 
@@ -232,7 +233,8 @@ All of a file's groups are plotted as one dataset; `--item`, `--from`, `--to` an
 axis. Hourly trends are drawn as the average with a min/max band. Lines only break
 over times that no fetch covered, so sparse data and appended groups join up. Text
 items can't be plotted: they're left out with a warning, or it's an error if nothing
-else is selected.
+else is selected. With `--log-y`, values of zero or less can't be shown; zabgrab says
+which lines have them.
 
 ## Credits
 Sean Leavey <sean.leavey@stfc.ac.uk>

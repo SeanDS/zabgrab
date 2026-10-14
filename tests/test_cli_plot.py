@@ -86,6 +86,12 @@ class TestPlot:
         assert spec.title == "data.h5"
         assert (tz, output) == (None, None)
 
+    def test_log_scale(self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown) -> None:
+        data = tmp_path / "data.h5"
+        ok(run("fetch", "-t", "particles", "-o", str(data)))
+        ok(run("plot", str(data), "--log-y"))
+        assert shown.spec.log_y
+
     def test_appended_groups_join_and_gaps_break(
         self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown
     ) -> None:
@@ -174,6 +180,15 @@ class TestFetchPlot:
         ok(run("fetch", "-t", "particles", "--plot", "-o", str(data)))
         assert data.exists()
         assert len(shown.calls) == 1
+
+    def test_log_scale(self, zabbix: FakeZabbix, shown: Shown) -> None:
+        ok(run("fetch", "-t", "particles", "--plot", "--log-y"))
+        assert shown.spec.log_y
+
+    def test_log_scale_needs_plot(self, zabbix: FakeZabbix) -> None:
+        result = run("fetch", "-t", "particles", "--log-y")
+        assert result.exit_code == 2
+        assert "--log-y only applies with --plot." in result.stderr
 
     def test_not_with_dry_run(self, zabbix: FakeZabbix, shown: Shown) -> None:
         ok(run("fetch", "-t", "particles", "--plot", "--dry-run"))

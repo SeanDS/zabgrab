@@ -647,6 +647,9 @@ reading operation sees **one merged dataset** (`services/dataset.py`):
   window, which also works without a display.
 - `zabgrab fetch ... --plot` plots the fetched data without saving (or asking to),
   unless `--output` is given too.
+- `--log-y` (on `plot`, and on `fetch` with `--plot`) uses log scales for the
+  vertical axes. Lines with values of zero or less, which can't be shown, get a
+  warning.
 - One axis per unit, lines labelled `host: name [units]`, plus `(hourly)` for
   trends and the server when the plot has several.
 - Trends are drawn as the avg line (else whichever statistic was fetched) with a

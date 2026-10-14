@@ -67,6 +67,13 @@ def test_draw() -> None:
     assert len(bottom.containers) == 1  # a lone point's range, as an error bar
 
 
+def test_log_scale() -> None:
+    linear = plot.draw(SPEC, None)
+    assert [axes.get_yscale() for axes in linear.axes] == ["linear", "linear"]
+    spec = PlotSpec(SPEC.axes, log_y=True)
+    assert [axes.get_yscale() for axes in plot.draw(spec, None).axes] == ["log", "log"]
+
+
 def test_local_time_and_no_title() -> None:
     figure = plot.draw(PlotSpec(SPEC.axes[1:]), None)
     assert figure.get_suptitle() == ""

@@ -81,10 +81,13 @@ class PlotSpec:
         One axis per distinct unit, in the order the units first appear.
     title : str
         The figure title (may be empty).
+    log_y : bool
+        Whether the vertical axes use a log scale.
     """
 
     axes: list[Axis]
     title: str = ""
+    log_y: bool = False
 
 
 def plot_spec(
@@ -93,6 +96,7 @@ def plot_spec(
     ui: UI,
     *,
     title: str = "",
+    log_y: bool = False,
 ) -> PlotSpec:
     """Work out what to plot.
 
@@ -109,6 +113,9 @@ def plot_spec(
         Warns about text items that are left out.
     title : str, optional
         The figure title.
+    log_y : bool, optional
+        Use log scales for the vertical axes. Lines with values of zero or less,
+        which can't be shown on them, are warned about.
 
     Returns
     -------
@@ -144,10 +151,25 @@ def plot_spec(
     for one in numeric:
         units = one.item.units
         axis = axes.setdefault(units, Axis(units))
-        axis.lines.append(
-            Line(_label(one, one.server if servers else None), _segments(one, coverage))
+        line = Line(
+            _label(one, one.server if servers else None), _segments(one, coverage)
         )
-    return PlotSpec(list(axes.values()), title)
+        axis.lines.append(line)
+        if log_y and _has_non_positive(line):
+            ui.warning(
+                f"{line.label} has values of zero or less, which a log scale can't "
+                "show; they're left out."
+            )
+    return PlotSpec(list(axes.values()), title, log_y)
+
+
+def _has_non_positive(line: Line) -> bool:
+    """Whether any of a line's values (or the bottom of its band) is zero or less."""
+    return any(
+        value <= 0
+        for segment in line.segments
+        for value in [*segment.values, *(segment.low or [])]
+    )
 
 
 _TEXT_RULE = "text items can't be plotted"

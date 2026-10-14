@@ -141,6 +141,9 @@ from .discovery import ItemSpecType
     help="Plot the data (without saving it, unless --output is given). Needs "
     "matplotlib: pip install 'zabgrab[plot]'.",
 )
+@click.option(
+    "--log-y", is_flag=True, help="With --plot: use log scales for the vertical axes."
+)
 @click.option("-y", "--yes", is_flag=True, help="Fetch however many items match.")
 @click.option("--dry-run", is_flag=True, help="Show what would be fetched, then stop.")
 @click.option(
@@ -183,6 +186,7 @@ def fetch_command(
     in_place: bool,
     allow_large_text: bool,
     plot_: bool,
+    log_y: bool,
     yes: bool,
     dry_run: bool,
     explain: bool,
@@ -222,6 +226,8 @@ def fetch_command(
         allow_large_text=allow_large_text,
         plot=plot_,
     )
+    if log_y and not plot_:
+        raise click.UsageError("--log-y only applies with --plot.")
     if not explain:
         save.check(output)
 
@@ -264,6 +270,7 @@ def fetch_command(
             yes=yes,
             dry_run=dry_run,
             now=now,
+            log_y=log_y,
         )
 
     if template_target is not None:
@@ -359,6 +366,7 @@ def _fetch_and_save(
     yes: bool,
     dry_run: bool,
     now: datetime,
+    log_y: bool = False,
 ) -> bool:
     """Download and save the data; return whether some items failed."""
     result = asyncio.run(_download(app, query, yes=yes, dry_run=dry_run))
@@ -408,7 +416,8 @@ def _fetch_and_save(
     if options.plot:
         # The whole requested range was fetched, so lines join up across it.
         coverage = [(query.start.timestamp(), stored_end(query))]
-        plot.show_or_save(plot_spec(result.series, coverage, app.ui), query.tz)
+        spec = plot_spec(result.series, coverage, app.ui, log_y=log_y)
+        plot.show_or_save(spec, query.tz)
     return bool(result.failed)
 
 

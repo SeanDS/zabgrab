@@ -22,6 +22,7 @@ from .reading import read_dataset, selection_options
     help="Save the plot to this image file (e.g. .png, .pdf or .svg) instead of "
     "showing it.",
 )
+@click.option("--log-y", is_flag=True, help="Use log scales for the vertical axes.")
 @global_options
 @pass_app
 def plot_command(
@@ -32,6 +33,7 @@ def plot_command(
     to: str | None,
     groups: tuple[str, ...],
     output: Path | None,
+    log_y: bool,
 ) -> None:
     """Plot the data in FILE (.mat or .h5).
 
@@ -51,7 +53,9 @@ def plot_command(
         to=to,
         groups=groups,
     )
-    spec = plot_spec(dataset.series, dataset.coverage, app.ui, title=file.name)
+    spec = plot_spec(
+        dataset.series, dataset.coverage, app.ui, title=file.name, log_y=log_y
+    )
     plot.show_or_save(spec, tz, output)
     if output is not None:
         app.ui.success(f"Saved the plot to {output}.")

@@ -105,6 +105,9 @@ def draw(spec: PlotSpec, tz: tzinfo | None, *, interactive: bool = False) -> Fig
                         linewidth=0,
                     )
         subplot.set_ylabel(axis.units)
+        if spec.log_y:
+            # Values of zero or less can't be shown; leave them out of the lines.
+            subplot.set_yscale("log", nonpositive="mask")
         subplot.grid(alpha=0.3)
         subplot.legend(loc="best", fontsize="small")
     subplots[-1][0].set_xlabel(f"Time ({_zone_name(tz)})")
