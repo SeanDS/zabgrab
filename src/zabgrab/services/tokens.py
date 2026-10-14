@@ -100,8 +100,9 @@ async def add_token(
     """Store a token for ``server`` in the keyring, asking for it if ``token`` is
     ``None``. With ``check``, the server must accept the token first."""
     fix = (
-        "Pipe the token in with --stdin, e.g. "
-        f"`printenv MY_TOKEN | zabgrab token add {server.name or server.url} --stdin`."
+        "Pass the token on standard input with '-', e.g. "
+        f"`printenv MY_TOKEN | zabgrab token add {server.name or server.url} -`, or "
+        "give the path of a file containing it."
     )
     if server.config.auth is AuthMethod.PASSWORD:
         ui.warning(
@@ -154,7 +155,7 @@ def choose_stored(statuses: list[TokenStatus], ui: UI) -> Server:
 
 def delete_token(server: Server, *, ui: UI, secrets: SecretStore, yes: bool) -> None:
     """Delete the stored token for ``server``, confirming first unless ``yes``."""
-    if secrets.get_token(server.url) is None and server.url not in secrets.urls():
+    if secrets.get_token(server.url) is None:
         raise ZabgrabError(f"No token is stored for {server.label}.")
     if not yes and not ui.confirm(
         f"Delete the stored token for {server.label}?",
@@ -164,3 +165,25 @@ def delete_token(server: Server, *, ui: UI, secrets: SecretStore, yes: bool) -> 
         raise Cancelled()
     secrets.delete_token(server.url)
     ui.success(f"Deleted the token for {server.label}.")
+
+
+def reset_tokens(*, ui: UI, secrets: SecretStore, yes: bool) -> None:
+    """Delete every stored token, confirming first unless ``yes``."""
+    count = len(secrets.urls())
+    if count and not yes:
+        noun = "token" if count == 1 else f"all {count} tokens"
+        if not ui.confirm(
+            f"Delete {noun} stored by zabgrab in your keyring?",
+            fix="Pass --yes to delete them without asking.",
+            default=False,
+        ):
+            raise Cancelled()
+    # Clear the entry even if it looked empty, in case it was unreadable.
+    secrets.delete_all()
+    if count:
+        ui.success(
+            f"Deleted {count} token{'' if count == 1 else 's'}; zabgrab has nothing "
+            "left in your keyring."
+        )
+    else:
+        ui.info("No tokens were stored; zabgrab has nothing in your keyring.")

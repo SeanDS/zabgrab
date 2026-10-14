@@ -67,9 +67,17 @@ Manage tokens stored in the keyring with:
 ```bash
 zabgrab token list [--check]         # servers and where their tokens come from
 zabgrab token add demo               # asks for the token, checks it, stores it
-printenv TOKEN | zabgrab token add demo --stdin
+printenv TOKEN | zabgrab token add demo -   # or a file: zabgrab token add demo token.txt
 zabgrab token delete demo
+zabgrab token reset                  # delete all of zabgrab's tokens
 ```
+
+All tokens are kept in a single keyring entry (service `zabgrab`, name `tokens`).
+Windows limits keyring entries to about 2.5 KB, which is enough for roughly 10-20
+tokens; beyond that, use `token_env` instead.
+
+Global options such as `-v`, `-q`, `--debug` and `--config` can be given before or
+after the command: `zabgrab -v hosts` and `zabgrab hosts -v` are the same.
 
 If no server is given or configured, zabgrab asks you to choose one, or to enter a URL
 (which it can save to your config).

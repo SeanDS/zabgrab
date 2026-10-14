@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import sys
+from typing import IO
 
 import click
 
@@ -70,21 +70,29 @@ def list_command(app: AppContext, check: bool) -> None:
 
 @token_group.command("add")
 @click.argument("server", required=False, metavar="[NAME|URL]")
-@click.option("--stdin", is_flag=True, help="Read the token from standard input.")
+@click.argument("file", type=click.File("r"), required=False)
 @click.option(
     "--no-check", is_flag=True, help="Store the token without checking it first."
 )
 @global_options
 @pass_app
 def add_command(
-    app: AppContext, server: str | None, stdin: bool, no_check: bool
+    app: AppContext, server: str | None, file: IO[str] | None, no_check: bool
 ) -> None:
-    """Store an API token for a server (asked for if not given)."""
+    """Store an API token for a server.
+
+    The token is read from FILE ('-' for standard input) if given, otherwise asked
+    for. Avoid putting tokens on the command line itself.
+    """
+    if server == "-" and file is None:
+        # `zabgrab token add -`: the only argument is the file.
+        server, file = None, click.open_file("-")
+
     token = None
-    if stdin:
-        token = sys.stdin.readline().strip()
+    if file is not None:
+        token = file.readline().strip()
         if not token:
-            raise ZabgrabError("No token on standard input.")
+            raise ZabgrabError(f"No token found in {_file_name(file)}.")
 
     asyncio.run(
         tokens.add_token(
@@ -97,6 +105,11 @@ def add_command(
             check=not no_check,
         )
     )
+
+
+def _file_name(file: IO[str]) -> str:
+    name = getattr(file, "name", "-")
+    return "standard input" if name in ("-", "<stdin>") else str(name)
 
 
 @token_group.command("delete")
@@ -114,3 +127,12 @@ def delete_command(app: AppContext, server: str | None, yes: bool) -> None:
     else:
         target = _server(app, server)
     tokens.delete_token(target, ui=app.ui, secrets=app.secrets, yes=yes)
+
+
+@token_group.command("reset")
+@click.option("-y", "--yes", is_flag=True, help="Don't ask for confirmation.")
+@global_options
+@pass_app
+def reset_command(app: AppContext, yes: bool) -> None:
+    """Delete all stored tokens, leaving nothing of zabgrab's in your keyring."""
+    tokens.reset_tokens(ui=app.ui, secrets=app.secrets, yes=yes)

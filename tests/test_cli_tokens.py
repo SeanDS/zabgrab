@@ -68,26 +68,24 @@ class TestList:
 
 class TestAdd:
     def test_from_stdin(self, servers: Servers) -> None:
-        result = run(
-            "token", "add", "demo", "--stdin", input=TOKEN + "\n", tokens=False
-        )
+        result = run("token", "add", "demo", "-", input=TOKEN + "\n", tokens=False)
         assert result.exit_code == 0, result.output
         assert servers.secrets.tokens == {DEMO: TOKEN}
         assert "Saved the token for demo in your keyring." in result.stderr
         assert "Create an API token" not in result.stderr
 
     def test_from_stdin_literal_url(self, servers: Servers) -> None:
-        result = run("token", "add", OTHER, "--stdin", input=TOKEN, tokens=False)
+        result = run("token", "add", OTHER, "-", input=TOKEN, tokens=False)
         assert result.exit_code == 0, result.output
         assert servers.secrets.tokens == {OTHER: TOKEN}
 
     def test_empty_stdin(self, servers: Servers) -> None:
-        result = run("token", "add", "demo", "--stdin", input="\n", tokens=False)
+        result = run("token", "add", "demo", "-", input="\n", tokens=False)
         assert result.exit_code == EXIT_ERROR
-        assert "No token on standard input." in result.stderr
+        assert "No token found in standard input." in result.stderr
 
     def test_rejected(self, servers: Servers) -> None:
-        result = run("token", "add", "demo", "--stdin", input="nope", tokens=False)
+        result = run("token", "add", "demo", "-", input="nope", tokens=False)
         assert result.exit_code == EXIT_ERROR
         assert "Session terminated" in result.stderr
         assert "--no-check" in result.stderr
@@ -95,7 +93,7 @@ class TestAdd:
 
     def test_no_check(self, servers: Servers) -> None:
         result = run(
-            "token", "add", "demo", "--stdin", "--no-check", input="nope", tokens=False
+            "token", "add", "demo", "-", "--no-check", input="nope", tokens=False
         )
         assert result.exit_code == 0, result.output
         assert servers.secrets.tokens == {DEMO: "nope"}
@@ -104,13 +102,13 @@ class TestAdd:
     def test_non_interactive_without_stdin(self, servers: Servers) -> None:
         result = run("token", "add", "demo", tokens=False)
         assert result.exit_code == EXIT_ERROR
-        assert "Pipe the token in with --stdin" in result.stderr
-        assert "zabgrab token add demo --stdin" in result.stderr
+        assert "Pass the token on standard input with '-'" in result.stderr
+        assert "zabgrab token add demo -`" in result.stderr
 
     def test_non_interactive_no_check_without_stdin(self, servers: Servers) -> None:
         result = run("token", "add", "demo", "--no-check", tokens=False)
         assert result.exit_code == EXIT_ERROR
-        assert "Pipe the token in with --stdin" in result.stderr
+        assert "Pass the token on standard input with '-'" in result.stderr
 
     @hidden_input
     def test_interactive(self, servers: Servers, interactive: None) -> None:
@@ -127,7 +125,7 @@ class TestAdd:
         assert servers.secrets.tokens == {DEMO: "abc"}
 
     def test_environment_variable_takes_precedence(self, servers: Servers) -> None:
-        result = run("token", "add", "demo", "--stdin", input=TOKEN)
+        result = run("token", "add", "demo", "-", input=TOKEN)
         assert result.exit_code == 0, result.output
         assert "$DEMO_TOKEN is set and takes precedence" in result.stderr
 
@@ -135,14 +133,73 @@ class TestAdd:
         user_config.write_text(
             '[servers.pw]\nurl = "https://pw.example.org"\nauth = "password"\n'
         )
-        result = run("token", "add", "pw", "--stdin", input=TOKEN, tokens=False)
+        result = run("token", "add", "pw", "-", input=TOKEN, tokens=False)
         assert result.exit_code == 0, result.output
         assert 'configured with auth = "password"' in result.stderr
 
     def test_unknown_server(self, servers: Servers) -> None:
-        result = run("token", "add", "dmeo", "--stdin", input=TOKEN, tokens=False)
+        result = run("token", "add", "dmeo", "-", input=TOKEN, tokens=False)
         assert result.exit_code == EXIT_ERROR
         assert "Unknown server 'dmeo'" in result.stderr
+
+    def test_dash_alone_reads_stdin(self, servers: Servers, interactive: None) -> None:
+        result = run("token", "add", "-", input=TOKEN + "\n", tokens=False)
+        # The server is still asked for; the token isn't.
+        assert "Which Zabbix server?" in result.stderr
+        assert "API token" not in result.stderr
+
+    def test_from_file(self, servers: Servers, tmp_path: Path) -> None:
+        path = tmp_path / "token.txt"
+        path.write_text(TOKEN + "\nignored\n")
+        result = run("token", "add", "demo", str(path), tokens=False)
+        assert result.exit_code == 0, result.output
+        assert servers.secrets.tokens == {DEMO: TOKEN}
+
+    def test_empty_file(self, servers: Servers, tmp_path: Path) -> None:
+        path = tmp_path / "token.txt"
+        path.write_text("")
+        result = run("token", "add", "demo", str(path), tokens=False)
+        assert result.exit_code == EXIT_ERROR
+        assert f"No token found in {path}." in result.stderr
+
+    def test_missing_file(self, servers: Servers, tmp_path: Path) -> None:
+        result = run("token", "add", "demo", str(tmp_path / "nope"), tokens=False)
+        assert result.exit_code == 2
+        assert "No such file" in result.stderr
+
+
+class TestReset:
+    def test_with_yes(self, servers: Servers) -> None:
+        servers.secrets.tokens |= {DEMO: TOKEN, OTHER: TOKEN}
+        result = run("token", "reset", "--yes")
+        assert result.exit_code == 0, result.output
+        assert servers.secrets.tokens == {}
+        assert "Deleted 2 tokens; zabgrab has nothing left" in result.stderr
+
+    def test_single(self, servers: Servers, interactive: None) -> None:
+        servers.secrets.tokens[DEMO] = TOKEN
+        result = run("token", "reset", input="y\n")
+        assert result.exit_code == 0, result.output
+        assert "Delete token stored by zabgrab" in result.stderr
+        assert "Deleted 1 token;" in result.stderr
+
+    def test_interactive_decline(self, servers: Servers, interactive: None) -> None:
+        servers.secrets.tokens |= {DEMO: TOKEN, LAB: TOKEN}
+        result = run("token", "reset", input="n\n")
+        assert result.exit_code == EXIT_INTERRUPTED
+        assert "Delete all 2 tokens" in result.stderr
+        assert len(servers.secrets.tokens) == 2
+
+    def test_non_interactive_needs_yes(self, servers: Servers) -> None:
+        servers.secrets.tokens[DEMO] = TOKEN
+        result = run("token", "reset")
+        assert result.exit_code == EXIT_ERROR
+        assert "Pass --yes" in result.stderr
+
+    def test_nothing_stored(self, servers: Servers) -> None:
+        result = run("token", "reset")
+        assert result.exit_code == 0
+        assert "No tokens were stored" in result.stderr
 
 
 class TestDelete:

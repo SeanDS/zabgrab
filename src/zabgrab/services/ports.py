@@ -121,6 +121,10 @@ class SecretStore(Protocol):
         """URLs of the servers with stored tokens."""
         ...
 
+    def delete_all(self) -> int:
+        """Delete every stored token, leaving no trace; return how many there were."""
+        ...
+
 
 class ZabbixClient(Protocol):
     """A connection to one Zabbix server."""

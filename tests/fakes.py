@@ -140,3 +140,8 @@ class MemorySecrets:
 
     def urls(self) -> list[str]:
         return sorted(self.tokens)
+
+    def delete_all(self) -> int:
+        count = len(self.tokens)
+        self.tokens.clear()
+        return count

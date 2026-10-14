@@ -595,14 +595,18 @@ timeseries.
   server config, if set) and the password every time. Non-interactive runs error.
 - `zabgrab token list [--check]`: every configured server plus any other server with
   a stored token, showing whether a token is stored and the `token_env` status (never
-  the tokens). `--check` tests each token against its server. Keyring backends can't
-  be enumerated, so zabgrab keeps an index of URLs with stored tokens in the keyring
-  (entry `_urls`).
-- `zabgrab token add [SERVER] [--stdin] [--no-check]`: shows the token page URL, asks
-  for the token (hidden input; `--stdin` for scripts), checks it against the server
-  unless `--no-check`, and stores it. Without SERVER, asks which (including "Custom…").
+  the tokens). `--check` tests each token against its server.
+- All tokens live in one keyring entry (`zabgrab`/`tokens`, a JSON map of URL to
+  token), because keyring backends can't be enumerated. Windows limits entries to
+  about 2.5 KB (roughly 10-20 tokens).
+- `zabgrab token add [SERVER] [FILE] [--no-check]`: shows the token page URL, reads
+  the token from FILE (`-` for stdin) or asks for it (hidden input), checks it against
+  the server unless `--no-check`, and stores it. Without SERVER, asks which
+  (including "Custom…").
 - `zabgrab token delete [SERVER] [--yes]`: confirms first (non-interactive runs need
   `--yes`). Without SERVER, asks which of the stored tokens.
+- `zabgrab token reset [--yes]`: deletes the keyring entry, leaving nothing of
+  zabgrab's behind.
 
 ## Merged view, plotting and export
 
@@ -749,8 +753,13 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   (phase 2). zabbix_utils closes its HTTP session after any API error, which breaks
   retries and concurrent requests, and silently reads `ZABBIX_TOKEN` and similar
   environment variables.
-- `zabgrab login`/`logout` became `zabgrab token list|add|delete`, done early
-  (after phase 2).
+- `zabgrab login`/`logout` became `zabgrab token list|add|delete|reset`, done early
+  (after phase 2). Tokens are stored in a single keyring entry rather than one per
+  server plus an index.
+- Global options are accepted by every command, before or after it (a shared
+  decorator whose callbacks update the click context object).
+- API endpoint redirects are reported (with the URL to use) rather than followed:
+  following turns the POST into a GET and could leak credentials to another host.
 - Search patterns use Zabbix's own semantics (substring match, `*` wildcard), so
   results match the web UI and server-side limits are exact.
 
