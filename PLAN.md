@@ -881,7 +881,31 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 
 ## Follow-up tasks
 
-None at present.
+Future additions, agreed but not started:
+
+- **`zabgrab info FILE`:** list what a `.mat`/`.h5` file holds, as a table like
+  `zabgrab items`: each item's ID, host, name, key, units, resolution, number of
+  points and time range (merged across groups). `--groups` shows the fetch groups
+  instead (name, created, time range, items). It takes the same selection options
+  as `plot` and `export` (`--item`, `--match`, `--from`, `--to`, `--group`), so it
+  doubles as a way to check what they select. Data to stdout, as for `items`.
+- **`--item` in `plot`/`export`/`info` works like `fetch`'s:** an item spec
+  (`12345`, `Particles *`, or `host=...,name=...,key=...,tag=...`), with the same
+  semantics as against Zabbix (case-insensitive, matching anywhere in the text,
+  `*` wildcards, host matching the technical or visible name, all given fields
+  matching), applied to the items stored in the file. `tag` can't be matched (files
+  don't store tags), so it's an error there. Today `--item` there is a single glob
+  that must match an item's whole ID, name, key or `host: name`, so `--item
+  'name=*0.3*'` silently matches nothing.
+- **`--match PATTERN` in `plot`/`export`/`info`:** the current `--item` behaviour
+  under a new name: a glob matched case-insensitively against the whole of each
+  item's ID, name, key or `host: name` (repeatable; an item is kept if any
+  matches).
+- With both, when the selection matches nothing, say so and list the file's items
+  (or point to `zabgrab info FILE`), rather than only "Nothing to plot."
+- These change `--item`'s meaning for `plot` and `export`, so update the docs
+  (`docs/guide/analysing.rst`, the CLI reference comes from the help) and
+  CHANGELOG; before 1.0.0 is released there's no compatibility to keep.
 
 ## Open questions
 
