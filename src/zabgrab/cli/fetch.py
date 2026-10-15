@@ -238,6 +238,7 @@ def fetch_command(
     now = app.clock.now()
 
     def parse(text: str, tz: tzinfo | None) -> datetime:
+        """Parse a time relative to the start of the command."""
         return parse_time(text, now=now, tz=tz)
 
     cli = CliRequest(
@@ -282,6 +283,7 @@ def fetch_command(
 
 
 def _one(values: tuple[str, ...], option: str, reason: str) -> str | None:
+    """Get an option that can only be given once, failing if it's repeated."""
     if len(values) > 1:
         raise click.UsageError(f"{option} can only be given once: {reason}")
     return values[0] if values else None
@@ -289,6 +291,8 @@ def _one(values: tuple[str, ...], option: str, reason: str) -> str | None:
 
 @dataclass(frozen=True)
 class _TemplateTarget:
+    """Where ``--save-template`` saves, and whether it replaces a template."""
+
     name: str
     path: Path
     replace: bool
@@ -340,6 +344,7 @@ def _save_template(
     query: Query,
     config: Config,
 ) -> None:
+    """Save the fetch as a template (``--save-template``)."""
     table = template_table(cli, query, config)
     written = add_template(target.path, target.name, table, replace=target.replace)
     app.ui.success(f"Saved template {target.name!r} to {target.path}:")
@@ -424,6 +429,7 @@ def _fetch_and_save(
 async def _download(
     app: AppContext, query: Query, *, yes: bool, dry_run: bool
 ) -> FetchResult | None:
+    """Find the items and fetch their data; return ``None`` for a dry run."""
     plan = await collect(
         query,
         app.ui,
@@ -461,7 +467,26 @@ def save_target(
     query: Query,
     options: SaveOptions,
 ) -> str:
-    """Write the data; return a description of where it went."""
+    """Write fetched data to a file.
+
+    Parameters
+    ----------
+    target : Target
+        Where and how to save.
+    result : FetchResult
+        The data.
+    metadata : dict
+        The metadata to save with it.
+    query : Query
+        The query, for its time range and timezone.
+    options : SaveOptions
+        ``--group`` and ``--in-place``, for appending.
+
+    Returns
+    -------
+    str
+        A description of where the data went, for the summary.
+    """
     if target.format not in STRUCTURED:
         delimiter = "\t" if target.format is Format.TSV else ","
         write_delimited(target.path, result, metadata, delimiter=delimiter, tz=query.tz)
@@ -482,6 +507,15 @@ def save_target(
 
 
 def report_problems(app: AppContext, result: FetchResult) -> None:
+    """Warn about skipped items and report failed ones.
+
+    Parameters
+    ----------
+    app : AppContext
+        For the UI.
+    result : FetchResult
+        The fetched data.
+    """
     for skipped in result.skipped:
         app.ui.warning(
             f"Skipped {skipped.item.host}: {skipped.item.name} "
@@ -496,4 +530,5 @@ def report_problems(app: AppContext, result: FetchResult) -> None:
 
 
 def _short(server: Server) -> str:
+    """Name a server briefly, for automatic file names."""
     return server.name or urlsplit(server.url).hostname or server.url

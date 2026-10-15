@@ -115,7 +115,20 @@ def edit_command(app: AppContext, target: str) -> None:
 
 
 def edit_target_path(env: Environment, kind: LayerKind) -> Path:
-    """Path of the config file to edit for a layer."""
+    """Find the config file to edit for a layer.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment, for the platform's config paths.
+    kind : LayerKind
+        The layer (user, system or project).
+
+    Returns
+    -------
+    Path
+        The file, which may not exist yet.
+    """
     if kind is LayerKind.USER:
         return user_config_path(env)
     if kind is LayerKind.SYSTEM:
@@ -124,6 +137,7 @@ def edit_target_path(env: Environment, kind: LayerKind) -> Path:
 
 
 def _create_if_missing(path: Path) -> None:
+    """Create a config file with the starter config, if it doesn't exist."""
     if path.exists():
         return
     try:

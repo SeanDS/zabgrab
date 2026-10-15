@@ -161,6 +161,7 @@ def update_command(
 async def _download(
     app: AppContext, plan: UpdatePlan, *, rematch: bool, dry_run: bool
 ) -> FetchResult | None:
+    """Find the items to update and fetch their data; ``None`` for a dry run."""
     query = plan.query
     if rematch:
         if len(plan.servers) > 1:
@@ -172,6 +173,7 @@ async def _download(
             )
 
         def select(ref: str | Choice[str] | None) -> Server:
+            """Choose the server to look the items up on again."""
             # The server the group was fetched from (unless it found no items).
             if plan.servers:
                 return next(iter(plan.servers.values()))

@@ -38,9 +38,12 @@ macOS and Windows, and fails below 100% coverage.
 - **Docstrings:** every module, class, function and method gets a NumPy-style
   docstring that Sphinx (napoleon) can render: a one-line summary, then the sections
   that apply (`Parameters`, `Returns`, `Yields`, `Raises`, `Attributes`, `Examples`)
-  with `-----` underlines. Trivial one-liners may have just the summary. Older code
-  that doesn't follow this yet is a follow-up task in PLAN.md; don't widen unrelated
-  changes to retrofit it.
+  with `-----` underlines, and the summary in the imperative mood ("Make a table",
+  not "A table"). Private helpers, nested functions and methods implementing a
+  documented protocol may have just a one-line summary; `__init__` parameters go in
+  the class docstring. Click commands' docstrings are their `--help` text, so they
+  describe usage instead. ruff's `D` rules (numpy convention) enforce the basics,
+  and examples in docstrings run as doctests.
 
 ## Architecture
 

@@ -9,10 +9,27 @@ def parse_selection(text: str, count: int) -> list[int]:
     Accepts comma-separated numbers and inclusive ranges (``1,3,5-8``), or ``all``.
     Indices are returned in the order given, without duplicates.
 
+    Parameters
+    ----------
+    text : str
+        The answer.
+    count : int
+        How many options there are.
+
+    Returns
+    -------
+    list of int
+        The indices of the options chosen.
+
     Raises
     ------
     ValueError
         With a message suitable for showing to the user.
+
+    Examples
+    --------
+    >>> parse_selection("3,1-2,2", 5)
+    [2, 0, 1]
     """
     text = text.strip().lower()
     if not text:

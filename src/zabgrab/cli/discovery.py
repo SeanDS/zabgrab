@@ -1,4 +1,10 @@
-"""``zabgrab hosts`` and ``zabgrab items``: finding what's on a server."""
+"""``zabgrab hosts`` and ``zabgrab items``: finding what's on a server.
+
+Attributes
+----------
+DEFAULT_LIMIT : int
+    The default ``--limit``.
+"""
 
 from __future__ import annotations
 
@@ -36,6 +42,7 @@ class ItemSpecType(_ParamType):
     def convert(
         self, value: Any, param: click.Parameter | None, ctx: click.Context | None
     ) -> ItemSpec:
+        """Parse an item spec, failing with its error message if it's invalid."""
         try:
             return parse_item_spec(value)
         except ValueError as exc:
@@ -43,6 +50,7 @@ class ItemSpecType(_ParamType):
 
 
 def server_option(function: F) -> F:
+    """Add ``--server`` (repeatable) to a command."""
     return click.option(
         "-s",
         "--server",
@@ -55,6 +63,7 @@ def server_option(function: F) -> F:
 
 
 def limit_option(function: F) -> F:
+    """Add ``--limit`` to a command."""
     return click.option(
         "--limit",
         type=click.IntRange(min=1),
@@ -69,6 +78,7 @@ def _query(
     servers: Sequence[str],
     action: Callable[[ZabbixClient], Any],
 ) -> list[tuple[Server, Any]]:
+    """Run ``action`` on each server chosen, returning each server's results."""
     selected = app.select_servers(servers, app.config().config.defaults.server)
     return asyncio.run(on_servers(selected, app.connect, action))
 
@@ -76,6 +86,7 @@ def _query(
 def _report_limit(
     app: AppContext, results: Sequence[tuple[Server, Sequence[Any]]], limit: int
 ) -> None:
+    """Warn about servers whose results were cut short by ``--limit``."""
     for server, rows in results:
         if len(rows) >= limit:
             app.ui.warning(
@@ -105,6 +116,7 @@ def hosts_command(
     """
 
     async def action(client: ZabbixClient) -> Any:
+        """Find the hosts on a server."""
         return await client.hosts(pattern=pattern, group=group, limit=limit)
 
     results = _query(app, servers, action)
@@ -164,6 +176,7 @@ def items_command(
         specs.insert(0, ItemSpec(name=pattern, host=host, key=key, tag=tag))
 
     async def action(client: ZabbixClient) -> Any:
+        """Find the items on a server."""
         return await find_items(client, specs, app.ui, limit=limit)
 
     results = _query(app, servers, action)

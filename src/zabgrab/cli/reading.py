@@ -112,6 +112,7 @@ def read_dataset(
     now = app.clock.now()
 
     def time(text: str | None, option: str) -> datetime | None:
+        """Parse an optional time option."""
         if text is None:
             return None
         try:

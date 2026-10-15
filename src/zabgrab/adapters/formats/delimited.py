@@ -55,7 +55,7 @@ def write_delimited(
     metadata : mapping
         The metadata, written as ``#`` comment lines.
     delimiter : str
-        ``"\t"`` or ``","``.
+        A tab or a comma.
     tz : tzinfo or None
         The time zone for times (``None`` for local time).
 

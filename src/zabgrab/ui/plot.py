@@ -151,7 +151,7 @@ def show_or_save(spec: PlotSpec, tz: tzinfo | None, output: Path | None = None) 
 
 
 def _wall_clock(time: float, tz: tzinfo | None) -> datetime:
-    """POSIX seconds as a naive wall-clock time in ``tz``.
+    """Convert POSIX seconds to a naive wall-clock time in ``tz``.
 
     matplotlib shows naive datetimes as they are, so converting each time
     separately keeps the axis right across daylight saving changes (a single fixed
@@ -161,4 +161,5 @@ def _wall_clock(time: float, tz: tzinfo | None) -> datetime:
 
 
 def _zone_name(tz: tzinfo | None) -> str:
+    """Name a timezone for the time axis's label."""
     return "local time" if tz is None else str(tz)

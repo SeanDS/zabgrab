@@ -843,14 +843,11 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 
 - Code is commented wherever it isn't trivial, and every module, class, function and
   method has a NumPy-style docstring (Sphinx/napoleon sections such as `Parameters`,
-  `Returns`, `Raises`). New and changed code follows this from phase 5 on.
+  `Returns`, `Raises`), enforced by ruff's `D` rules; docstring examples run as
+  doctests.
 
 ## Follow-up tasks
 
-- Retrofit comments and NumPy-style docstrings to the existing code in
-  `src/zabgrab/` (module by module, behaviour unchanged, coverage kept at 100%).
-  Then consider enforcing it with ruff's pydocstyle rules (`D`, `convention =
-  "numpy"`).
 - A warning when raw data is requested beyond an item's history retention (deferred
   from phase 3).
 

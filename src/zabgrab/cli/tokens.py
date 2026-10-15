@@ -26,6 +26,7 @@ def token_group() -> None:
 
 
 def _server(app: AppContext, ref: str | None) -> Server:
+    """Resolve a server argument, asking which server if it's not given."""
     config = app.config().config
     if ref is not None:
         return resolve_server(ref, config, app.ui, save=app.save_server)
@@ -52,6 +53,7 @@ def list_command(app: AppContext, check: bool) -> None:
     if check:
 
         async def check_all() -> list[tokens.CheckResult]:
+            """Check each token in turn."""
             return [
                 await tokens.check_token(
                     status.server,
@@ -108,6 +110,7 @@ def add_command(
 
 
 def _file_name(file: IO[str]) -> str:
+    """Name a file option's file in messages."""
     name = getattr(file, "name", "-")
     return "standard input" if name in ("-", "<stdin>") else str(name)
 

@@ -1,4 +1,17 @@
-"""Rendering of command results for the terminal."""
+"""Rendering of command results for the terminal.
+
+Attributes
+----------
+ConfigLine : type
+    A line of TOML and the source of its value (``None`` for structural lines).
+SOURCE_SEPARATOR : str
+    Separates the sources from the TOML in ``config show --sources``.
+LAYER_STYLES : dict
+    Styles of the source column in ``config show --sources``, by layer. They avoid
+    the colours used to highlight TOML, so the two can't be confused.
+ITEM_SORT_KEYS : dict
+    How to sort ``items`` by each of :func:`items_table`'s columns.
+"""
 
 from __future__ import annotations
 
@@ -34,6 +47,7 @@ class DataTable(Table):
     """
 
     def add_row(self, *renderables: RenderableType | None, **kwargs: Any) -> None:
+        """Add a row, as :meth:`rich.table.Table.add_row` but with plain text cells."""
         super().add_row(
             *(Text(cell) if isinstance(cell, str) else cell for cell in renderables),
             **kwargs,
@@ -41,7 +55,18 @@ class DataTable(Table):
 
 
 def layers_table(layers: Iterable[ConfigLayer]) -> Table:
-    """Table of config layers, lowest priority first."""
+    """Make a table of config layers, lowest priority first.
+
+    Parameters
+    ----------
+    layers : iterable of ConfigLayer
+        The layers.
+
+    Returns
+    -------
+    rich.table.Table
+        The table.
+    """
     table = DataTable(
         title="Config files (lowest to highest priority)", title_justify="left"
     )
@@ -70,11 +95,9 @@ def layers_table(layers: Iterable[ConfigLayer]) -> Table:
 
 
 ConfigLine = tuple[str | None, str]
-"""A line of TOML and the source of its value (``None`` for structural lines)."""
 
 SOURCE_SEPARATOR = " │ "
 
-#: Colour of config lines by the layer they came from.
 LAYER_STYLES = {
     LayerKind.BUILTIN: "bold grey50",
     LayerKind.SYSTEM: "bold red1",
@@ -82,15 +105,23 @@ LAYER_STYLES = {
     LayerKind.PROJECT: "bold gold1",
     LayerKind.EXPLICIT: "bold tan",
 }
-"""Styles of the source column in ``config show --sources``, by layer. They avoid
-the colours used to highlight TOML, so the two can't be confused."""
 
 
 def config_lines(loaded: LoadedConfig) -> list[ConfigLine]:
-    """The merged config as lines of TOML, each with the source of its value.
+    """Write the merged config as lines of TOML, each with the source of its value.
 
     ``[defaults]`` keys have individual sources; each server and template takes the
     source of the file that defined it.
+
+    Parameters
+    ----------
+    loaded : LoadedConfig
+        The config and its layers.
+
+    Returns
+    -------
+    list of ConfigLine
+        The lines.
     """
     data = loaded.config.model_dump(mode="json", by_alias=True, exclude_none=True)
     lines: list[ConfigLine] = [
@@ -118,27 +149,60 @@ def config_lines(loaded: LoadedConfig) -> list[ConfigLine]:
 
 
 def config_to_toml(loaded: LoadedConfig) -> str:
-    """The merged config as TOML."""
+    """Write the merged config as TOML.
+
+    Parameters
+    ----------
+    loaded : LoadedConfig
+        The config.
+
+    Returns
+    -------
+    str
+        The TOML.
+    """
     return "".join(f"{line}\n" for _, line in config_lines(loaded))
 
 
 def highlighted_toml(text: str) -> Text:
-    """TOML with its sections, keys, values and comments highlighted."""
+    """Highlight TOML's sections, keys, values and comments.
+
+    Parameters
+    ----------
+    text : str
+        The TOML.
+
+    Returns
+    -------
+    rich.text.Text
+        The highlighted text.
+    """
     return Text("\n").join(_highlight_toml_line(line) for line in text.splitlines())
 
 
 def _highlight_toml_line(line: str) -> Text:
+    """Highlight a line of TOML (comments are dimmed as a whole)."""
     if line.lstrip().startswith("#"):
         return Text(line, style="toml.comment")
     return TomlHighlighter()(Text(line))
 
 
 def config_with_sources(loaded: LoadedConfig) -> Text:
-    """The merged config as TOML, each line prefixed by the source of its value.
+    """Write the merged config as TOML, each line prefixed by its value's source.
 
     The source column is as wide as the widest source, and styled by the layer the
-    value came from (see :data:`LAYER_STYLES`). The TOML is highlighted as by
+    value came from (see ``LAYER_STYLES``). The TOML is highlighted as by
     :func:`highlighted_toml`.
+
+    Parameters
+    ----------
+    loaded : LoadedConfig
+        The config and its layers.
+
+    Returns
+    -------
+    rich.text.Text
+        The highlighted lines.
     """
     kinds = {layer.source: layer.kind for layer in loaded.layers if layer.active}
     lines = config_lines(loaded)
@@ -157,6 +221,7 @@ def config_with_sources(loaded: LoadedConfig) -> Text:
 
 
 def _dump(data: Mapping[str, Any]) -> list[str]:
+    """Write a TOML document's lines."""
     document = tomlkit.document()
     for key, value in data.items():
         document.add(key, value)
@@ -181,7 +246,23 @@ def _item(value: Any) -> TomlItem:
 
 
 def format_age(age: timedelta) -> str:
-    """A compact age such as ``45s``, ``12m``, ``3h`` or ``9d``."""
+    """Format an age compactly, in its largest whole unit.
+
+    Parameters
+    ----------
+    age : timedelta
+        The age; negative ages show as ``0s``.
+
+    Returns
+    -------
+    str
+        The age.
+
+    Examples
+    --------
+    >>> format_age(timedelta(minutes=150))
+    '2h'
+    """
     seconds = max(0, int(age.total_seconds()))
     for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
         if seconds >= size:
@@ -190,12 +271,24 @@ def format_age(age: timedelta) -> str:
 
 
 def _shorten(text: str, width: int = 40) -> str:
+    """Put text on one line, cutting it to ``width`` characters with an ellipsis."""
     text = " ".join(text.split())
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
 def hosts_table(rows: Sequence[tuple[Server, Host]]) -> Table:
-    """Table of hosts, with a server column if there's more than one server."""
+    """Make a table of hosts, with a server column if there's more than one server.
+
+    Parameters
+    ----------
+    rows : sequence of tuple of Server and Host
+        The hosts and the servers they're on.
+
+    Returns
+    -------
+    rich.table.Table
+        The table.
+    """
     multiple = len({server for server, _ in rows}) > 1
     table = DataTable()
     if multiple:
@@ -248,23 +341,47 @@ ITEM_SORT_KEYS: dict[str, Callable[[tuple[Server, Item]], Any]] = {
     "Last value": lambda row: _value_order(row[1].last_value),
     "Age": lambda row: _age_order(row[1].last_clock),
 }
-"""How to sort ``items`` by each of :func:`items_table`'s columns."""
 
 
 def sort_items(
     rows: Iterable[tuple[Server, Item]], column: str = "Item ID"
 ) -> list[tuple[Server, Item]]:
-    """Rows sorted by a column of :func:`items_table`, then by item ID.
+    """Sort items by a column of :func:`items_table`, then by item ID.
 
     The sort is stable, so the same item ID on several servers keeps the order the
     servers were queried in.
+
+    Parameters
+    ----------
+    rows : iterable of tuple of Server and Item
+        The items and the servers they're on.
+    column : str, optional
+        A key of ``ITEM_SORT_KEYS``.
+
+    Returns
+    -------
+    list of tuple of Server and Item
+        The sorted rows.
     """
     by_id = sorted(rows, key=ITEM_SORT_KEYS["Item ID"])
     return sorted(by_id, key=ITEM_SORT_KEYS[column])
 
 
 def items_table(rows: Sequence[tuple[Server, Item]], *, now: datetime) -> Table:
-    """Table of items, with a server column if there's more than one server."""
+    """Make a table of items, with a server column if there's more than one server.
+
+    Parameters
+    ----------
+    rows : sequence of tuple of Server and Item
+        The items and the servers they're on.
+    now : datetime
+        The current time, to show the ages of last values.
+
+    Returns
+    -------
+    rich.table.Table
+        The table.
+    """
     multiple = len({server for server, _ in rows}) > 1
     table = DataTable()
     if multiple:
@@ -308,7 +425,20 @@ _CHECK_STYLES = {
 def tokens_table(
     statuses: Sequence[TokenStatus], results: Sequence[CheckResult] | None = None
 ) -> Table:
-    """Table of servers and where their tokens come from."""
+    """Make a table of servers and where their tokens come from.
+
+    Parameters
+    ----------
+    statuses : sequence of TokenStatus
+        The servers' tokens.
+    results : sequence of CheckResult, optional
+        The results of checking each token, shown in an extra column.
+
+    Returns
+    -------
+    rich.table.Table
+        The table.
+    """
     table = DataTable()
     table.add_column("Server", style="bold")
     table.add_column("URL", style="cyan", overflow="fold")
@@ -339,18 +469,43 @@ def tokens_table(
 
 
 def format_time(time: datetime, tz: tzinfo | None) -> str:
-    """A time for display, in ``tz`` (``None`` for local time)."""
+    """Format a time for display.
+
+    Parameters
+    ----------
+    time : datetime
+        The time.
+    tz : tzinfo or None
+        The timezone to show it in (``None`` for local time).
+
+    Returns
+    -------
+    str
+        The time, with its timezone's abbreviation.
+    """
     return time.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S %Z").rstrip()
 
 
 def explain_table(query: Query) -> Table:
-    """The resolved settings, and where each came from."""
+    """Make a table of a query's settings, and where each came from.
+
+    Parameters
+    ----------
+    query : Query
+        The query.
+
+    Returns
+    -------
+    rich.table.Table
+        The table.
+    """
     table = DataTable(title="Settings", title_justify="left")
     table.add_column("Setting", style="bold")
     table.add_column("Value")
     table.add_column("Source", style="magenta")
 
     def row(key: str, value: str) -> None:
+        """Add a setting's row."""
         table.add_row(key, value, query.sources.get(key, ""))
 
     row("server", _server_text(query.server))
@@ -368,7 +523,18 @@ def explain_table(query: Query) -> Table:
 
 
 def requests_table(query: Query) -> Table:
-    """What will be fetched, before items are looked up."""
+    """Make a table of what will be fetched, before items are looked up.
+
+    Parameters
+    ----------
+    query : Query
+        The query.
+
+    Returns
+    -------
+    rich.table.Table
+        The table.
+    """
     table = DataTable(title="Requests", title_justify="left")
     table.add_column("From", style="bold")
     table.add_column("Items")
@@ -382,13 +548,26 @@ def requests_table(query: Query) -> Table:
 
 
 def _server_text(server: str | Choice[str] | None) -> str:
+    """Show the configured server, or the choice of servers."""
     if isinstance(server, Choice):
         return f"{' or '.join(server.choices)} (asked)"
     return server or "(asked)"
 
 
 def format_item_spec_safe(spec: ItemSpec) -> str:
-    """An item spec for display (including host choices)."""
+    """Format an item spec for display, including host choices.
+
+    Parameters
+    ----------
+    spec : ItemSpec
+        The spec.
+
+    Returns
+    -------
+    str
+        The spec, as it would be written on the command line, with host choices
+        written out.
+    """
     try:
         return format_item_spec(spec)
     except ValueError:
@@ -401,7 +580,20 @@ def format_item_spec_safe(spec: ItemSpec) -> str:
 
 
 def plan_table(jobs: Sequence[Job], resolution: Resolution) -> Table:
-    """The items that would be fetched (for --dry-run)."""
+    """Make a table of the items that would be fetched (for --dry-run).
+
+    Parameters
+    ----------
+    jobs : sequence of Job
+        The items to fetch.
+    resolution : Resolution
+        The resolution, to tell which items would be skipped.
+
+    Returns
+    -------
+    rich.table.Table
+        The table.
+    """
     multiple = len({job.server for job in jobs}) > 1
     table = DataTable()
     if multiple:
