@@ -343,6 +343,7 @@ def test_metadata() -> None:
         "key": "p",
         "units": "#",
         "value_type": "float",
+        "tags": [],
         "requests": ["particles"],
         "columns": ["time", "value"],
         "points": 2,

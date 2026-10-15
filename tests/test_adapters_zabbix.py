@@ -285,6 +285,7 @@ class TestItems:
         assert first.last_value == "1234.5"
         assert first.last_clock == datetime.fromtimestamp(1_760_000_000, UTC)
         assert (first.history, first.trends) == (31 * 86_400, 365 * 86_400)
+        assert (first.tags, disabled.tags) == ((("area", "lab"),), ())
         assert disabled.value_type is ValueType.TEXT
         assert disabled.last_value is None
         assert disabled.last_clock is None

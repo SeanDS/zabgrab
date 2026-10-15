@@ -106,6 +106,9 @@ class Item:
     history, trends : int or None
         How long raw values and hourly trends are kept, in seconds (0 means they
         aren't), or ``None`` if not known.
+    tags : tuple of (str, str)
+        The item's tags, as (name, value) pairs (the value may be empty). A name
+        can appear more than once.
     """
 
     itemid: int
@@ -121,6 +124,7 @@ class Item:
     last_clock: datetime | None = None
     history: int | None = None
     trends: int | None = None
+    tags: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

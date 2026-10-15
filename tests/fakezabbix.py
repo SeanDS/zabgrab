@@ -266,6 +266,8 @@ class FakeZabbix:
             if "selectHosts" in params:
                 host = hosts[item.hostid]
                 row["hosts"] = [{"host": host.host, "name": host.name}]
+            if "selectTags" in params:
+                row["tags"] = [{"tag": k, "value": v} for k, v in item.tags.items()]
             rows.append(row)
         return _finish(rows, params)
 

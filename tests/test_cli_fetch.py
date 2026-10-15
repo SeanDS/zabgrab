@@ -740,3 +740,14 @@ def test_append_with_configured_delimited_format(
     result = run("fetch", "-t", "particles", "-o", str(tmp_path / "data"), "--append")
     assert result.exit_code == EXIT_ERROR
     assert "Only .mat and .h5 files can be appended to." in result.stderr
+
+
+@pytest.mark.parametrize("suffix", [".h5", ".mat"])
+def test_tags_are_stored(configured: Servers, tmp_path: Path, suffix: str) -> None:
+    path = tmp_path / f"data{suffix}"
+    ok(run("fetch", "-t", "particles", "-o", str(path)))
+    (group,) = read_fetches(path)
+    tags = {series.item.itemid: series.item.tags for series in group.series}
+    assert tags == {20001: (("area", "lab"),), 20002: ()}
+    entry = group.metadata["items"][0]
+    assert entry["tags"] == [{"tag": "area", "value": "lab"}]

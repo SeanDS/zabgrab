@@ -103,6 +103,9 @@ class TestRoundTrip:
         assert group.name == "fetch_0001"
         assert (group.t_from, group.t_to) == (0.0, 10.0)
         assert group.metadata == METADATA
+        # Tags come from the metadata; files written before they were stored have
+        # none.
+        assert [series.item.tags for series in group.series] == [()] * len(group.series)
         written = result().series
         assert [s.columns for s in group.series] == [s.columns for s in written]
         assert [s.item for s in group.series] == [s.item for s in written]

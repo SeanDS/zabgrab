@@ -298,6 +298,7 @@ class ZabbixAPI:
         params: dict[str, Any] = {
             "output": _ITEM_FIELDS,
             "selectHosts": ["host", "name"],
+            "selectTags": ["tag", "value"],
             "templated": False,
             "sortfield": "name",
         }
@@ -432,6 +433,7 @@ def _item(row: dict[str, Any]) -> Item:
         last_clock=datetime.fromtimestamp(clock, UTC) if clock else None,
         history=parse_period(row.get("history", "")),
         trends=parse_period(row.get("trends", "")),
+        tags=tuple((tag["tag"], tag.get("value", "")) for tag in row.get("tags", [])),
     )
 
 
