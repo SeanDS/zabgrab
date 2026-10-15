@@ -42,6 +42,10 @@ configuration. See the documentation at https://seands.github.io/zabgrab/.
 - ``fetch`` and ``update`` warn when the requested range starts before an item's
   history (or, for hourly trends, trend) storage period, since older data may have
   been deleted.
+- ``.mat`` and ``.h5`` files record their layout's version in each group's
+  metadata (``zabgrab.format_version``). zabgrab and ``zabgrab_load.m`` refuse
+  groups written with a newer layout, rather than misread them, and zabgrab won't
+  append to their files.
 - New documentation, built with Sphinx, including an example configuration
   (``config.example.toml``).
 - Fixed: the old CSV output's columns shifted when timeseries had different

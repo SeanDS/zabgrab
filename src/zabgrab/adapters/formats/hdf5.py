@@ -52,7 +52,7 @@ import numpy as np
 
 from ...errors import ZabgrabError
 from ...model.config import Resolution, ServerConfig
-from ...model.series import FetchResult, Series
+from ...model.series import FORMAT_VERSION, FetchResult, Series
 from ...model.server import Server
 from ...model.zabbix import Item, ValueType
 from ..files import replacing
@@ -112,18 +112,6 @@ def next_group_name(existing: Sequence[str]) -> str:
     return f"fetch_{max(numbers, default=0) + 1:04d}"
 
 
-def group_names(path: Path) -> list[str]:
-    """Get the names of the fetch groups in a file, in order.
-
-    Raises
-    ------
-    ZabgrabError
-        If the file doesn't exist or isn't HDF5.
-    """
-    with _open(path, "r") as file:
-        return [name for name in file if not name.startswith("#")]
-
-
 def write_fetch(
     path: Path,
     result: FetchResult,
@@ -174,12 +162,16 @@ def write_fetch(
     Raises
     ------
     ZabgrabError
-        If the group name is invalid or taken, the file isn't a zabgrab MATLAB file
-        when appending to it as one, or it can't be written.
+        If the group name is invalid or taken, or when appending, the file has
+        groups this version can't read (see :func:`read_metadata`), or isn't a
+        zabgrab MATLAB file when appending to it as one. Also if it can't be
+        written.
     """
     exists = append and path.exists()
     if exists:
-        existing = group_names(path)
+        # Only add to files this version understands: a newer layout could be
+        # misread, or end up mixed with this one.
+        existing = [name for name, _ in read_metadata(path)]
         if mat and not is_mat(path):
             raise ZabgrabError(f"{path} isn't a MATLAB file written by zabgrab.")
     else:
@@ -228,20 +220,44 @@ def read_fetches(path: Path) -> list[FetchGroup]:
     Raises
     ------
     ZabgrabError
-        If the file doesn't exist, isn't HDF5, or has groups zabgrab didn't write.
+        If the file doesn't exist or isn't HDF5, or has groups this version can't
+        read (see :func:`read_metadata`).
     """
     with _open(path, "r") as file:
-        groups = []
-        for name in file:
-            if name.startswith("#"):
-                continue
-            group = file[name]
-            if not isinstance(group, h5py.Group) or "meta" not in group:
-                raise ZabgrabError(
-                    f"{path} has a group {name!r} not written by zabgrab."
-                )
-            groups.append(_read_group(file, name, group))
-        return groups
+        return [
+            _read_group(file, name, group, _checked_metadata(path, file, name, group))
+            for name, group in _groups(file)
+        ]
+
+
+def read_metadata(path: Path) -> list[tuple[str, dict[str, Any]]]:
+    """Read the metadata of every fetch group in a file, checking it can be read.
+
+    Each group records the version of the file layout it was written with
+    (:data:`~zabgrab.model.series.FORMAT_VERSION`). Groups written by a newer
+    version of zabgrab, or without a version, are refused rather than misread.
+
+    Parameters
+    ----------
+    path : Path
+        The ``.h5`` or ``.mat`` file.
+
+    Returns
+    -------
+    list of tuple of str and dict
+        Each group's name and metadata, in the order they were written.
+
+    Raises
+    ------
+    ZabgrabError
+        If the file doesn't exist or isn't HDF5, a group wasn't written by
+        zabgrab, or its layout is newer than this version reads.
+    """
+    with _open(path, "r") as file:
+        return [
+            (name, _checked_metadata(path, file, name, group))
+            for name, group in _groups(file)
+        ]
 
 
 def is_mat(path: Path) -> bool:
@@ -547,9 +563,45 @@ def _empty(
 # Reading.
 
 
-def _read_group(file: h5py.File, name: str, group: h5py.Group) -> FetchGroup:
+def _groups(file: h5py.File) -> Iterator[tuple[str, Any]]:
+    """List a file's fetch groups, skipping MATLAB's ``#refs#`` and the like."""
+    for name in file:
+        if not name.startswith("#"):
+            yield name, file[name]
+
+
+def _checked_metadata(
+    path: Path, file: h5py.File, name: str, group: Any
+) -> dict[str, Any]:
+    """Read a group's metadata, refusing groups this version can't read."""
+    if not isinstance(group, h5py.Group) or "meta" not in group:
+        raise ZabgrabError(f"{path} has a group {name!r} not written by zabgrab.")
+    try:
+        metadata = json.loads(_read(file, group["meta"]))
+    except json.JSONDecodeError:
+        metadata = None
+    about = metadata.get("zabgrab") if isinstance(metadata, dict) else None
+    version = about.get("format_version") if isinstance(about, dict) else None
+    # bool is an int too, but never a version.
+    if type(version) is not int or version < 1:
+        raise ZabgrabError(
+            f"Group {name!r} in {path} doesn't record its file format version, so "
+            "zabgrab can't tell how to read it."
+        )
+    if version > FORMAT_VERSION:
+        raise ZabgrabError(
+            f"Group {name!r} in {path} was written by a newer version of zabgrab "
+            f"(file format {version}; this version reads up to {FORMAT_VERSION}).",
+            hint="Upgrade zabgrab: pip install --upgrade zabgrab",
+        )
+    assert isinstance(metadata, dict)
+    return metadata
+
+
+def _read_group(
+    file: h5py.File, name: str, group: h5py.Group, metadata: dict[str, Any]
+) -> FetchGroup:
     """Read a fetch group back into series."""
-    metadata = json.loads(_read(file, group["meta"]))
     resolution = Resolution(metadata.get("query", {}).get("resolution", "raw"))
     requests = {
         (entry["server"], entry["itemid"]): tuple(entry.get("requests", ()))

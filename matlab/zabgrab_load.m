@@ -20,6 +20,10 @@ function data = zabgrab_load(file)
 %   later group's value is used. So files that have been updated many times
 %   load as one continuous dataset.
 %
+%   Files written by a newer zabgrab, with a file layout this function
+%   doesn't know, raise the error zabgrab_load:format; download the latest
+%   zabgrab_load.m to read them.
+%
 %   Example:
 %     S = zabgrab_load('particles.mat');
 %     plot(S(1).time, S(1).value)
@@ -116,7 +120,7 @@ function groups = read_mat(file)
         if ~isstruct(stored) || ~isfield(stored, 'meta')
             continue
         end
-        group = new_group(names{n}, stored.meta);
+        group = new_group(file, names{n}, stored.meta);
         items = fieldnames(stored.items);
         for i = 1:numel(items)
             group.items{end + 1} = normalise(stored.items.(items{i}));
@@ -135,7 +139,7 @@ function groups = read_h5(file)
         if startsWith(name, '#')
             continue
         end
-        group = new_group(name, read_dataset(file, stored.Name, 'meta', true));
+        group = new_group(file, name, read_dataset(file, stored.Name, 'meta', true));
         items = stored.Groups(strcmp({stored.Groups.Name}, [stored.Name '/items']));
         for i = 1:numel(items.Groups)
             location = items.Groups(i);
@@ -176,8 +180,27 @@ function value = read_dataset(file, location, dataset, scalar)
 end
 
 
-function group = new_group(name, meta)
+function version = supported_format()
+    % The newest file layout this function reads (FORMAT_VERSION in zabgrab).
+    version = 1;
+end
+
+
+function group = new_group(file, name, meta)
     metadata = jsondecode(meta);
+    % Refuse layouts this function doesn't know, rather than misread them.
+    if ~isfield(metadata, 'zabgrab') || ~isfield(metadata.zabgrab, 'format_version')
+        error('zabgrab_load:format', ...
+            'Group %s in %s doesn''t record its file format version.', name, file);
+    end
+    version = metadata.zabgrab.format_version;
+    if version > supported_format()
+        error('zabgrab_load:format', ...
+            ['Group %s in %s was written by a newer version of zabgrab (file ' ...
+             'format %d; this zabgrab_load reads up to %d). Download the ' ...
+             'latest zabgrab_load.m from https://github.com/SeanDS/zabgrab.'], ...
+            name, file, version, supported_format());
+    end
     group = struct();
     group.name = name;
     group.created = name;

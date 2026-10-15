@@ -11,7 +11,11 @@ from typing import Any
 import pytest
 from click.testing import Result
 
-from zabgrab.adapters.formats.hdf5 import group_names, large_text_accepted, read_fetches
+from zabgrab.adapters.formats.hdf5 import (
+    large_text_accepted,
+    read_fetches,
+    read_metadata,
+)
 from zabgrab.errors import EXIT_ERROR, EXIT_INTERRUPTED, EXIT_PARTIAL
 
 from .cli_support import CONFIG, Servers, run, table_rows
@@ -601,7 +605,7 @@ class TestStructured:
         ok(run("fetch", "-t", "particles", "-o", str(path)))
         result = ok(run("fetch", "-t", "particles", "-o", str(path), input="\n"))
         assert "1. Add the data to it as a new group" in result.stderr
-        assert group_names(path) == ["fetch_0001", "fetch_0002"]
+        assert [name for name, _ in read_metadata(path)] == ["fetch_0001", "fetch_0002"]
 
     def test_existing_file_non_interactive(
         self, configured: Servers, tmp_path: Path

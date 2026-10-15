@@ -871,6 +871,14 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   does: item IDs only mean something on the server they came from.
 - `~` in `output_dir` means the home directory.
 
+- Each `.mat`/`.h5` group's metadata records the file layout version
+  (`zabgrab.format_version`, `FORMAT_VERSION` in `model/series.py`). Readers (the
+  Python reader and `zabgrab_load.m`) refuse groups with a newer version or none,
+  and appending refuses files with such groups. It's per group, not a file
+  attribute, since files grow by appending and adding a file attribute would have
+  changed the MATLAB-verified layout. Increase it for changes older readers would
+  misread; additive changes don't need it.
+
 ## Follow-up tasks
 
 None at present.

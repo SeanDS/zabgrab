@@ -2,11 +2,6 @@
 
 Files written by zabgrab store it as JSON (an HDF5 dataset, or ``#`` comment lines
 in delimited files). ``update`` relies on its ``query`` and ``items``.
-
-Attributes
-----------
-FORMAT_VERSION : int
-    The version of the metadata layout, for readers.
 """
 
 from __future__ import annotations
@@ -20,12 +15,10 @@ from .. import __version__
 from ..model.choice import Choice
 from ..model.config import Template
 from ..model.query import Query
-from ..model.series import FetchResult, Series, Skipped
+from ..model.series import FORMAT_VERSION, FetchResult, Series, Skipped
 from ..model.server import Server
 from ..model.zabbix import Item
 from .dataset import Dataset
-
-FORMAT_VERSION = 1
 
 
 def build_metadata(

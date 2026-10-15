@@ -9,7 +9,8 @@ function check_files(folder)
 %   tests/matlab/files. tests/test_matlab.py runs it this way.
 %
 %   Checks .mat files with load, .h5 files with h5read, and both with
-%   zabgrab_load, against expected.json. Also times loading large.mat.
+%   zabgrab_load, against expected.json, and that zabgrab_load refuses
+%   newer.mat and newer.h5 (a newer file layout). Also times loading large.mat.
 %   Prints PASS/FAIL for each check and a summary; errors if anything failed.
 
     here = fileparts(mfilename('fullpath'));
@@ -57,6 +58,10 @@ function check_files(folder)
     for name = {'trends.mat', 'trends.h5'}
         fprintf('\n%s (zabgrab_load)\n', name{1});
         attempt(name{1}, @() check_trends(fullfile(folder, name{1})));
+    end
+    for name = {'newer.mat', 'newer.h5'}
+        fprintf('\n%s (zabgrab_load)\n', name{1});
+        attempt(name{1}, @() check_newer(fullfile(folder, name{1})));
     end
     fprintf('\nlarge.mat\n');
     attempt('large.mat', @() check_large(fullfile(folder, 'large.mat')));
@@ -163,6 +168,17 @@ function check_files(folder)
         check(numel(data) == 1 && strcmp(data.resolution, '1h'), 'one hourly item');
         check(isequal(data.avg, [2; 2.5]) && isequal(data.count, int64([60; 58])), ...
             'trend statistics');
+    end
+
+    function check_newer(path)
+        % A newer file layout is refused, not misread.
+        try
+            zabgrab_load(path);
+            check(false, 'newer file format refused');
+        catch problem
+            check(strcmp(problem.identifier, 'zabgrab_load:format'), ...
+                sprintf('newer file format refused (%s)', problem.message));
+        end
     end
 
     function check_large(path)
