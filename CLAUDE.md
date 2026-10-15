@@ -30,7 +30,9 @@ docs/_build/html`.
 CI (`.github/workflows/ci.yml`) runs the same checks on every push, on Linux (Python
 3.11 to 3.14), macOS and Windows, fails below 100% coverage, and builds the docs.
 `.github/workflows/docs.yml` publishes the latest release's docs to GitHub Pages at
-the root, and `main`'s at `/dev/`.
+the root, and `main`'s at `/dev/`. `.github/workflows/publish.yml` uploads each
+published GitHub release to PyPI (trusted publishing), or, run by hand, a
+development build to TestPyPI.
 
 ## Working conventions
 

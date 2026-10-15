@@ -6,8 +6,9 @@ zabgrab's version comes from git tags, through `setuptools_scm
 Building at the commit tagged ``1.2.0`` gives version ``1.2.0``, and builds between
 releases get development versions such as ``1.2.1.dev3+g1234abc``.
 
-Publishing a release on GitHub also publishes its documentation to GitHub Pages
-(the ``Publish documentation`` workflow).
+Publishing a release on GitHub uploads it to PyPI (the ``Publish to PyPI``
+workflow) and publishes its documentation to GitHub Pages (the ``Publish
+documentation`` workflow).
 
 Version numbers
 ---------------
@@ -109,9 +110,56 @@ repository's *Settings* → *Pages* → *Source*).
 Publishing to PyPI
 ------------------
 
-Releases aren't uploaded to PyPI automatically. To publish one, build it from a
-clean checkout of the tag, check it, and upload it with `twine
-<https://twine.readthedocs.io/>`_:
+Publishing the release also starts the ``Publish to PyPI`` workflow, which builds
+the release from its tag and uploads it to https://pypi.org/project/zabgrab/. It
+checks first that the files are named for the tag's version (e.g.
+``zabgrab-1.2.0-py3-none-any.whl``), and stops if they aren't, since PyPI never
+accepts the same version twice. Check it ran under *Actions*, then check the new
+version installs:
+
+.. code-block:: bash
+
+   pip install --upgrade zabgrab==1.2.0
+
+The workflow uploads with PyPI's `trusted publishing
+<https://docs.pypi.org/trusted-publishers/>`_: PyPI trusts uploads from this
+workflow in this repository, so no API token is stored anywhere.
+
+Setting it up
+~~~~~~~~~~~~~
+
+This is done once, before the first automatic release:
+
+1. On PyPI, open the zabgrab project's *Manage* → *Publishing* page (for a project
+   not on PyPI yet, use *Your account* → *Publishing* to add a pending
+   publisher), and add a GitHub trusted publisher:
+
+   - Owner: ``SeanDS``
+   - Repository name: ``zabgrab``
+   - Workflow name: ``publish.yml``
+   - Environment name: ``pypi``
+
+2. On GitHub, open the repository's *Settings* → *Environments*, and create an
+   environment named ``pypi``. Optionally, add yourself under *Required reviewers*:
+   each upload then waits for you to approve it, in the workflow run's page.
+3. To try the setup without a release, do the same on `TestPyPI
+   <https://test.pypi.org/>`_ (a separate account), with the environment name
+   ``testpypi``, and create a ``testpypi`` environment on GitHub. Then run the
+   workflow by hand (*Actions* → *Publish to PyPI* → *Run workflow*): it uploads
+   a development build of the chosen branch (e.g. ``1.2.1.dev3``) to TestPyPI.
+   Install it from there to check it:
+
+   .. code-block:: bash
+
+      pip install --index-url https://test.pypi.org/simple/ \
+          --extra-index-url https://pypi.org/simple/ zabgrab==1.2.1.dev3
+
+Publishing by hand
+~~~~~~~~~~~~~~~~~~
+
+If the workflow can't be used, build the release from a clean checkout of the tag,
+check it, and upload it with `twine <https://twine.readthedocs.io/>`_ and a PyPI
+API token:
 
 .. code-block:: bash
 
@@ -130,8 +178,13 @@ wasn't run at the tag or the checkout wasn't clean.
 If something goes wrong
 -----------------------
 
-A tag that has only just been pushed, before anyone could have installed it, can be
-deleted and made again:
+If the ``Publish to PyPI`` workflow failed before uploading (e.g. the trusted
+publisher wasn't set up), fix the problem, then open the failed run under *Actions*
+and click *Re-run failed jobs*.
+
+A tag that hasn't been uploaded to PyPI (its release isn't published yet, or the
+upload failed), before anyone could have installed it, can be deleted and made
+again:
 
 .. code-block:: bash
 
