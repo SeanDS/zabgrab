@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
 import h5py
 import pytest
 
-from zabgrab.adapters.formats.hdf5 import group_names, read_fetches, write_fetch
+from zabgrab.adapters.formats.hdf5 import read_fetches, read_metadata, write_fetch
 from zabgrab.errors import EXIT_ERROR, EXIT_PARTIAL
 from zabgrab.model.series import FetchResult
 
@@ -68,14 +69,14 @@ def test_warns_beyond_history_retention(
 def test_up_to_date(data: Path) -> None:
     result = ok(run("update", str(data)))
     assert "is already up to date" in result.stderr
-    assert group_names(data) == ["fetch_0001"]
+    assert [name for name, _ in read_metadata(data)] == ["fetch_0001"]
 
 
 def test_no_new_data(data: Path, servers: Servers) -> None:
     later(servers)
     result = ok(run("update", str(data)))
     assert "No new data since the last fetch" in result.stderr
-    assert group_names(data) == ["fetch_0001"]
+    assert [name for name, _ in read_metadata(data)] == ["fetch_0001"]
 
 
 def test_to(data: Path, zabbix: FakeZabbix, servers: Servers) -> None:
@@ -89,7 +90,7 @@ def test_dry_run(data: Path, servers: Servers) -> None:
     later(servers)
     result = ok(run("update", str(data), "--dry-run"))
     assert [row[0] for row in table_rows(result.stdout)] == ["20001", "20002"]
-    assert group_names(data) == ["fetch_0001"]
+    assert [name for name, _ in read_metadata(data)] == ["fetch_0001"]
 
 
 def test_rematch_picks_up_new_items(
@@ -221,10 +222,28 @@ class TestErrors:
         with h5py.File(data, "a") as file:
             group = file["fetch_0001"]
             del group["meta"]
-            group.create_dataset("meta", data="{}", dtype=h5py.string_dtype())
+            # Readable (see test_formats_hdf5), but without the query or items.
+            meta = '{"zabgrab": {"format_version": 1}}'
+            group.create_dataset("meta", data=meta, dtype=h5py.string_dtype())
         result = run("update", str(data))
         assert result.exit_code == EXIT_ERROR
         assert "doesn't have the metadata needed to update it" in result.stderr
+
+    def test_newer_file_format(self, data: Path) -> None:
+        (group,) = read_fetches(data)
+        newer = {**group.metadata, "zabgrab": {"format_version": 99}}
+        with h5py.File(data, "a") as file:
+            del file["fetch_0001"]["meta"]
+            file["fetch_0001"].create_dataset(
+                "meta", data=json.dumps(newer), dtype=h5py.string_dtype()
+            )
+        for command in (["update"], ["plot"], ["export", "-o", "out.h5"]):
+            result = run(*command, str(data))
+            assert result.exit_code == EXIT_ERROR
+            assert "was written by a newer version of zabgrab" in result.stderr
+            assert "Fix: Upgrade zabgrab: pip install --upgrade zabgrab" in (
+                result.stderr
+            )
 
     def test_invalid_to(self, data: Path) -> None:
         result = run("update", str(data), "--to", "garbage")

@@ -1,4 +1,12 @@
-"""Fetched data."""
+"""Fetched data.
+
+Attributes
+----------
+FORMAT_VERSION : int
+    The version of the layout of ``.h5`` and ``.mat`` files (and of the metadata in
+    every format). Increase it whenever the layout changes in a way that older
+    versions of zabgrab, or ``zabgrab_load.m``, would misread.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +16,8 @@ from typing import Any
 from .config import Resolution
 from .server import Server
 from .zabbix import Item
+
+FORMAT_VERSION = 1
 
 
 @dataclass

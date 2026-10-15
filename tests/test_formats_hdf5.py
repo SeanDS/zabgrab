@@ -12,18 +12,18 @@ import pytest
 
 from zabgrab.adapters.formats.hdf5 import (
     LARGE_TEXT_ACCEPTED,
-    group_names,
     is_mat,
     is_valid_group_name,
     large_text_accepted,
     next_group_name,
     read_fetches,
+    read_metadata,
     text_entries,
     write_fetch,
 )
 from zabgrab.errors import ZabgrabError
 from zabgrab.model.config import Resolution, ServerConfig
-from zabgrab.model.series import FetchResult, Series
+from zabgrab.model.series import FORMAT_VERSION, FetchResult, Series
 from zabgrab.model.server import Server
 from zabgrab.model.zabbix import Item, ValueType
 
@@ -78,6 +78,7 @@ def result() -> FetchResult:
 
 
 METADATA: dict[str, Any] = {
+    "zabgrab": {"version": "1.0.0", "format_version": FORMAT_VERSION},
     "query": {"resolution": "raw"},
     "items": [{"server": DEMO.url, "itemid": 1, "requests": ["particles"]}],
 }
@@ -126,7 +127,7 @@ class TestRoundTrip:
         write_fetch(
             path,
             trends,
-            {"query": {"resolution": "1h"}},
+            {**METADATA, "query": {"resolution": "1h"}},
             mat=path.suffix == ".mat",
             t_from=0,
             t_to=7199,
@@ -143,7 +144,11 @@ class TestRoundTrip:
         write(path)
         assert write(path, append=True, t_from=10.0, t_to=20.0) == "fetch_0002"
         assert write(path, append=True, group="extra") == "extra"
-        assert group_names(path) == ["fetch_0001", "fetch_0002", "extra"]
+        assert [name for name, _ in read_metadata(path)] == [
+            "fetch_0001",
+            "fetch_0002",
+            "extra",
+        ]
         assert write(path, append=True) == "fetch_0003"
         groups = read_fetches(path)
         assert [g.t_from for g in groups] == [0.0, 10.0, 0.0, 0.0]
@@ -152,7 +157,7 @@ class TestRoundTrip:
     def test_append_in_place(self, path: Path) -> None:
         write(path)
         write(path, append=True, in_place=True)
-        assert group_names(path) == ["fetch_0001", "fetch_0002"]
+        assert [name for name, _ in read_metadata(path)] == ["fetch_0001", "fetch_0002"]
 
     def test_append_creates_missing_file(self, path: Path) -> None:
         assert write(path, append=True) == "fetch_0001"
@@ -160,7 +165,7 @@ class TestRoundTrip:
     def test_overwrite(self, path: Path) -> None:
         write(path)
         write(path, append=False)
-        assert group_names(path) == ["fetch_0001"]
+        assert [name for name, _ in read_metadata(path)] == ["fetch_0001"]
 
     def test_items_with_the_same_id_on_two_servers(self, path: Path) -> None:
         write(path)
@@ -368,3 +373,63 @@ def test_large_text_flag(path: Path) -> None:
     assert large_text_accepted(path)
     with h5py.File(path) as file:
         assert file.attrs[LARGE_TEXT_ACCEPTED] == 1
+
+
+def set_meta(path: Path, meta: str) -> None:
+    """Replace the first group's metadata, as plain HDF5 text."""
+    with h5py.File(path, "a") as file:
+        group = file["fetch_0001"]
+        del group["meta"]
+        group.create_dataset("meta", data=meta, dtype=h5py.string_dtype())
+
+
+class TestFormatVersion:
+    def test_written_and_read_back(self, path: Path) -> None:
+        write(path)
+        ((name, metadata),) = read_metadata(path)
+        assert name == "fetch_0001"
+        assert metadata["zabgrab"]["format_version"] == FORMAT_VERSION == 1
+
+    def test_newer_versions_are_refused(self, path: Path) -> None:
+        write(path)
+        newer = {**METADATA, "zabgrab": {"format_version": FORMAT_VERSION + 1}}
+        set_meta(path, json.dumps(newer))
+        for read in (read_fetches, read_metadata):
+            with pytest.raises(ZabgrabError) as exc_info:
+                read(path)
+            assert exc_info.value.message == (
+                f"Group 'fetch_0001' in {path} was written by a newer version of "
+                f"zabgrab (file format {FORMAT_VERSION + 1}; this version reads up "
+                f"to {FORMAT_VERSION})."
+            )
+            assert (
+                exc_info.value.hint == "Upgrade zabgrab: pip install --upgrade zabgrab"
+            )
+
+    def test_appending_to_newer_versions_is_refused(self, path: Path) -> None:
+        write(path)
+        newer = {**METADATA, "zabgrab": {"format_version": FORMAT_VERSION + 1}}
+        set_meta(path, json.dumps(newer))
+        original = path.read_bytes()
+        with pytest.raises(ZabgrabError, match="written by a newer version"):
+            write(path, append=True)
+        assert path.read_bytes() == original
+
+    @pytest.mark.parametrize(
+        "meta",
+        [
+            "{}",
+            "[]",
+            "not json",
+            '{"zabgrab": "1.0.0"}',
+            '{"zabgrab": {"version": "1.0.0"}}',
+            '{"zabgrab": {"format_version": "1"}}',
+            '{"zabgrab": {"format_version": true}}',
+            '{"zabgrab": {"format_version": 0}}',
+        ],
+    )
+    def test_unknown_versions_are_refused(self, path: Path, meta: str) -> None:
+        write(path)
+        set_meta(path, meta)
+        with pytest.raises(ZabgrabError, match="doesn't record its file format"):
+            read_fetches(path)

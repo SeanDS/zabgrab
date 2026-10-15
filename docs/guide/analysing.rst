@@ -134,6 +134,14 @@ command line), the server, the template and item specs, every matched item, the
 time range, resolution and statistics, and where each setting came from. It never
 includes passwords or tokens.
 
+Each group's metadata also records the version of the file layout it was written
+with, as ``zabgrab.format_version`` (currently 1), next to the zabgrab version
+(``zabgrab.version``). The layout stays the same within a format version, so
+scripts reading the files can check it. If a later zabgrab changes the layout, it
+increases the format version; older versions of zabgrab and ``zabgrab_load`` then
+refuse those groups (and won't add to their files), asking you to upgrade, rather
+than misread them.
+
 Exporting and converting
 ------------------------
 

@@ -95,3 +95,11 @@ The layout of ``.mat`` and ``.h5`` files is pinned by files verified in MATLAB, 
 new layout must be checked in MATLAB before the reference files are replaced:
 ``tests/test_matlab.py`` runs ``tests/matlab/check_files.m`` in MATLAB when it's
 installed (or listed in ``$ZABGRAB_MATLAB``), and is skipped otherwise.
+
+Every group records the version of the layout it was written with
+(``FORMAT_VERSION`` in ``zabgrab.model.series``, and ``supported_format`` in
+``matlab/zabgrab_load.m``). Readers refuse newer versions, so increase both whenever
+the layout changes in a way an older zabgrab or ``zabgrab_load`` would misread:
+removing, renaming or changing the meaning of a group, dataset, attribute or
+metadata key. Purely additive changes that older readers safely ignore don't need a
+new version. Readers must keep reading every older version.

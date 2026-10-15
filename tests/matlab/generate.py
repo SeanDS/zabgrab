@@ -11,6 +11,8 @@ This writes ``tests/matlab/files/``:
   changes a point, and a custom-named group)
 - ``trends.mat``, ``trends.h5``: hourly trends
 - ``large.mat``: a log item with many entries, to time MATLAB's ``load``
+- ``newer.mat``, ``newer.h5``: a file layout newer than this version's, which
+  ``zabgrab_load`` must refuse
 - ``expected.json``: what the files contain, for ``check_files.m``
 
 Then, in MATLAB, from ``tests/matlab``: ``check_files``.
@@ -26,7 +28,7 @@ from typing import Any
 
 from zabgrab.adapters.formats.hdf5 import write_fetch
 from zabgrab.model.config import Resolution, ServerConfig
-from zabgrab.model.series import FetchResult, Series
+from zabgrab.model.series import FORMAT_VERSION, FetchResult, Series
 from zabgrab.model.server import Server
 from zabgrab.model.zabbix import Item, ValueType
 
@@ -126,12 +128,23 @@ TRENDS = FetchResult(
 )
 
 
-def metadata(resolution: str, created: datetime) -> dict[str, Any]:
-    return {"query": {"resolution": resolution}, "created": created.isoformat()}
+def metadata(
+    resolution: str, created: datetime, format_version: int = FORMAT_VERSION
+) -> dict[str, Any]:
+    # A fixed zabgrab version, so the files don't change with every commit.
+    return {
+        "zabgrab": {"version": "1.0.0", "format_version": format_version},
+        "query": {"resolution": resolution},
+        "created": created.isoformat(),
+    }
 
 
 def write(
-    path: Path, groups: list[tuple[FetchResult, str | None]], resolution: str
+    path: Path,
+    groups: list[tuple[FetchResult, str | None]],
+    resolution: str,
+    *,
+    format_version: int = FORMAT_VERSION,
 ) -> list[dict[str, Any]]:
     path.unlink(missing_ok=True)
     expected = []
@@ -140,7 +153,7 @@ def write(
         group = write_fetch(
             path,
             result,
-            metadata(resolution, created),
+            metadata(resolution, created, format_version),
             mat=path.suffix == ".mat",
             t_from=T0 + 1000 * index,
             t_to=T0 + 1000 * (index + 1),
@@ -223,6 +236,9 @@ def generate(folder: Path, *, large: int = 100_000) -> None:
         ]
     )
     write(folder / "large.mat", [(entries, None)], "raw")
+    # Files from a future zabgrab, which zabgrab_load must refuse.
+    for name in ("newer.mat", "newer.h5"):
+        write(folder / name, [(TRENDS, None)], "1h", format_version=FORMAT_VERSION + 1)
     (folder / "expected.json").write_text(
         json.dumps(
             {"files": expected, "merged_item_1": merged, "large_entries": large},
