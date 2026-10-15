@@ -115,11 +115,16 @@ def plan_update(
     if start >= end:
         return None
 
+    urls = list(dict.fromkeys(entry["server"] for entry in entries))
+    if server is not None and len(urls) > 1:
+        # Each server's item IDs only mean something on that server.
+        raise ZabgrabError(
+            f"Group {last.name!r} was fetched from several servers, so it can't be "
+            "updated from one other server.",
+            hint="Update it without --server.",
+        )
     names = {s.get("url"): s.get("name") for s in last.metadata.get("servers", [])}
-    servers = {
-        url: server or _server(url, names.get(url), config, ui)
-        for url in dict.fromkeys(entry["server"] for entry in entries)
-    }
+    servers = {url: server or _server(url, names.get(url), config, ui) for url in urls}
     items: dict[str, list[tuple[int, tuple[str, ...]]]] = {}
     for entry in entries:
         items.setdefault(entry["server"], []).append(

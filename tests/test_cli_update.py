@@ -270,6 +270,9 @@ def test_rematch_with_several_servers(
     assert "was fetched from several servers" in result.stderr
     result = ok(run("update", str(both), "--dry-run"))
     assert [row[0] for row in table_rows(result.stdout)] == ["demo", "lab"]
+    result = run("update", str(both), "--server", "demo", "--dry-run")
+    assert result.exit_code == EXIT_ERROR
+    assert "can't be updated from one other server" in result.stderr
 
 
 def test_server_chosen_when_fetched(
