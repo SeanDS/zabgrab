@@ -136,3 +136,26 @@ jobs:
         with:
           name: dist
           path: dist
+
+  passed:
+    # The one check for branch rules to require: it fails unless every job above
+    # passed, so the rules needn't change when the jobs do.
+    #
+    # Pull requests from this repository's branches skip CI (it ran on push), and
+    # rules count a skipped check as passing, so there it's named differently: a
+    # skipped "CI passed" would stand in for the push run's result.
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'CI (ran on push)' || 'CI passed' }}
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
+    needs: [lint, test, docs, smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check every job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            if [ "$result" != success ]; then
+              echo "::error::Not every job passed: $RESULTS"
+              exit 1
+            fi
+          done
