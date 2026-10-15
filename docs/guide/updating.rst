@@ -29,6 +29,10 @@ If there's nothing new, the file isn't changed.
 - ``--server`` fetches from another server, e.g. if the server moved.
 - ``--dry-run`` shows what would be fetched.
 
+Items deleted from Zabbix since the last fetch are skipped, with a warning naming
+each one; their data so far stays in the file. If none of the items are left,
+``update`` stops with an error and doesn't change the file.
+
 The file is updated through a copy that replaces the original only once it's
 complete, so an interrupted update can't damage it. For very large files,
 ``--in-place`` skips the copy.

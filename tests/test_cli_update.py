@@ -116,7 +116,10 @@ def test_deleted_item(data: Path, zabbix: FakeZabbix, servers: Servers) -> None:
     zabbix.items = [item for item in zabbix.items if item.itemid != 20002]
     later(servers)
     result = ok(run("update", str(data)))
-    assert "Item 20002 no longer exists on 'demo'." in result.stderr
+    assert (
+        "Item 20002 (demo1: Particles 0.5um) no longer exists on 'demo'; its data so "
+        "far stays in the file."
+    ) in " ".join(result.stderr.split())
 
 
 def test_server_removed_from_config(
