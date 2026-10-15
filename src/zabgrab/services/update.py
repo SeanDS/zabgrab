@@ -40,12 +40,16 @@ class UpdatePlan:
         The server to use for each server URL in the group.
     items : dict of str to list of (int, tuple of str)
         Item IDs fetched before, with their request labels, by server URL.
+    labels : dict of (str, int) to str
+        Each item's ``host: name`` when it was last fetched, by server URL and item
+        ID, to name items that have since been deleted.
     """
 
     query: Query
     last_group: str
     servers: dict[str, Server] = field(default_factory=dict)
     items: dict[str, list[tuple[int, tuple[str, ...]]]] = field(default_factory=dict)
+    labels: dict[tuple[str, int], str] = field(default_factory=dict)
 
 
 def plan_update(
@@ -126,10 +130,13 @@ def plan_update(
     names = {s.get("url"): s.get("name") for s in last.metadata.get("servers", [])}
     servers = {url: server or _server(url, names.get(url), config, ui) for url in urls}
     items: dict[str, list[tuple[int, tuple[str, ...]]]] = {}
+    labels = {}
     for entry in entries:
+        itemid = int(entry["itemid"])
         items.setdefault(entry["server"], []).append(
-            (int(entry["itemid"]), tuple(entry.get("requests", ())))
+            (itemid, tuple(entry.get("requests", ())))
         )
+        labels[entry["server"], itemid] = f"{entry['host']}: {entry['name']}"
 
     defaults = config.defaults
     timezone = stored.get("timezone", "local")
@@ -162,7 +169,7 @@ def plan_update(
             "timezone": f"group {last.name!r}",
         },
     )
-    return UpdatePlan(query, last.name, servers, items)
+    return UpdatePlan(query, last.name, servers, items, labels)
 
 
 async def collect_previous_items(
@@ -203,7 +210,11 @@ async def collect_previous_items(
                 if itemid in found:
                     result.jobs.append(Job(server, found[itemid], requests))
                 else:
-                    ui.warning(f"Item {itemid} no longer exists on {server.display}.")
+                    ui.warning(
+                        f"Item {itemid} ({plan.labels[url, itemid]}) no longer "
+                        f"exists on {server.display}; its data so far stays in the "
+                        "file."
+                    )
     except BaseException:
         await result.close()
         raise

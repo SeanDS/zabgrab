@@ -101,6 +101,26 @@ class FetchGroup:
     series: list[Series]
 
 
+@dataclass
+class GroupRange:
+    """A fetch group's metadata and time range, without its data.
+
+    Attributes
+    ----------
+    name : str
+        The group's name.
+    metadata : dict
+        The fetch's metadata (see :mod:`zabgrab.services.metadata`).
+    t_from, t_to : float
+        The fetched time range, in POSIX seconds.
+    """
+
+    name: str
+    metadata: dict[str, Any]
+    t_from: float
+    t_to: float
+
+
 def is_valid_group_name(name: str) -> bool:
     """Check whether ``name`` can be a group (MATLAB variable) name."""
     return IDENTIFIER.fullmatch(name) is not None
@@ -256,6 +276,36 @@ def read_metadata(path: Path) -> list[tuple[str, dict[str, Any]]]:
     with _open(path, "r") as file:
         return [
             (name, _checked_metadata(path, file, name, group))
+            for name, group in _groups(file)
+        ]
+
+
+def read_ranges(path: Path) -> list[GroupRange]:
+    """Read every fetch group's metadata and time range, but not its data.
+
+    Parameters
+    ----------
+    path : Path
+        The ``.h5`` or ``.mat`` file.
+
+    Returns
+    -------
+    list of GroupRange
+        The groups, in the order they were written.
+
+    Raises
+    ------
+    ZabgrabError
+        As for :func:`read_metadata`.
+    """
+    with _open(path, "r") as file:
+        return [
+            GroupRange(
+                name,
+                _checked_metadata(path, file, name, group),
+                float(_read(file, group["t_from"], scalar=True)),
+                float(_read(file, group["t_to"], scalar=True)),
+            )
             for name, group in _groups(file)
         ]
 

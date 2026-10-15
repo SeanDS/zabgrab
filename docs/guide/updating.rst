@@ -29,6 +29,10 @@ If there's nothing new, the file isn't changed.
 - ``--server`` fetches from another server, e.g. if the server moved.
 - ``--dry-run`` shows what would be fetched.
 
+Items deleted from Zabbix since the last fetch are skipped, with a warning naming
+each one; their data so far stays in the file. If none of the items are left,
+``update`` stops with an error and doesn't change the file.
+
 The file is updated through a copy that replaces the original only once it's
 complete, so an interrupted update can't damage it. For very large files,
 ``--in-place`` skips the copy.
@@ -48,6 +52,12 @@ it), e.g. data from other items, or a range you missed:
 
 Groups are named ``fetch_0001``, ``fetch_0002``, and so on, unless ``--group`` names
 them.
+
+If the new range overlaps a group already in the file that has some of the same
+items, zabgrab notes it. That's often what you meant (re-fetching a range to fill a
+gap, say), and the repeated points are only used once when the file is read; to see
+how many there are, run ``zabgrab info FILE --overlaps``. To continue a file from
+where it ends, without overlap, use ``zabgrab update`` instead.
 
 Working with the whole file
 ---------------------------

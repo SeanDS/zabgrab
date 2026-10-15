@@ -6,7 +6,7 @@ import asyncio
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, tzinfo
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -30,6 +30,7 @@ from ..model.query import Query
 from ..model.series import FetchResult
 from ..model.server import Server
 from ..services.collect import Plan, collect
+from ..services.dataset import overlaps
 from ..services.fetch import fetch, stored_end
 from ..services.metadata import build_metadata
 from ..services.output import (
@@ -392,11 +393,14 @@ def _fetch_and_save(
     chosen = targets(outputs, query, app.ui, name=name, options=options)
     template = config.templates.get(query.template) if query.template else None
     saved = []
+    notes = []
     for target in chosen:
         target, data = guard_text(app, target, result, query, options.allow_large_text)
         metadata = build_metadata(
             query, data, template=template, command=sys.argv, created=now
         )
+        # Checked before writing, so the new group isn't compared with itself.
+        notes += _overlap_notes(target, data, query)
         saved.append(save_target(target, data, metadata, query, options))
 
     count = len(result.series)
@@ -408,6 +412,8 @@ def _fetch_and_save(
     if saved:
         summary += "; saved to " + ", ".join(saved)
     app.ui.success(summary + ".")
+    for note in notes:
+        app.ui.info(note)
     if options.plot:
         # The whole requested range was fetched, so lines join up across it.
         coverage = [(query.start.timestamp(), stored_end(query))]
@@ -522,6 +528,38 @@ def guard_text(
         existing_entries=hdf5.text_entries,
         accepted_before=hdf5.large_text_accepted,
     )
+
+
+def _overlap_notes(target: Target, result: FetchResult, query: Query) -> list[str]:
+    """Describe the existing groups that already hold some of the data appended.
+
+    Overlaps are often deliberate (re-fetching to fill a gap) and harmless, since
+    repeated points are kept once when the file is read, so this is a note rather
+    than a warning. ``zabgrab update`` never overlaps, so it doesn't check.
+    """
+    if not (target.append and target.format in STRUCTURED and target.path.exists()):
+        return []
+    found = overlaps(
+        hdf5.read_ranges(target.path),
+        result.series,
+        query.start.timestamp(),
+        stored_end(query),
+    )
+    notes = []
+    for overlap in found:
+        start = format_time(datetime.fromtimestamp(overlap.start, UTC), query.tz)
+        end = format_time(datetime.fromtimestamp(overlap.end, UTC), query.tz)
+        items = f"{overlap.items} item{'' if overlap.items == 1 else 's'}"
+        notes.append(
+            f"Note: group {overlap.group} of {target.path} already holds {start} to "
+            f"{end} for {items} of this fetch."
+        )
+    if notes:
+        notes.append(
+            "Points fetched twice are kept once when the file is read; "
+            f"`zabgrab info {target.path} --overlaps` shows how many there are."
+        )
+    return notes
 
 
 def save_target(

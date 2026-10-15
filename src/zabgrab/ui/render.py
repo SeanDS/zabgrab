@@ -676,6 +676,8 @@ def file_items_table(series: Sequence[Series], tz: tzinfo | None) -> Table:
 def file_groups_table(
     groups: Sequence[tuple[str, str | None, float, float, int, int]],
     tz: tzinfo | None,
+    *,
+    repeated: Sequence[int] | None = None,
 ) -> Table:
     """Make a table of the fetch groups in a file, for ``zabgrab info --groups``.
 
@@ -686,6 +688,9 @@ def file_groups_table(
         POSIX seconds), and number of items and points.
     tz : tzinfo or None
         The time zone to show times in (``None`` for local time).
+    repeated : sequence of int, optional
+        If given, each group's number of points that another group also holds,
+        shown in a *Repeated* column.
 
     Returns
     -------
@@ -699,7 +704,9 @@ def file_groups_table(
     table.add_column("To")
     table.add_column("Items", justify="right")
     table.add_column("Points", justify="right")
-    for name, created, t_from, t_to, items, points in groups:
+    if repeated is not None:
+        table.add_column("Repeated", justify="right")
+    for index, (name, created, t_from, t_to, items, points) in enumerate(groups):
         table.add_row(
             name,
             "" if created is None else format_time(datetime.fromisoformat(created), tz),
@@ -707,6 +714,7 @@ def file_groups_table(
             _file_time(t_to, tz),
             str(items),
             f"{points:,}",
+            *([] if repeated is None else [f"{repeated[index]:,}"]),
         )
     return table
 
