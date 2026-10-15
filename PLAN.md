@@ -846,8 +846,10 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   the latest release's tag for the root and `main` for `/dev/` each time (a Pages
   deployment replaces the whole site). Release events re-run that workflow on
   `main`, since Pages only accepts deployments from the default branch.
-  Releases are tagged by hand (setuptools_scm takes the version from the tag) and
-  aren't uploaded to PyPI automatically.
+  Releases are prepared on a `release/X.Y.Z` branch (changelog date, last fixes),
+  tagged by hand there (setuptools_scm takes the version from the tag) and merged
+  into `main` with a merge commit, so `main` contains the tag. They aren't
+  uploaded to PyPI automatically.
 - Tests run in UK time, which their expected local times are written in. Windows
   can't change a running process's time zone, so there the system time zone must
   be UK time (CI sets it with `tzutil`), and the tests stop with an error otherwise.
@@ -893,19 +895,28 @@ Future additions, agreed but not started:
   (`12345`, `Particles *`, or `host=...,name=...,key=...,tag=...`), with the same
   semantics as against Zabbix (case-insensitive, matching anywhere in the text,
   `*` wildcards, host matching the technical or visible name, all given fields
-  matching), applied to the items stored in the file. `tag` can't be matched (files
-  don't store tags), so it's an error there. Today `--item` there is a single glob
+  matching), applied to the items stored in the file. `tag` matches the tags stored
+  with each item (see below); items in files written before tags were stored have
+  none, so a `tag` spec never matches them. Today `--item` there is a single glob
   that must match an item's whole ID, name, key or `host: name`, so `--item
   'name=*0.3*'` silently matches nothing.
 - **`--match PATTERN` in `plot`/`export`/`info`:** the current `--item` behaviour
   under a new name: a glob matched case-insensitively against the whole of each
   item's ID, name, key or `host: name` (repeatable; an item is kept if any
   matches).
-- With both, when the selection matches nothing, say so and list the file's items
-  (or point to `zabgrab info FILE`), rather than only "Nothing to plot."
-- These change `--item`'s meaning for `plot` and `export`, so update the docs
-  (`docs/guide/analysing.rst`, the CLI reference comes from the help) and
-  CHANGELOG; before 1.0.0 is released there's no compatibility to keep.
+- With both, when the selection matches nothing, say so and suggest `zabgrab info
+  FILE` to see what the file holds, rather than only "Nothing to plot."
+- **Store items' Zabbix tags in files**, so `tag=` specs work on them: fetch them
+  with `selectTags` in `item.get`, add `tags` to `Item`, and store them in each
+  item's metadata entry (`items[].tags`, a list of `{tag, value}`). That's an
+  addition older readers ignore, so `FORMAT_VERSION` stays 1, and the
+  MATLAB-verified datasets don't change. Tags are as of the fetch; merged views
+  use the latest group's. Delimited files carry them in their metadata too.
+- These change `--item`'s meaning for `plot` and `export`. Update
+  `docs/guide/analysing.rst` (the CLI reference comes from the help) and add a
+  CHANGELOG entry in the same change as the code, so the docs never describe
+  behaviour that isn't there yet; before 1.0.0 is released there's no
+  compatibility to keep.
 
 ## Open questions
 
