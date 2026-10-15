@@ -138,7 +138,7 @@ class TestFilter:
         merged = merge(groups, RecordingUI())
         by_pattern = filter_dataset(merged, patterns=["oth*"])
         assert [s.item.itemid for s in by_pattern.series] == [2]
-        by_spec = filter_dataset(merged, items=[ItemSpec(name="her")])
+        by_spec = filter_dataset(merged, items=[ItemSpec(name="*HER")])
         assert [s.item.itemid for s in by_spec.series] == [2]
         # Either selects; nothing given keeps everything.
         both = filter_dataset(merged, items=[ItemSpec(itemid=2)], patterns=["1"])
@@ -178,22 +178,30 @@ TAGGED = Item(
     [
         (ItemSpec(itemid=7), True),
         (ItemSpec(itemid=8), False),
-        (ItemSpec(name="0.3"), True),
+        # Patterns match the whole value, ignoring case, as in Zabbix.
+        (ItemSpec(name="*0.3*"), True),
         (ItemSpec(name="0.3*PARTICLES"), True),
-        (ItemSpec(name="0.5"), False),
-        (ItemSpec(host="pc"), True),
-        (ItemSpec(host="counter 2"), True),
-        (ItemSpec(host="counter 3"), False),
-        (ItemSpec(host=Choice(choices=["nope", "counter"])), True),
+        (ItemSpec(name="0.3 µm particles"), True),
+        (ItemSpec(name="0.3"), False),
+        (ItemSpec(name="*0.5*"), False),
+        # SQL's wildcards are literal in Zabbix's searches.
+        (ItemSpec(name="0.3_µm%"), False),
+        (ItemSpec(host="pc2"), True),
+        (ItemSpec(host="pc"), False),
+        (ItemSpec(host="*counter 2"), True),
+        (ItemSpec(host="particle COUNTER 2"), True),
+        (ItemSpec(host="*counter 3"), False),
+        (ItemSpec(host=Choice(choices=["nope", "pc*"])), True),
         (ItemSpec(key="particles[*]"), True),
         (ItemSpec(key="other"), False),
         (ItemSpec(tag="component"), True),
         (ItemSpec(tag="component:counter"), True),
         (ItemSpec(tag="component:count"), False),
         (ItemSpec(tag="missing"), False),
-        (ItemSpec(host="counter", name="0.3", tag="area:lab"), True),
-        (ItemSpec(host="counter", name="0.5", tag="area:lab"), False),
-        (ItemSpec(host="nope", name="0.3"), False),
+        (ItemSpec(host="pc*", name="0.3*", tag="area:lab"), True),
+        (ItemSpec(host="pc*", name="0.5*", tag="area:lab"), False),
+        (ItemSpec(host="nope", name="0.3*"), False),
+        (ItemSpec(tag="AREA:lab"), False),
     ],
 )
 def test_spec_matches(spec: ItemSpec, expected: bool) -> None:

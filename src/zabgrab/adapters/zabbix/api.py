@@ -58,8 +58,9 @@ _TAG_EXISTS = 4
 class ZabbixAPI:
     """A client for one Zabbix server.
 
-    Patterns passed to the search methods follow the Zabbix web UI's filters: they
-    are case-insensitive, match anywhere in the value, and ``*`` matches any text.
+    Patterns passed to the search methods use the API's wildcard search
+    (``searchWildcardsEnabled``): they match the whole value, ignoring case, and
+    ``*`` matches any text.
 
     Parameters
     ----------

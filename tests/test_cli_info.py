@@ -56,7 +56,7 @@ def test_items(data: Path) -> None:
 
 def test_selection(data: Path) -> None:
     for args in (
-        ["--item", "name=0.5"],
+        ["--item", "name=*0.5*"],
         ["--item", "tag=area:lab", "--item", "20002"],
         ["--match", "*0.5UM"],
     ):
@@ -90,7 +90,7 @@ def test_empty_series(data: Path) -> None:
 
 
 def test_groups(data: Path) -> None:
-    result = ok(run("info", str(data), "--groups", "--item", "name=Particles"))
+    result = ok(run("info", str(data), "--groups", "--item", "name=Particles*"))
     rows = table_rows(result.stdout)
     assert [(row[0], row[4], row[5]) for row in rows] == [
         ("fetch_0001", "2", "4"),

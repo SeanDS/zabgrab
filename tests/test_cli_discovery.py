@@ -29,11 +29,11 @@ class TestHosts:
         ]
 
     def test_pattern_and_group(self, servers: Servers) -> None:
-        result = run("hosts", "-s", "demo", "demo", "--group", "Lab")
+        result = run("hosts", "-s", "demo", "demo*", "--group", "Lab")
         assert [row[1] for row in table_rows(result.stdout)] == ["demo1", "demo2"]
 
     def test_multiple_servers_add_column(self, servers: Servers) -> None:
-        result = run("hosts", "-s", "demo", "-s", "lab", "web")
+        result = run("hosts", "-s", "demo", "-s", "lab", "web*")
         assert table_rows(result.stdout) == [
             ["demo", "10003", "web01", "Web server", "Servers", "disabled"],
             ["lab", "10003", "web01", "Web server", "Servers", "disabled"],
@@ -142,7 +142,7 @@ class TestRedirect:
 
 class TestItems:
     def test_lists_items(self, servers: Servers) -> None:
-        result = run("items", "-s", "demo", "particles", "--host", "demo1")
+        result = run("items", "-s", "demo", "particles*", "--host", "demo1")
         assert result.exit_code == 0, result.output
         assert table_rows(result.stdout) == [
             [
@@ -213,7 +213,7 @@ class TestItems:
     def test_sorted_by_item_id(self, servers: Servers) -> None:
         servers.by_url["https://demo.example.org"] = zabbix = seeded()
         zabbix.items.reverse()
-        result = run("items", "-s", "demo", "particles")
+        result = run("items", "-s", "demo", "particles*")
         assert [row[0] for row in table_rows(result.stdout)] == [
             "20001",
             "20002",
@@ -289,7 +289,7 @@ class TestDataIsNeverMarkup:
         assert row[6] == "[/x]"
 
     def test_hosts(self, awkward: Servers) -> None:
-        result = run("hosts", "-s", "demo", "host")
+        result = run("hosts", "-s", "demo", "*host*")
         assert result.exit_code == 0, result.output
         assert table_rows(result.stdout)[0][1:4] == [
             "[red]host",

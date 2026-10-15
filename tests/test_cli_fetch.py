@@ -551,7 +551,7 @@ items = [
                 *TIMES,
                 "--format",
                 "tsv",
-                input="particles\n1\nn\n",
+                input="particles*\n1\nn\n",
             )
         )
         assert "Showing the first 1 matches." in result.stderr

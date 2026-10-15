@@ -251,12 +251,14 @@ def select(
 
 
 def spec_matches(series: Series, spec: ItemSpec) -> bool:
-    """Check whether an item spec selects a series' item, as it would in Zabbix.
+    """Check whether an item spec selects a series' item, as the Zabbix API would.
 
-    Patterns match like Zabbix's filters: case-insensitively, anywhere in the text,
-    with ``*`` wildcards. The host matches the technical or visible name. A tag
-    (``name`` or ``name:value``) must be among the item's stored tags exactly.
-    Every field given must match.
+    Patterns match like the API's searches (``item.get`` and ``host.get`` with
+    ``searchWildcardsEnabled``): the whole value, ignoring case, with ``*`` matching
+    any text and every other character literal. The host matches its technical or
+    visible name. A tag (``name`` or ``name:value``) must be among the item's stored
+    tags exactly, as the API's tag filters compare them. Every field given must
+    match.
 
     Parameters
     ----------
@@ -279,8 +281,10 @@ def spec_matches(series: Series, spec: ItemSpec) -> bool:
     ...             ValueType.FLOAT)
     >>> one = Series(Server("lab", ServerConfig(url="https://z.example.org")), item,
     ...              Resolution.RAW, {"time": []})
-    >>> spec_matches(one, ItemSpec(name="0.3*particles", host="counter"))
+    >>> spec_matches(one, ItemSpec(name="0.3*PARTICLES", host="*counter*"))
     True
+    >>> spec_matches(one, ItemSpec(name="0.3"))
+    False
     """
     item = series.item
     if spec.itemid is not None:
@@ -288,12 +292,12 @@ def spec_matches(series: Series, spec: ItemSpec) -> bool:
     host = spec.host
     hosts = host.choices if isinstance(host, Choice) else [] if host is None else [host]
     if hosts and not any(
-        _contains(item.host, host) or _contains(item.host_name, host) for host in hosts
+        _like(item.host, host) or _like(item.host_name, host) for host in hosts
     ):
         return False
-    if spec.name is not None and not _contains(item.name, spec.name):
+    if spec.name is not None and not _like(item.name, spec.name):
         return False
-    if spec.key is not None and not _contains(item.key, spec.key):
+    if spec.key is not None and not _like(item.key, spec.key):
         return False
     if spec.tag is not None:
         name, colon, value = spec.tag.partition(":")
@@ -304,10 +308,15 @@ def spec_matches(series: Series, spec: ItemSpec) -> bool:
     return True
 
 
-def _contains(text: str, pattern: str) -> bool:
-    """Match like Zabbix's search: case-insensitive, anywhere, with ``*`` wildcards."""
-    regex = ".*".join(re.escape(part) for part in pattern.split("*"))
-    return re.search(regex, text, re.IGNORECASE) is not None
+def _like(text: str, pattern: str) -> bool:
+    """Match like a Zabbix API search with ``searchWildcardsEnabled``.
+
+    Zabbix (``zbx_db_search``) uppercases the pattern, escapes SQL's ``%`` and
+    ``_``, turns ``*`` into ``%`` and compares it with ``UPPER(field) LIKE``, so
+    the pattern must match the whole value, ignoring case.
+    """
+    regex = ".*".join(re.escape(part) for part in pattern.upper().split("*"))
+    return re.fullmatch(regex, text.upper(), re.DOTALL) is not None
 
 
 def matches(series: Series, pattern: str) -> bool:

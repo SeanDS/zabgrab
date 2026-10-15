@@ -23,10 +23,11 @@ so ``info`` shows what ``plot`` or ``export`` would use:
 
 ``--item SPEC`` (``-i``)
    Items selected by an :ref:`item spec <item-specs>`, just as when fetching: an
-   item ID (``12345``), a name pattern (``0.3um``), or fields such as
-   ``host=lab1,name=0.3,tag=area:lab``. Patterns match like Zabbix's filters
-   (ignoring case, anywhere in the text, with ``*`` wildcards), and a tag must be
-   one the item had when it was fetched. Repeat for several.
+   item ID (``12345``), a name pattern (``*0.3um``), or fields such as
+   ``host=lab1,name=*0.3*,tag=area:lab``. It selects exactly what the same spec
+   selects in ``zabgrab items`` and ``fetch``: patterns match the whole value,
+   ignoring case, with ``*`` matching any text, and a tag must be one the item had
+   when it was fetched. Repeat for several.
 ``--match PATTERN`` (``-m``)
    Items whose whole ID, name, key or ``host: name`` matches a pattern (with ``*``
    wildcards, ignoring case), e.g. ``--match "lab1: *0.3um"``. Repeat for several.
@@ -40,8 +41,8 @@ given.
 
 .. code-block:: bash
 
-   zabgrab info particles.h5 --item "host=lab1,name=0.3"
-   zabgrab plot particles.h5 --item "0.3um" --from "2 days ago"
+   zabgrab info particles.h5 --item "host=lab1,name=*0.3*"
+   zabgrab plot particles.h5 --item "*0.3um" --from "2 days ago"
    zabgrab export particles.h5 -o recent.csv --match "*0.5um" --from "1 week ago"
 
 If nothing matches, ``plot`` and ``export`` say so, and suggest ``zabgrab info`` to
@@ -57,7 +58,7 @@ shows a file's data in a window, or saves the figure:
 
    zabgrab plot particles.h5
    zabgrab plot particles.h5 -o particles.png        # or .pdf, .svg, ...
-   zabgrab plot particles.h5 --item 0.3um --from "2 days ago"
+   zabgrab plot particles.h5 --item "*0.3um" --from "2 days ago"
    zabgrab plot particles.h5 --log-y                 # log scales
 
 All of a file's groups are plotted as one dataset. Items with the same units share an
@@ -191,6 +192,6 @@ to extract some items or a time range:
 .. code-block:: bash
 
    zabgrab export particles.h5 -o particles.mat
-   zabgrab export particles.h5 -o recent.csv --item 0.3um --from "2 days ago"
+   zabgrab export particles.h5 -o recent.csv --item "*0.3um" --from "2 days ago"
 
 It chooses items, times and groups as described in :ref:`choosing-items`.

@@ -19,8 +19,9 @@ else:
 class ItemSpec(BaseModel):
     """Selects one item by ID, or any number of items by pattern.
 
-    Patterns may contain ``*`` wildcards and match like the filters in the Zabbix
-    web UI (case-insensitive, anywhere in the text). All given patterns must match.
+    Patterns match like the Zabbix API's searches: the whole value, ignoring case,
+    with ``*`` matching any text (so ``*CPU*`` finds ``CPU`` anywhere). All given
+    patterns must match.
 
     Attributes
     ----------

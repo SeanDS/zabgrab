@@ -55,7 +55,9 @@ class TestFindItems:
         assert find(ItemSpec(host="DEMO 2")) == [20008, 20003]
 
     def test_host_and_name(self) -> None:
-        assert find(ItemSpec(host="demo", name="0.3")) == [20001, 20003]
+        assert find(ItemSpec(host="demo*", name="*0.3*")) == [20001, 20003]
+        # As in Zabbix, patterns must match the whole value.
+        assert find(ItemSpec(host="demo", name="*0.3*"), ui=RecordingUI()) == []
 
     def test_unmatched_host_warns(self) -> None:
         ui = RecordingUI()
@@ -64,7 +66,7 @@ class TestFindItems:
 
     def test_duplicates_are_merged(self) -> None:
         ui = RecordingUI()
-        found = find(ItemSpec(itemid=20001), ItemSpec(name="Particles 0.3"), ui=ui)
+        found = find(ItemSpec(itemid=20001), ItemSpec(name="Particles 0.3*"), ui=ui)
         assert found == [20001, 20003]
         assert ui.levels("debug") == [
             "Item 20001 matched more than once; using it once."
@@ -78,7 +80,7 @@ class TestFindItems:
 
     def test_host_choice_first(self) -> None:
         spec = ItemSpec(
-            host=hosts("nope", "demo2", select=Select.FIRST), name="Particles"
+            host=hosts("nope", "demo2", select=Select.FIRST), name="Particles*"
         )
         assert find(spec) == [20003]
 

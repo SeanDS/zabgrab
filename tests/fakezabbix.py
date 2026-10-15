@@ -4,8 +4,9 @@
 in-memory data. It can be used directly through :class:`FakeTransport` (fast, no
 network) or served over HTTP with :func:`serve` to test the real transport.
 
-Search semantics mirror Zabbix: case-insensitive, matching anywhere in the value,
-with ``*`` as a wildcard when ``searchWildcardsEnabled`` is set.
+Search semantics mirror Zabbix's ``zbx_db_search``: case-insensitive; with
+``searchWildcardsEnabled``, ``*`` is a wildcard and the whole value must match,
+otherwise the text matches anywhere in the value.
 """
 
 from __future__ import annotations
@@ -320,8 +321,11 @@ class _Error(Exception):
 
 
 def _pattern(text: str, wildcards: bool) -> re.Pattern[str]:
+    # With wildcards, the whole value must match; without, Zabbix searches for the
+    # text anywhere (zbx_db_search's '%pattern%').
     parts = text.split("*") if wildcards else [text]
-    return re.compile(".*".join(re.escape(part) for part in parts), re.IGNORECASE)
+    regex = ".*".join(re.escape(part) for part in parts)
+    return re.compile(regex if wildcards else f".*{regex}.*", re.IGNORECASE | re.DOTALL)
 
 
 def _search(row: dict[str, Any], params: dict[str, Any]) -> bool:
@@ -330,7 +334,7 @@ def _search(row: dict[str, Any], params: dict[str, Any]) -> bool:
         return True
     wildcards = bool(params.get("searchWildcardsEnabled"))
     results = [
-        _pattern(value, wildcards).search(str(row.get(name, ""))) is not None
+        _pattern(value, wildcards).fullmatch(str(row.get(name, ""))) is not None
         for name, value in search.items()
     ]
     return any(results) if params.get("searchByAny") else all(results)

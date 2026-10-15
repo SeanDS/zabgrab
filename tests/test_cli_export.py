@@ -77,11 +77,14 @@ def test_filters(data: Path, tmp_path: Path) -> None:
 
 def test_item_specs(data: Path, tmp_path: Path) -> None:
     out = tmp_path / "out.tsv"
-    spec = "host=DEMO 1,name=0.3"
+    spec = "host=DEMO 1,name=*0.3*"
     ok(run("export", str(data), "-o", str(out), "--item", spec))
     metadata, _ = read(out)
     assert [item["itemid"] for item in metadata["items"]] == [20001]
-    assert metadata["export"]["filters"]["items"] == ["host=DEMO 1,name=0.3"]
+    assert metadata["export"]["filters"]["items"] == [spec]
+    # As in Zabbix, a pattern must match the whole value.
+    result = run("export", str(data), "-o", str(out), "--item", "name=0.3")
+    assert result.exit_code == EXIT_ERROR
 
 
 def test_nothing_selected(data: Path, tmp_path: Path) -> None:

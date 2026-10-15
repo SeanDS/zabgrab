@@ -297,9 +297,10 @@ Item spec syntax:
 - CLI: `--item 12345`, or `--item 'host=demo1,name=Particles *'`, or
   `--item 'key=particle.count[*]'`, or `--item 'tag=area:lab'`.
 - Config: the equivalent tables.
-- Patterns follow the Zabbix web UI filters: case-insensitive, matching anywhere
-  in the text, with `*` as a wildcard. Host patterns match the technical or visible
-  name.
+- Patterns follow the Zabbix API's wildcard search (`searchWildcardsEnabled`, see
+  `zbx_db_search`): the whole value must match, ignoring case, with `*` matching
+  any text; SQL's `%` and `_` are literal. Host patterns match the technical or
+  visible name. (Unlike the web interface's filters, which match anywhere.)
 
 Resolution rules:
 - The history type is taken from the item's `value_type`. The user never supplies it.
@@ -685,10 +686,12 @@ it shows what `plot` and `export` would use.
 ### Selecting from files
 
 `plot`, `export` and `info` select items with:
-- `--item SPEC`: an item spec, as for `fetch`, matched like Zabbix's filters
-  (case-insensitive, anywhere in the text, `*` wildcards; host by technical or
-  visible name; every given field must match). `tag` matches the tags stored with
-  each item; items in files written before tags were stored have none.
+- `--item SPEC`: an item spec, matched exactly as the Zabbix API would match it
+  (whole values, ignoring case, `*` wildcards; host by technical or visible name;
+  every given field must match; tags exactly, as the API's tag filters compare
+  them), so `info FILE --item X` selects what `items --item X` found. `tag`
+  matches the tags stored with each item; items in files written before tags were
+  stored have none.
 - `--match PATTERN`: a glob matched case-insensitively against the whole of each
   item's ID, name, key or `host: name`.
 

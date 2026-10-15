@@ -211,10 +211,13 @@ class TestHosts:
     @pytest.mark.parametrize(
         ("pattern", "expected"),
         [
-            ("demo", ["demo1", "demo2"]),
+            ("demo*", ["demo1", "demo2"]),
             ("DEMO 2", ["demo2"]),
             ("d*2", ["demo2"]),
-            ("server", ["web01"]),
+            ("*server", ["web01"]),
+            # The whole name must match, as in Zabbix.
+            ("demo", []),
+            ("server", []),
             ("nothing", []),
         ],
     )
@@ -237,7 +240,7 @@ class TestHosts:
     def test_fields(self) -> None:
         async def scenario() -> Any:
             api = await logged_in(seeded())
-            return await api.hosts(pattern="web")
+            return await api.hosts(pattern="web*")
 
         (host,) = run(scenario())
         assert host.hostid == 10003
@@ -252,13 +255,14 @@ class TestItems:
         [
             ({"itemids": [20004, 20001]}, [20001, 20004]),
             ({"hostids": [10002]}, [20008, 20003]),
-            ({"name": "particles"}, [20001, 20003, 20002]),
-            ({"name": "particles*0.5"}, [20002]),
+            ({"name": "particles*"}, [20001, 20003, 20002]),
+            ({"name": "particles*0.5*"}, [20002]),
+            ({"name": "particles"}, []),
             ({"key": "particles[*]", "hostids": [10002]}, [20003]),
             ({"key": "net.if.in[eth0,bytes]"}, [20008]),
             ({"tag": "area"}, [20008, 20001]),
             ({"tag": "area:lab"}, [20001]),
-            ({"name": "particles", "limit": 1}, [20001]),
+            ({"name": "particles*", "limit": 1}, [20001]),
             ({"itemids": []}, []),
             ({"hostids": []}, []),
         ],
@@ -298,7 +302,7 @@ class TestHttpTransport:
             async with serve(seeded()) as url, ZabbixAPI(HttpTransport(url)) as api:
                 version = await api.check_version()
                 await api.login_token(TOKEN)
-                hosts = [host.host for host in await api.hosts(pattern="demo")]
+                hosts = [host.host for host in await api.hosts(pattern="demo*")]
             return version, hosts
 
         assert run(scenario()) == ("7.0.5", ["demo1", "demo2"])

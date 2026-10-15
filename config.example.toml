@@ -34,8 +34,8 @@ max_items = 50                          # ask before fetching more items than th
 [templates.particles]
 description = "Particle counts in the labs"
 items = [
-  # Patterns work like the Zabbix web UI's filters: case-insensitive, matching
-  # anywhere in the text, with * wildcards. All given patterns must match.
+  # Patterns match the whole value, ignoring case, as in the Zabbix API; * matches
+  # any text, so "*CPU*" finds names containing "CPU". All given fields must match.
   { host = "lab*", name = "Particles *" },
   { itemid = 12345 },                   # one item, by ID
 ]
