@@ -895,8 +895,12 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   `main`, since Pages only accepts deployments from the default branch.
   Releases are prepared on a `release/X.Y.Z` branch (changelog date, last fixes),
   tagged by hand there (setuptools_scm takes the version from the tag) and merged
-  into `main` with a merge commit, so `main` contains the tag. They aren't
-  uploaded to PyPI automatically.
+  into `main` with a merge commit, so `main` contains the tag.
+- Publishing a GitHub release uploads it to PyPI (`publish.yml`), with trusted
+  publishing rather than a stored API token. The build checks its files are named
+  for the tag's version before uploading, since PyPI never takes a version twice.
+  Run by hand, the workflow uploads a development build (without the local
+  `+g...` suffix, which PyPI refuses) to TestPyPI, to try the setup out first.
 - Tests run in UK time, which their expected local times are written in. Windows
   can't change a running process's time zone, so there the system time zone must
   be UK time (CI sets it with `tzutil`), and the tests stop with an error otherwise.

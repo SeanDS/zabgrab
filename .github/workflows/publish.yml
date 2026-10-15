@@ -1,0 +1,103 @@
+name: Publish to PyPI
+
+# Uploads each release to PyPI when it's published on GitHub, built from its tag.
+#
+# PyPI trusts this workflow ("trusted publishing"), so no API token is stored: it
+# must be registered as a trusted publisher for the zabgrab project on PyPI, with
+# the environment "pypi" (see docs/developers/releasing.rst).
+#
+# Run by hand (Actions → Publish to PyPI → Run workflow), it uploads a development
+# build of the chosen branch to TestPyPI instead, to try the setup out; that needs
+# the same registration on TestPyPI, with the environment "testpypi".
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # setuptools_scm needs the history and tags to compute the version.
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - run: pip install build twine
+
+      - name: Build the release
+        if: github.event_name == 'release'
+        run: python -m build
+      # PyPI and TestPyPI refuse local versions (the "+g1234abc" commit suffix of
+      # development builds), so test builds leave it out.
+      - name: Build a development version
+        if: github.event_name != 'release'
+        env:
+          SETUPTOOLS_SCM_OVERRIDES_FOR_ZABGRAB: '{local_scheme = "no-local-version"}'
+        run: python -m build
+
+      # A release must be built exactly at its tag, or it would be uploaded under a
+      # development version. PyPI never accepts the same version twice, so this is
+      # checked before anything is uploaded.
+      - name: Check the version matches the tag
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          ls dist
+          for file in "zabgrab-$TAG.tar.gz" "zabgrab-$TAG-py3-none-any.whl"; do
+            if [ ! -f "dist/$file" ]; then
+              echo "::error::Expected dist/$file: the release isn't versioned $TAG."
+              exit 1
+            fi
+          done
+      - run: twine check --strict dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+  pypi:
+    name: Upload to PyPI
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/zabgrab/${{ github.event.release.tag_name }}/
+    permissions:
+      # Proves to PyPI that the upload comes from this workflow.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  testpypi:
+    name: Upload to TestPyPI
+    if: github.event_name != 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/zabgrab/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # Running it again on the same commit gives the same version.
+          skip-existing: true
