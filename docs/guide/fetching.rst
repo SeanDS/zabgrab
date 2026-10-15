@@ -96,9 +96,11 @@ Saving
    An automatic name in the ``output_dir`` setting (by default the current
    directory).
 
-Without ``--output``, zabgrab asks whether to save the data under an automatic name.
-When it can't ask (see :doc:`automation`), it fetches the data but doesn't save it,
-and says so.
+Without ``--output``, zabgrab asks whether to save the data under an automatic name:
+answer ``y`` to save it there, ``n`` not to save it, or ``o`` to type another path
+(a file, or a directory ending in ``/``), which works like giving it with
+``--output``. When it can't ask (see :doc:`automation`), it fetches the data but
+doesn't save it, and says so.
 
 The formats are:
 

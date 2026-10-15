@@ -840,6 +840,9 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Times: ISO 8601 is parsed exactly first (dateparser alone, with day-first order,
   reads `2026-10-01` as 10 January); everything else goes to
   dateparser, day-first.
+- Without `--output`, interactive runs ask whether to save under the automatic name:
+  `y`, `n`, or `o` to type another path, then handled as if given with `--output`
+  (keeping any format just asked for).
 - Non-interactive runs never write files unasked: without `--output`, they warn that
   the data wasn't saved. An existing explicit output file is saved alongside under a
   new name, with a warning (`--overwrite` replaces it).

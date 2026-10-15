@@ -15,6 +15,7 @@ FORMAT_FIX : str
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -191,6 +192,8 @@ def targets(
         If the user cancels.
     """
     options.check(output)
+    # The formats to use unless --format or a file extension says otherwise.
+    known: Sequence[Format] = query.formats
     if output is None:
         if options.plot:
             return []
@@ -199,16 +202,30 @@ def targets(
             return []
         formats = choose_formats(query.formats, options.format, None, ui, query.answers)
         shown = ", ".join(f"{name}{EXTENSIONS[f]}" for f in formats)
-        if not ui.confirm(f"Save the data to {shown}?", fix="", default=True):
+        answer = ui.prompt(
+            f"Save the data to {shown}? Yes, no, or to another path [y/n/o]",
+            fix="",
+            parse=_save_answer,
+            default="y",
+        )
+        if answer == "n":
             return []
+        if answer == "o":
+            # Then carry on as if the path had been given with --output, keeping
+            # any format just asked for.
+            known = formats
+            output = ui.prompt(
+                "Save to (a file, or a directory ending in /)", fix="", parse=_path
+            )
+    if output is None:
         directory, file = Path(query.output_dir).expanduser(), None
     elif output == "" or output.endswith(("/", "\\")) or Path(output).is_dir():
         directory, file = Path(output or query.output_dir).expanduser(), None
-        formats = choose_formats(query.formats, options.format, None, ui, query.answers)
+        formats = choose_formats(known, options.format, None, ui, query.answers)
     else:
         file = Path(output)
         directory = file.parent
-        formats = choose_formats(query.formats, options.format, file, ui, query.answers)
+        formats = choose_formats(known, options.format, file, ui, query.answers)
 
     if options.append and any(f not in STRUCTURED for f in formats):
         raise ZabgrabError(
@@ -228,6 +245,25 @@ def targets(
                 path = unique_path(path)
             chosen.append(Target(path, format, append=options.append))
     return chosen
+
+
+def _save_answer(text: str) -> str:
+    """Parse the answer to whether to save: ``y``, ``n`` or ``o`` (another path)."""
+    answer = text.strip().lower()
+    for choice in ("yes", "no", "other"):
+        if answer in (choice, choice[0]):
+            return choice[0]
+    raise ValueError(
+        "Answer y to save it there, n not to save it, or o to enter another path."
+    )
+
+
+def _path(text: str) -> str:
+    """Parse a path typed at a prompt, expanding ``~`` (and keeping a final ``/``)."""
+    path = os.path.expanduser(text.strip())
+    if not path:
+        raise ValueError("Enter a file name, or a directory ending in /.")
+    return path
 
 
 def choose_formats(

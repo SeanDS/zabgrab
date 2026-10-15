@@ -46,6 +46,8 @@ configuration. See the documentation at https://seands.github.io/zabgrab/.
   metadata (``zabgrab.format_version``). zabgrab and ``zabgrab_load.m`` refuse
   groups written with a newer layout, rather than misread them, and zabgrab won't
   append to their files.
+- When ``fetch`` asks whether to save the data under its automatic name, ``o``
+  lets you type another path instead.
 - New ``zabgrab info FILE`` command listing a file's items (or, with ``--groups``,
   its fetch groups), with the same selection options as ``plot`` and ``export``.
 - ``plot``, ``export`` and ``info`` select items with ``--item`` item specs, as

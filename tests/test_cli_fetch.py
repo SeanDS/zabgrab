@@ -294,6 +294,50 @@ class TestNoOutputOption:
         ok(run("fetch", "-t", "particles", "--format", "tsv", input="n\n"))
         assert list(Path().glob("*.tsv")) == []
 
+    def test_other_file(
+        self, configured: Servers, interactive: None, tmp_path: Path
+    ) -> None:
+        # The extension of the path entered sets the format, as for --output.
+        path = tmp_path / "mine.csv"
+        result = ok(run("fetch", "-t", "particles", input=f"4\no\n{path}\n"))
+        assert "[y/n/o]" in result.stderr
+        assert path.exists()
+        assert not Path(f"{NAME}.csv").exists()
+
+    def test_other_directory_in_home(
+        self,
+        configured: Servers,
+        interactive: None,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        # The format asked for first is kept, and ~ is the home directory.
+        ok(run("fetch", "-t", "particles", input="4\nother\n~/data/\n"))
+        assert (tmp_path / "data" / f"{NAME}.csv").exists()
+
+    def test_other_file_without_extension_keeps_the_format(
+        self, configured: Servers, interactive: None, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "mine"
+        result = ok(run("fetch", "-t", "particles", input=f"1\no\n{path}\n"))
+        assert result.stderr.count("Which format") == 1
+        assert path.exists()
+
+    def test_invalid_answers_are_asked_again(
+        self, configured: Servers, interactive: None
+    ) -> None:
+        result = ok(
+            run(
+                "fetch", "-t", "particles", "--format", "tsv",
+                input="maybe\no\n \nnothing\n",
+            )
+        )  # fmt: skip
+        assert "Answer y to save it there, n not to save it" in result.stderr
+        assert "Enter a file name, or a directory ending in /." in result.stderr
+        assert Path("nothing").exists()
+
 
 class TestExistingFile:
     @pytest.fixture
