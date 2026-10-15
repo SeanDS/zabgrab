@@ -44,7 +44,9 @@ Each release is prepared on its own branch, which is tagged and then merged into
 
 4. Update ``CHANGELOG.rst``: replace ``(unreleased)`` in the heading with the release
    date, e.g. ``1.2.0 (2027-03-01)`` (keeping the underline as long as the
-   heading), and check the list of changes is complete. Make any other last
+   heading), and check the list of changes is complete. The heading starts as the
+   next patch version; change it to the version being released if that's
+   different (e.g. ``1.2.0`` for new features). Make any other last
    changes for the release here too, such as documentation fixes.
 5. Commit, push the branch and open a pull request into ``main``:
 
