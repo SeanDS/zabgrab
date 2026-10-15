@@ -603,15 +603,20 @@ def _read_group(
 ) -> FetchGroup:
     """Read a fetch group back into series."""
     resolution = Resolution(metadata.get("query", {}).get("resolution", "raw"))
-    requests = {
-        (entry["server"], entry["itemid"]): tuple(entry.get("requests", ()))
-        for entry in metadata.get("items", [])
+    entries = {
+        (entry["server"], entry["itemid"]): entry for entry in metadata.get("items", [])
     }
     series = []
     for item_group in group["items"].values():
         fields = {
             field: _read(file, item_group[field], scalar=True) for field in ITEM_FIELDS
         }
+        server = Server(
+            fields["server_name"] or None, ServerConfig(url=fields["server"])
+        )
+        # Requests and tags are only in the metadata (files written before tags
+        # were stored have none).
+        entry = entries.get((server.url, int(fields["itemid"])), {})
         item = Item(
             itemid=int(fields["itemid"]),
             hostid=int(fields["hostid"]),
@@ -621,9 +626,9 @@ def _read_group(
             key=fields["key"],
             value_type=ValueType(int(fields["value_type"])),
             units=fields["units"],
-        )
-        server = Server(
-            fields["server_name"] or None, ServerConfig(url=fields["server"])
+            tags=tuple(
+                (tag["tag"], tag.get("value", "")) for tag in entry.get("tags", ())
+            ),
         )
         columns = {
             column: _column(column, _read(file, item_group[column]))
@@ -636,7 +641,7 @@ def _read_group(
                 item,
                 resolution,
                 columns,
-                requests.get((server.url, item.itemid), ()),
+                tuple(entry.get("requests", ())),
             )
         )
     return FetchGroup(

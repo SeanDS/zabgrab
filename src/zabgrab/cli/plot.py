@@ -6,10 +6,12 @@ from pathlib import Path
 
 import click
 
+from ..errors import ZabgrabError
+from ..model.item import ItemSpec
 from ..services.plotting import plot_spec
 from ..ui import plot
 from .app import AppContext, global_options, pass_app
-from .reading import read_dataset, selection_options
+from .reading import nothing_selected, read_dataset, selection_options
 
 
 @click.command("plot")
@@ -18,9 +20,11 @@ from .reading import read_dataset, selection_options
 @click.option(
     "-o",
     "--output",
+    "outputs",
+    multiple=True,
     type=click.Path(dir_okay=False, path_type=Path),
     help="Save the plot to this image file (e.g. .png, .pdf or .svg) instead of "
-    "showing it.",
+    "showing it. Repeat to save it to several files, e.g. in several formats.",
 )
 @click.option("--log-y", is_flag=True, help="Use log scales for the vertical axes.")
 @global_options
@@ -28,11 +32,12 @@ from .reading import read_dataset, selection_options
 def plot_command(
     app: AppContext,
     file: Path,
-    items: tuple[str, ...],
+    items: tuple[ItemSpec, ...],
+    match: tuple[str, ...],
     from_: str | None,
     to: str | None,
     groups: tuple[str, ...],
-    output: Path | None,
+    outputs: tuple[Path, ...],
     log_y: bool,
 ) -> None:
     """Plot the data in FILE (.mat or .h5).
@@ -49,13 +54,16 @@ def plot_command(
         file,
         verb=("plot", "plotted"),
         items=items,
+        match=match,
         from_=from_,
         to=to,
         groups=groups,
     )
+    if not dataset.series:
+        raise ZabgrabError("Nothing to plot.", hint=nothing_selected(file))
     spec = plot_spec(
         dataset.series, dataset.coverage, app.ui, title=file.name, log_y=log_y
     )
-    plot.show_or_save(spec, tz, output)
-    if output is not None:
-        app.ui.success(f"Saved the plot to {output}.")
+    plot.show_or_save(spec, tz, outputs)
+    if outputs:
+        app.ui.success(f"Saved the plot to {', '.join(map(str, outputs))}.")

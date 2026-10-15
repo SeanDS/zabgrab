@@ -111,8 +111,8 @@ def hosts_command(
 ) -> None:
     """List hosts, optionally only those whose name matches PATTERN.
 
-    Patterns are case-insensitive, match anywhere in the name, and may contain '*'
-    wildcards, like the filters in the Zabbix web UI.
+    Patterns match the whole technical or visible name, ignoring case, as in the
+    Zabbix API; '*' matches any text, so 'lab*' finds hosts starting with 'lab'.
     """
 
     async def action(client: ZabbixClient) -> Any:
@@ -167,9 +167,9 @@ def items_command(
 ) -> None:
     """List items, optionally only those whose name matches PATTERN.
 
-    Patterns are case-insensitive, match anywhere in the text, and may contain '*'
-    wildcards, like the filters in the Zabbix web UI. All of PATTERN, --host, --key
-    and --tag must match; each --item adds further items.
+    Patterns match the whole value, ignoring case, as in the Zabbix API; '*'
+    matches any text, so '*CPU*' finds names containing 'CPU'. All of PATTERN,
+    --host, --key and --tag must match; each --item adds further items.
     """
     specs = list(items)
     if pattern or host or key or tag:

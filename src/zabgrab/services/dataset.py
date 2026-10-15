@@ -8,12 +8,15 @@ timestamps resolved in favour of the later group.
 from __future__ import annotations
 
 import fnmatch
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
 from ..errors import ZabgrabError
+from ..model.choice import Choice
+from ..model.item import ItemSpec
 from ..model.series import Series
 from .ports import UI
 
@@ -174,7 +177,8 @@ def select_groups(groups: Sequence[Group], names: Sequence[str]) -> list[Group]:
 def filter_dataset(
     dataset: Dataset,
     *,
-    items: Sequence[str] = (),
+    items: Sequence[ItemSpec] = (),
+    patterns: Sequence[str] = (),
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> Dataset:
@@ -184,9 +188,11 @@ def filter_dataset(
     ----------
     dataset : Dataset
         The data.
-    items : sequence of str, optional
-        Patterns (see :func:`matches`); a series is kept if any matches. All
-        series are kept if there are none.
+    items : sequence of ItemSpec, optional
+        Item specs (``--item``; see :func:`spec_matches`).
+    patterns : sequence of str, optional
+        Glob patterns (``--match``; see :func:`matches`). A series is kept if any
+        item spec or pattern matches it, or if there are none of either.
     start, end : datetime, optional
         The time range to keep (unbounded if not given).
 
@@ -198,9 +204,7 @@ def filter_dataset(
     first = start.timestamp() if start else float("-inf")
     last = end.timestamp() if end else float("inf")
     series = []
-    for one in dataset.series:
-        if items and not any(matches(one, pattern) for pattern in items):
-            continue
+    for one in select(dataset.series, items, patterns):
         keep = [i for i, t in enumerate(one.columns["time"]) if first <= t <= last]
         columns = {
             name: [values[i] for i in keep] for name, values in one.columns.items()
@@ -216,6 +220,105 @@ def filter_dataset(
     return Dataset(series, coverage, dataset.groups, dataset.last_metadata)
 
 
+def select(
+    series: Sequence[Series], items: Sequence[ItemSpec], patterns: Sequence[str]
+) -> list[Series]:
+    """Select the series that any item spec or pattern matches.
+
+    Parameters
+    ----------
+    series : sequence of Series
+        The series.
+    items : sequence of ItemSpec
+        Item specs (see :func:`spec_matches`).
+    patterns : sequence of str
+        Glob patterns (see :func:`matches`).
+
+    Returns
+    -------
+    list of Series
+        The matching series, in order; all of them if there are no specs or
+        patterns.
+    """
+    if not items and not patterns:
+        return list(series)
+    return [
+        one
+        for one in series
+        if any(spec_matches(one, spec) for spec in items)
+        or any(matches(one, pattern) for pattern in patterns)
+    ]
+
+
+def spec_matches(series: Series, spec: ItemSpec) -> bool:
+    """Check whether an item spec selects a series' item, as the Zabbix API would.
+
+    Patterns match like the API's searches (``item.get`` and ``host.get`` with
+    ``searchWildcardsEnabled``): the whole value, ignoring case, with ``*`` matching
+    any text and every other character literal. The host matches its technical or
+    visible name. A tag (``name`` or ``name:value``) must be among the item's stored
+    tags exactly, as the API's tag filters compare them. Every field given must
+    match.
+
+    Parameters
+    ----------
+    series : Series
+        The series.
+    spec : ItemSpec
+        The item spec.
+
+    Returns
+    -------
+    bool
+        Whether it matches.
+
+    Examples
+    --------
+    >>> from zabgrab.model.config import Resolution, ServerConfig
+    >>> from zabgrab.model.server import Server
+    >>> from zabgrab.model.zabbix import Item, ValueType
+    >>> item = Item(1, 1, "pc2", "Particle counter 2", "0.3 µm particles", "p[0.3]",
+    ...             ValueType.FLOAT)
+    >>> one = Series(Server("lab", ServerConfig(url="https://z.example.org")), item,
+    ...              Resolution.RAW, {"time": []})
+    >>> spec_matches(one, ItemSpec(name="0.3*PARTICLES", host="*counter*"))
+    True
+    >>> spec_matches(one, ItemSpec(name="0.3"))
+    False
+    """
+    item = series.item
+    if spec.itemid is not None:
+        return item.itemid == spec.itemid
+    host = spec.host
+    hosts = host.choices if isinstance(host, Choice) else [] if host is None else [host]
+    if hosts and not any(
+        _like(item.host, host) or _like(item.host_name, host) for host in hosts
+    ):
+        return False
+    if spec.name is not None and not _like(item.name, spec.name):
+        return False
+    if spec.key is not None and not _like(item.key, spec.key):
+        return False
+    if spec.tag is not None:
+        name, colon, value = spec.tag.partition(":")
+        return any(
+            tag == name and (not colon or tag_value == value)
+            for tag, tag_value in item.tags
+        )
+    return True
+
+
+def _like(text: str, pattern: str) -> bool:
+    """Match like a Zabbix API search with ``searchWildcardsEnabled``.
+
+    Zabbix (``zbx_db_search``) uppercases the pattern, escapes SQL's ``%`` and
+    ``_``, turns ``*`` into ``%`` and compares it with ``UPPER(field) LIKE``, so
+    the pattern must match the whole value, ignoring case.
+    """
+    regex = ".*".join(re.escape(part) for part in pattern.upper().split("*"))
+    return re.fullmatch(regex, text.upper(), re.DOTALL) is not None
+
+
 def matches(series: Series, pattern: str) -> bool:
     """Check whether a series' item ID, name, key or ``host: name`` matches a pattern.
 
@@ -224,7 +327,8 @@ def matches(series: Series, pattern: str) -> bool:
     series : Series
         The series.
     pattern : str
-        A glob pattern (``*`` and ``?`` wildcards), matched case-insensitively.
+        A pattern in Python's :mod:`fnmatch` syntax (``*``, ``?``, ``[seq]`` and
+        ``[!seq]``), which must match the whole of one of them, ignoring case.
 
     Returns
     -------

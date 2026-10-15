@@ -125,6 +125,7 @@ def _item(url: str, item: Item) -> dict[str, Any]:
         "key": item.key,
         "units": item.units,
         "value_type": item.value_type.label,
+        "tags": [{"tag": tag, "value": value} for tag, value in item.tags],
     }
 
 

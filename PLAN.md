@@ -297,9 +297,10 @@ Item spec syntax:
 - CLI: `--item 12345`, or `--item 'host=demo1,name=Particles *'`, or
   `--item 'key=particle.count[*]'`, or `--item 'tag=area:lab'`.
 - Config: the equivalent tables.
-- Patterns follow the Zabbix web UI filters: case-insensitive, matching anywhere
-  in the text, with `*` as a wildcard. Host patterns match the technical or visible
-  name.
+- Patterns follow the Zabbix API's wildcard search (`searchWildcardsEnabled`, see
+  `zbx_db_search`): the whole value must match, ignoring case, with `*` matching
+  any text; SQL's `%` and `_` are literal. Host patterns match the technical or
+  visible name. (Unlike the web interface's filters, which match anywhere.)
 
 Resolution rules:
 - The history type is taken from the item's `value_type`. The user never supplies it.
@@ -423,6 +424,12 @@ default.
 | `--output` with no value | Automatic filename in `output_dir`. |
 | `--output DIR/` | Automatic filename in `DIR`. |
 | `--output PATH` | Exactly that path. The extension sets the format unless `--format` is given. |
+
+`--output` can be repeated to save to several files (e.g. `-o data.h5 -o data.csv`),
+each handled as above; a path given twice is written once, and a format asked for
+one output without an extension is reused for the others. `--append` then applies to
+every output, so each must be a `.h5` or `.mat` file. `export -o` and `plot -o` can
+be repeated too (`plot` draws the figure once and saves it in each format).
 
 Default pattern: `{hosts}_{template}_{from}--{to}`.
 Example: `demo1+demo2_particles_20261013T101500Z--20261014T101500Z.mat`
@@ -643,10 +650,11 @@ reading operation sees **one merged dataset** (`services/dataset.py`):
 
 ### Plotting (`pip install 'zabgrab[plot]'`)
 
-- `zabgrab plot FILE [--item PATTERN] [--from] [--to] [--group NAME]... [-o IMAGE]`
-  plots the merged dataset (the same selection options as `export`).
+- `zabgrab plot FILE [--item SPEC] [--match PATTERN] [--from] [--to] [--group NAME]...
+  [-o IMAGE]` plots the merged dataset (the same selection options as `export`
+  and `info`).
   `--from`/`--to` set the plotted window. `-o` saves an image instead of showing a
-  window, which also works without a display.
+  window, which also works without a display; repeat it to save several formats.
 - `zabgrab fetch ... --plot` plots the fetched data without saving (or asking to),
   unless `--output` is given too.
 - `--log-y` (on `plot`, and on `fetch` with `--plot`) uses log scales for the
@@ -670,9 +678,32 @@ reading operation sees **one merged dataset** (`services/dataset.py`):
 
 ### Export
 
-`zabgrab export FILE --output OUT[.csv|.tsv|.h5|.mat] [--item] [--from] [--to]` writes
-the merged dataset as a single group. Use it to flatten an often-updated file, or to
-convert it to CSV.
+`zabgrab export FILE --output OUT[.csv|.tsv|.h5|.mat] [--item] [--match] [--from]
+[--to] [--group]` writes the merged dataset as a single group. Use it to flatten an
+often-updated file, or to convert it to CSV.
+
+### Info
+
+`zabgrab info FILE` lists the merged items (ID, host, name, key, units, raw or
+hourly, points, time range); `--groups` lists the fetch groups instead (name,
+created, range, items and points selected). It takes the same selection options, so
+it shows what `plot` and `export` would use.
+
+### Selecting from files
+
+`plot`, `export` and `info` select items with:
+- `--item SPEC`: an item spec, matched exactly as the Zabbix API would match it
+  (whole values, ignoring case, `*` wildcards; host by technical or visible name;
+  every given field must match; tags exactly, as the API's tag filters compare
+  them), so `info FILE --item X` selects what `items --item X` found. `tag`
+  matches the tags stored with each item; items in files written before tags were
+  stored have none.
+- `--match PATTERN`: an `fnmatch` pattern (`*`, `?`, `[seq]`, `[!seq]`) matched
+  case-insensitively against the whole of each
+  item's ID, name, key or `host: name`.
+
+An item is used if any `--item` or `--match` selects it (or neither is given). When
+`plot` or `export` selects nothing, the hint suggests `zabgrab info FILE`.
 
 ### MATLAB helper
 
@@ -809,12 +840,17 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   runs stop at the redirect itself, so never get this far).
   `token add` follows redirects the same way when checking a token, so it's stored
   under the final URL.
-- Search patterns use Zabbix's own semantics (substring match, `*` wildcard), so
-  results match the web UI and server-side limits are exact.
+- Search patterns use Zabbix's own semantics (whole-value match ignoring case, `*`
+  wildcard), so server-side limits are exact.
 
 - Times: ISO 8601 is parsed exactly first (dateparser alone, with day-first order,
   reads `2026-10-01` as 10 January); everything else goes to
   dateparser, day-first.
+- Without `--output`, interactive runs ask whether to save under the automatic name:
+  `y`, `n`, or `o` to type another path, then handled as if given with `--output`
+  (keeping any format just asked for).
+- `--output` (and `export`/`plot`'s `-o`) can be repeated, to save several formats
+  from one fetch rather than fetching again or exporting afterwards.
 - Non-interactive runs never write files unasked: without `--output`, they warn that
   the data wasn't saved. An existing explicit output file is saved alongside under a
   new name, with a warning (`--overwrite` replaces it).
@@ -846,8 +882,10 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   the latest release's tag for the root and `main` for `/dev/` each time (a Pages
   deployment replaces the whole site). Release events re-run that workflow on
   `main`, since Pages only accepts deployments from the default branch.
-  Releases are tagged by hand (setuptools_scm takes the version from the tag) and
-  aren't uploaded to PyPI automatically.
+  Releases are prepared on a `release/X.Y.Z` branch (changelog date, last fixes),
+  tagged by hand there (setuptools_scm takes the version from the tag) and merged
+  into `main` with a merge commit, so `main` contains the tag. They aren't
+  uploaded to PyPI automatically.
 - Tests run in UK time, which their expected local times are written in. Windows
   can't change a running process's time zone, so there the system time zone must
   be UK time (CI sets it with `tzutil`), and the tests stop with an error otherwise.
@@ -878,6 +916,14 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   attribute, since files grow by appending and adding a file attribute would have
   changed the MATLAB-verified layout. Increase it for changes older readers would
   misread; additive changes don't need it.
+
+- `--item` means the same everywhere: an item spec (it used to be a whole-text glob
+  for `plot` and `export`, which silently matched nothing for specs like
+  `name=*0.3*`). That glob is now `--match`.
+- Items' Zabbix tags are stored in each item's metadata entry (`items[].tags`), so
+  `tag=` specs work on files. It's an addition older readers ignore, so
+  `FORMAT_VERSION` stays 1; tags are as of the fetch, and merged views use the
+  latest group's.
 
 ## Follow-up tasks
 

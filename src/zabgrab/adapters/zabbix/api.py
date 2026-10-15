@@ -58,8 +58,9 @@ _TAG_EXISTS = 4
 class ZabbixAPI:
     """A client for one Zabbix server.
 
-    Patterns passed to the search methods follow the Zabbix web UI's filters: they
-    are case-insensitive, match anywhere in the value, and ``*`` matches any text.
+    Patterns passed to the search methods use the API's wildcard search
+    (``searchWildcardsEnabled``): they match the whole value, ignoring case, and
+    ``*`` matches any text.
 
     Parameters
     ----------
@@ -298,6 +299,7 @@ class ZabbixAPI:
         params: dict[str, Any] = {
             "output": _ITEM_FIELDS,
             "selectHosts": ["host", "name"],
+            "selectTags": ["tag", "value"],
             "templated": False,
             "sortfield": "name",
         }
@@ -432,6 +434,7 @@ def _item(row: dict[str, Any]) -> Item:
         last_clock=datetime.fromtimestamp(clock, UTC) if clock else None,
         history=parse_period(row.get("history", "")),
         trends=parse_period(row.get("trends", "")),
+        tags=tuple((tag["tag"], tag.get("value", "")) for tag in row.get("tags", [])),
     )
 
 

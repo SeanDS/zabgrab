@@ -179,7 +179,7 @@ async def pick_items(
         raise InputRequired("Which items?", fix=ITEMS_FIX)
     while True:
         pattern = ui.prompt(
-            "Search for items by name (* matches anything)",
+            "Search for items by name (the whole name; * matches anything)",
             fix=ITEMS_FIX,
             parse=_non_empty,
         )

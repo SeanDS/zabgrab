@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import tzinfo
 from pathlib import Path
@@ -26,14 +27,14 @@ LATE = ("--from", "2025-10-09T08:01:30Z", "--to", "now")
 class Shown:
     """Plots shown or saved, instead of drawing them."""
 
-    calls: list[tuple[PlotSpec, tzinfo | None, Path | None]] = field(
+    calls: list[tuple[PlotSpec, tzinfo | None, Sequence[Path]]] = field(
         default_factory=list
     )
 
     def __call__(
-        self, spec: PlotSpec, tz: tzinfo | None, output: Path | None = None
+        self, spec: PlotSpec, tz: tzinfo | None, outputs: Sequence[Path] = ()
     ) -> None:
-        self.calls.append((spec, tz, output))
+        self.calls.append((spec, tz, outputs))
 
     @property
     def spec(self) -> PlotSpec:
@@ -75,6 +76,14 @@ class TestPlot:
         assert f"Saved the plot to {image}." in result.stderr
         assert image.read_bytes().startswith(b"\x89PNG")
 
+    def test_saves_several_images(self, zabbix: FakeZabbix, tmp_path: Path) -> None:
+        data, png, svg = (tmp_path / name for name in ("data.h5", "a.png", "b.svg"))
+        ok(run("fetch", "-t", "particles", "-o", str(data)))
+        result = ok(run("plot", str(data), "-o", str(png), "-o", str(svg)))
+        assert f"Saved the plot to {png}, {svg}." in result.stderr
+        assert png.read_bytes().startswith(b"\x89PNG")
+        assert b"<svg" in svg.read_bytes()
+
     def test_shows_by_default(
         self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown
     ) -> None:
@@ -82,9 +91,9 @@ class TestPlot:
         ok(run("fetch", "-t", "particles", "-o", str(data)))
         result = ok(run("plot", str(data)))
         assert "Saved" not in result.stderr
-        ((spec, tz, output),) = shown.calls
+        ((spec, tz, outputs),) = shown.calls
         assert spec.title == "data.h5"
-        assert (tz, output) == (None, None)
+        assert (tz, outputs) == (None, ())
 
     def test_log_scale(self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown) -> None:
         data = tmp_path / "data.h5"
@@ -130,6 +139,7 @@ class TestPlot:
         result = run("plot", str(data), "-i", "nope")
         assert result.exit_code == EXIT_ERROR
         assert "Nothing to plot." in result.stderr
+        assert f"`zabgrab info {data}` shows what the file holds" in result.stderr
 
     def test_text_items(self, zabbix: FakeZabbix, tmp_path: Path) -> None:
         data = tmp_path / "data.h5"

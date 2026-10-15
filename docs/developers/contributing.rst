@@ -33,6 +33,9 @@ macOS and Windows:
 The tests need 100% coverage (branches included) to pass. Use ``# pragma: no cover``
 only for lines that genuinely can't be tested.
 
+CI's last job, *CI passed*, passes only if every other job did; it's the one check
+``main``'s branch rules require.
+
 The tests run in UK time, which their expected local times are written in. On Linux
 and macOS they set it themselves; Windows can't change a running process's time
 zone, so there the system time zone must be UK time (``tzutil /s "GMT Standard

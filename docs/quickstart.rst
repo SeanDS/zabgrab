@@ -56,14 +56,15 @@ Items are the things Zabbix measures, each on a host. Search for them by name:
 
 .. code-block:: console
 
-   $ zabgrab items "particles" --host lab
+   $ zabgrab items "particles*" --host "lab*"
     Item ID   Host   Name                Key               Type    Units   Last value   Age
       41207   lab1   Particles 0.3um     particles[0.3]    float   #/m3    1234.5        25s
       41208   lab1   Particles 0.5um     particles[0.5]    float   #/m3    201.0         25s
       41377   lab2   Particles 0.3um     particles[0.3]    float   #/m3    988.1         31s
 
-Searches work like the filters in the Zabbix web interface: they ignore case, match
-anywhere in the text, and ``*`` matches anything. See :doc:`guide/finding` for more.
+Searches ignore case and must match the whole name, with ``*`` matching anything,
+so ``particles*`` finds every name starting with "particles". See
+:doc:`guide/finding` for more.
 
 4. Fetch the data
 -----------------

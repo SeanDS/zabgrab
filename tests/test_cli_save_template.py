@@ -207,7 +207,7 @@ class TestSaveTemplate:
         ok(
             run(
                 "fetch", "-s", "demo", *TIMES, "--dry-run",
-                "--save-template", "some", input="particles\n1,3\n",
+                "--save-template", "some", input="particles*\n1,3\n",
             )
         )  # fmt: skip
         assert saved(user_config, "some")["items"] == [

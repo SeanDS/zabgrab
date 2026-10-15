@@ -42,6 +42,18 @@ def test_merged_csv(data: Path, tmp_path: Path) -> None:
     ]
 
 
+def test_several_outputs(data: Path, tmp_path: Path) -> None:
+    h5, csv_ = tmp_path / "out.h5", tmp_path / "out.csv"
+    outputs = ("-o", str(h5), "-o", str(csv_), "-o", str(h5))
+    result = ok(run("export", str(data), *outputs))
+    # The repeated output is written once.
+    assert f"of {data} to {h5}, {csv_}." in result.stderr
+    assert "already exists" not in result.stderr
+    (group,) = read_fetches(h5)
+    assert [s.points for s in group.series] == [3, 1, 2, 1]
+    assert read(csv_)[0]["export"]["groups"] == ["fetch_0001", "fetch_0002", "logs"]
+
+
 @pytest.mark.parametrize("suffix", [".h5", ".mat"])
 def test_single_group(data: Path, tmp_path: Path, suffix: str) -> None:
     out = tmp_path / f"out{suffix}"
@@ -60,7 +72,7 @@ def test_filters(data: Path, tmp_path: Path) -> None:
             str(data),
             "-o",
             str(out),
-            "--item",
+            "--match",
             "*0.3um",
             "--from",
             "2025-10-09T08:00:30Z",
@@ -71,7 +83,27 @@ def test_filters(data: Path, tmp_path: Path) -> None:
     metadata, rows = read(out)
     assert [item["itemid"] for item in metadata["items"]] == [20001]
     assert rows[1:] == [["2025-10-09T09:01:00.250000+01:00", "2.5"]]
-    assert metadata["export"]["filters"]["items"] == ["*0.3um"]
+    assert metadata["export"]["filters"]["match"] == ["*0.3um"]
+    assert metadata["export"]["filters"]["items"] == []
+
+
+def test_item_specs(data: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out.tsv"
+    spec = "host=DEMO 1,name=*0.3*"
+    ok(run("export", str(data), "-o", str(out), "--item", spec))
+    metadata, _ = read(out)
+    assert [item["itemid"] for item in metadata["items"]] == [20001]
+    assert metadata["export"]["filters"]["items"] == [spec]
+    # As in Zabbix, a pattern must match the whole value.
+    result = run("export", str(data), "-o", str(out), "--item", "name=0.3")
+    assert result.exit_code == EXIT_ERROR
+
+
+def test_nothing_selected(data: Path, tmp_path: Path) -> None:
+    result = run("export", str(data), "-o", str(tmp_path / "x.h5"), "-i", "nope")
+    assert result.exit_code == EXIT_ERROR
+    assert "Nothing to export." in result.stderr
+    assert f"`zabgrab info {data}` shows what the file holds" in result.stderr
 
 
 def test_groups(data: Path, tmp_path: Path) -> None:

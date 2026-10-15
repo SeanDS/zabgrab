@@ -9,12 +9,16 @@ space). Before fetching data, find the items you want with ``zabgrab hosts`` and
 Patterns
 --------
 
-Every search pattern works like the filters in the Zabbix web interface:
+Search patterns work like the Zabbix API's searches:
 
-- it ignores case: ``cpu`` finds ``CPU load``;
-- it matches anywhere in the text: ``load`` finds ``CPU load average``;
+- they ignore case: ``cpu load`` finds ``CPU load``;
+- they match the whole text: ``load`` doesn't find ``CPU load``, but ``*load``
+  does;
 - ``*`` matches any text: ``Particles *um`` finds ``Particles 0.3um`` and
-  ``Particles 5um``.
+  ``Particles 5um``, and ``*load*`` finds anything containing ``load``.
+
+This differs from the filters in the Zabbix web interface, which match anywhere in
+the text: add ``*`` at either end to do the same.
 
 Host patterns match either a host's technical name (``lab1``) or its visible
 name (``Lab 1``).
@@ -25,7 +29,7 @@ Hosts
 .. code-block:: bash
 
    zabgrab hosts                     # every host you can see
-   zabgrab hosts lab                 # hosts whose name contains "lab"
+   zabgrab hosts "lab*"              # hosts whose name starts with "lab"
    zabgrab hosts --group "Lab*"      # hosts in host groups matching "Lab*"
 
 The table shows each host's ID, technical and visible names, groups, and whether
@@ -40,7 +44,7 @@ Items
    zabgrab items --host lab1                       # every item on a host
    zabgrab items --key "net.if.in[*]"              # by item key
    zabgrab items --tag area:lab                    # by tag ("name" or "name:value")
-   zabgrab items temperature --host "rack*" --tag location:basement
+   zabgrab items "*temperature*" --host "rack*" --tag location:basement
 
 A name pattern and the ``--host``, ``--key`` and ``--tag`` options can be combined:
 items must match all of them. The table shows each item's ID, host, name, key, value

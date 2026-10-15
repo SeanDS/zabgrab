@@ -196,6 +196,30 @@ class TestSaving:
         assert Path(f"{NAME}.tsv").exists()
         assert Path(f"{NAME}.csv").exists()
 
+    def test_several_outputs(self, configured: Servers, tmp_path: Path) -> None:
+        h5, csv_ = tmp_path / "data.h5", tmp_path / "data.csv"
+        result = ok(run("fetch", "-t", "particles", "-o", str(h5), "-o", str(csv_)))
+        assert f"saved to {h5} (group fetch_0001), {csv_}." in result.stderr
+        assert [s.item.itemid for s in read_fetches(h5)[0].series] == [20001, 20002]
+        assert read(csv_)[1][1][1] == "1.5"
+
+    def test_same_output_saved_once(self, configured: Servers) -> None:
+        result = ok(run("fetch", "-t", "particles", "-o", "-o", "--format", "tsv"))
+        assert result.stderr.count(f"{NAME}.tsv") == 1
+        assert not Path(f"{NAME}-2.tsv").exists()
+
+    def test_format_asked_once_for_several_outputs(
+        self, configured: Servers, interactive: None, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "mine"
+        args = ("-o", "-o", f"{tmp_path}/", "-o", str(path), "-o", "x.csv")
+        result = ok(run("fetch", "-t", "particles", *args, input="4\n"))
+        assert result.stderr.count("Which format") == 1
+        assert Path(f"{NAME}.csv").exists()
+        assert (tmp_path / f"{NAME}.csv").exists()
+        assert "," in path.read_text(encoding="utf-8").splitlines()[-1]
+        assert Path("x.csv").exists()
+
     def test_custom_items_and_name(self, configured: Servers) -> None:
         ok(run("fetch", "-s", "demo", "-i", "20004", *TIMES, "-o", "--format", "tsv"))
         assert list(Path().glob("demo1___custom_*.tsv"))
@@ -293,6 +317,50 @@ class TestNoOutputOption:
     def test_interactive_decline(self, configured: Servers, interactive: None) -> None:
         ok(run("fetch", "-t", "particles", "--format", "tsv", input="n\n"))
         assert list(Path().glob("*.tsv")) == []
+
+    def test_other_file(
+        self, configured: Servers, interactive: None, tmp_path: Path
+    ) -> None:
+        # The extension of the path entered sets the format, as for --output.
+        path = tmp_path / "mine.csv"
+        result = ok(run("fetch", "-t", "particles", input=f"4\no\n{path}\n"))
+        assert "[y/n/o]" in result.stderr
+        assert path.exists()
+        assert not Path(f"{NAME}.csv").exists()
+
+    def test_other_directory_in_home(
+        self,
+        configured: Servers,
+        interactive: None,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        # The format asked for first is kept, and ~ is the home directory.
+        ok(run("fetch", "-t", "particles", input="4\nother\n~/data/\n"))
+        assert (tmp_path / "data" / f"{NAME}.csv").exists()
+
+    def test_other_file_without_extension_keeps_the_format(
+        self, configured: Servers, interactive: None, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "mine"
+        result = ok(run("fetch", "-t", "particles", input=f"1\no\n{path}\n"))
+        assert result.stderr.count("Which format") == 1
+        assert path.exists()
+
+    def test_invalid_answers_are_asked_again(
+        self, configured: Servers, interactive: None
+    ) -> None:
+        result = ok(
+            run(
+                "fetch", "-t", "particles", "--format", "tsv",
+                input="maybe\no\n \nnothing\n",
+            )
+        )  # fmt: skip
+        assert "Answer y to save it there, n not to save it" in result.stderr
+        assert "Enter a file name, or a directory ending in /." in result.stderr
+        assert Path("nothing").exists()
 
 
 class TestExistingFile:
@@ -551,7 +619,7 @@ items = [
                 *TIMES,
                 "--format",
                 "tsv",
-                input="particles\n1\nn\n",
+                input="particles*\n1\nn\n",
             )
         )
         assert "Showing the first 1 matches." in result.stderr
@@ -575,6 +643,14 @@ class TestStructured:
         assert [s.item.itemid for s in groups[1].series] == [20005, 20006]
         assert groups[0].metadata["query"]["templates"] == ["particles"]
         assert groups[0].t_to == groups[0].t_from + 7200
+
+    def test_append_to_several(self, configured: Servers, tmp_path: Path) -> None:
+        paths = [tmp_path / "data.h5", tmp_path / "data.mat"]
+        outputs = [arg for path in paths for arg in ("-o", str(path))]
+        ok(run("fetch", "-t", "particles", *outputs))
+        ok(run("fetch", "-t", "logs", *outputs, "--append", "--group", "logs"))
+        for path in paths:
+            assert [g.name for g in read_fetches(path)] == ["fetch_0001", "logs"]
 
     def test_trend_end_is_the_last_complete_hour(
         self, configured: Servers, tmp_path: Path
@@ -625,6 +701,14 @@ class TestStructured:
             ),
             (["--append"], "--append, --group and --in-place need --output"),
             (["-o", "--append"], "--append, --group and --in-place need --output"),
+            (
+                ["-o", "x.h5", "-o", "--append"],
+                "--append, --group and --in-place need --output",
+            ),
+            (
+                ["-o", "x.h5", "-o", "x.csv", "--append"],
+                "Only .mat and .h5 files can be appended to.",
+            ),
             (["-o", "x.h5", "--append", "--overwrite"], "can't be used together"),
             (["-o", "x.h5", "--group", "g"], "only apply with --append"),
         ],
@@ -740,3 +824,14 @@ def test_append_with_configured_delimited_format(
     result = run("fetch", "-t", "particles", "-o", str(tmp_path / "data"), "--append")
     assert result.exit_code == EXIT_ERROR
     assert "Only .mat and .h5 files can be appended to." in result.stderr
+
+
+@pytest.mark.parametrize("suffix", [".h5", ".mat"])
+def test_tags_are_stored(configured: Servers, tmp_path: Path, suffix: str) -> None:
+    path = tmp_path / f"data{suffix}"
+    ok(run("fetch", "-t", "particles", "-o", str(path)))
+    (group,) = read_fetches(path)
+    tags = {series.item.itemid: series.item.tags for series in group.series}
+    assert tags == {20001: (("area", "lab"),), 20002: ()}
+    entry = group.metadata["items"][0]
+    assert entry["tags"] == [{"tag": "area", "value": "lab"}]

@@ -9,11 +9,19 @@ import pytest
 
 from zabgrab.adapters.formats.hdf5 import FetchGroup
 from zabgrab.errors import ZabgrabError
+from zabgrab.model.choice import Choice
 from zabgrab.model.config import Resolution, ServerConfig
+from zabgrab.model.item import ItemSpec
 from zabgrab.model.series import Series
 from zabgrab.model.server import Server
 from zabgrab.model.zabbix import Item, ValueType
-from zabgrab.services.dataset import filter_dataset, matches, merge, select_groups
+from zabgrab.services.dataset import (
+    filter_dataset,
+    matches,
+    merge,
+    select_groups,
+    spec_matches,
+)
 
 from .fakes import RecordingUI
 
@@ -127,8 +135,15 @@ class TestFilter:
                 series([0], [1.0], it=item(2, name="Other")),
             )
         ]
-        dataset = filter_dataset(merge(groups, RecordingUI()), items=["oth*"])
-        assert [s.item.itemid for s in dataset.series] == [2]
+        merged = merge(groups, RecordingUI())
+        by_pattern = filter_dataset(merged, patterns=["oth*"])
+        assert [s.item.itemid for s in by_pattern.series] == [2]
+        by_spec = filter_dataset(merged, items=[ItemSpec(name="*HER")])
+        assert [s.item.itemid for s in by_spec.series] == [2]
+        # Either selects; nothing given keeps everything.
+        both = filter_dataset(merged, items=[ItemSpec(itemid=2)], patterns=["1"])
+        assert [s.item.itemid for s in both.series] == [1, 2]
+        assert len(filter_dataset(merged).series) == 2
 
     @pytest.mark.parametrize(
         ("pattern", "expected"),
@@ -137,6 +152,10 @@ class TestFilter:
             ("particles", True),
             ("PART*", True),
             ("p[[]0.3]", True),
+            ("particle?", True),
+            ("p[a-z]rticles", True),
+            ("p[!a]rticles", False),
+            ("demo1: particles?", False),
             ("demo1: *", True),
             ("demo1", False),
             ("2", False),
@@ -144,3 +163,50 @@ class TestFilter:
     )
     def test_matches(self, pattern: str, expected: bool) -> None:
         assert matches(series([], []), pattern) is expected
+
+
+TAGGED = Item(
+    7,
+    1,
+    "pc2",
+    "Particle counter 2",
+    "0.3 µm particles",
+    "particles[0.3]",
+    ValueType.FLOAT,
+    tags=(("area", "lab"), ("component", "air"), ("component", "counter")),
+)
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        (ItemSpec(itemid=7), True),
+        (ItemSpec(itemid=8), False),
+        # Patterns match the whole value, ignoring case, as in Zabbix.
+        (ItemSpec(name="*0.3*"), True),
+        (ItemSpec(name="0.3*PARTICLES"), True),
+        (ItemSpec(name="0.3 µm particles"), True),
+        (ItemSpec(name="0.3"), False),
+        (ItemSpec(name="*0.5*"), False),
+        # SQL's wildcards are literal in Zabbix's searches.
+        (ItemSpec(name="0.3_µm%"), False),
+        (ItemSpec(host="pc2"), True),
+        (ItemSpec(host="pc"), False),
+        (ItemSpec(host="*counter 2"), True),
+        (ItemSpec(host="particle COUNTER 2"), True),
+        (ItemSpec(host="*counter 3"), False),
+        (ItemSpec(host=Choice(choices=["nope", "pc*"])), True),
+        (ItemSpec(key="particles[*]"), True),
+        (ItemSpec(key="other"), False),
+        (ItemSpec(tag="component"), True),
+        (ItemSpec(tag="component:counter"), True),
+        (ItemSpec(tag="component:count"), False),
+        (ItemSpec(tag="missing"), False),
+        (ItemSpec(host="pc*", name="0.3*", tag="area:lab"), True),
+        (ItemSpec(host="pc*", name="0.5*", tag="area:lab"), False),
+        (ItemSpec(host="nope", name="0.3*"), False),
+        (ItemSpec(tag="AREA:lab"), False),
+    ],
+)
+def test_spec_matches(spec: ItemSpec, expected: bool) -> None:
+    assert spec_matches(series([], [], it=TAGGED), spec) is expected
