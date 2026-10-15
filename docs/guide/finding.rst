@@ -25,7 +25,7 @@ Hosts
 .. code-block:: bash
 
    zabgrab hosts                     # every host you can see
-   zabgrab hosts clean               # hosts whose name contains "clean"
+   zabgrab hosts lab                 # hosts whose name contains "lab"
    zabgrab hosts --group "Lab*"      # hosts in host groups matching "Lab*"
 
 The table shows each host's ID, technical and visible names, groups, and whether
