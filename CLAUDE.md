@@ -1,9 +1,9 @@
 # zabgrab
 
-A command line tool for fetching data from Zabbix, being rewritten as 1.0.0 in
-phases. [PLAN.md](PLAN.md) holds the design, the phases and the decisions log: read
-it before starting work, and keep it in sync when the design changes. Development
-happens on the `rewrite` branch (or branches merged into it).
+A command line tool for fetching data from Zabbix, rewritten for 1.0.0 in phases.
+[PLAN.md](PLAN.md) holds the design, the phases and the decisions log: read it before
+starting work, and keep it in sync when the design changes. Development happens in
+feature branches, merged into `main` through pull requests.
 
 ## Setup and checks
 
@@ -27,9 +27,10 @@ Run all of these before committing:
 and, when the docs change, `.venv/bin/sphinx-build --fail-on-warning -b html docs
 docs/_build/html`.
 
-CI (`.github/workflows/ci.yml`) runs the same checks on Linux (Python 3.11 to 3.14),
-macOS and Windows, fails below 100% coverage, and builds the docs.
-`.github/workflows/docs.yml` publishes the docs to GitHub Pages for each release.
+CI (`.github/workflows/ci.yml`) runs the same checks on every push, on Linux (Python
+3.11 to 3.14), macOS and Windows, fails below 100% coverage, and builds the docs.
+`.github/workflows/docs.yml` publishes the latest release's docs to GitHub Pages at
+the root, and `main`'s at `/dev/`.
 
 ## Working conventions
 

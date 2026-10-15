@@ -6,7 +6,7 @@ zabgrab's version comes from git tags, through `setuptools_scm
 Building at the commit tagged ``1.2.0`` gives version ``1.2.0``, and builds between
 releases get development versions such as ``1.2.1.dev3+g1234abc``.
 
-Publishing a release on GitHub also publishes the documentation to GitHub Pages
+Publishing a release on GitHub also publishes its documentation to GitHub Pages
 (the ``Publish documentation`` workflow).
 
 Version numbers
@@ -65,14 +65,26 @@ Use an annotated tag (``-a``), so the tag records who made it and when.
 Publishing the release starts the ``Publish documentation`` workflow, which builds
 the documentation for the tagged version and deploys it to
 https://seands.github.io/zabgrab/. Check it ran under the repository's *Actions*
-tab.
+tab (the release's own run only starts another on ``main``, which does the work).
 
-.. note::
+The documentation site
+----------------------
 
-   The first time, GitHub Pages has to be enabled: in the repository's *Settings* →
-   *Pages*, set *Source* to *GitHub Actions*. The workflow can also be run by hand
-   (*Actions* → *Publish documentation* → *Run workflow*), e.g. to republish the
-   documentation after fixing it.
+GitHub Pages serves two versions of the documentation:
+
+https://seands.github.io/zabgrab/
+   The latest release, built from its tag. Until the first release, this redirects
+   to the development documentation.
+https://seands.github.io/zabgrab/dev/
+   The development version, built from ``main`` after every push, with a banner
+   saying it's unreleased. Use it to check documentation changes before releasing
+   them.
+
+Each deployment replaces the whole site, so the ``Publish documentation`` workflow
+always builds both. It runs on pushes to ``main``, when a release is published, and
+by hand (*Actions* → *Publish documentation* → *Run workflow*), e.g. to republish
+the site after a failed run. Pages must be set to deploy from GitHub Actions (the
+repository's *Settings* → *Pages* → *Source*).
 
 Publishing to PyPI
 ------------------

@@ -1,8 +1,9 @@
 name: CI
 
+# Every push to this repository's branches runs CI. Pull requests run it too, but
+# only from forks: a branch here has already run it on push.
 on:
   push:
-    branches: [main, rewrite]
   pull_request:
   workflow_dispatch:
 
@@ -16,6 +17,8 @@ concurrency:
 jobs:
   lint:
     name: Lint and type check
+    # Pull requests from this repository's branches already ran CI on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -34,6 +37,8 @@ jobs:
 
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
+    # Pull requests from this repository's branches already ran CI on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -78,6 +83,8 @@ jobs:
 
   docs:
     name: Build the documentation
+    # Pull requests from this repository's branches already ran CI on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -98,6 +105,8 @@ jobs:
 
   smoke:
     name: Build and smoke test
+    # Pull requests from this repository's branches already ran CI on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

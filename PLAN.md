@@ -746,7 +746,8 @@ alongside the MATLAB check files.
   to finding items, fetching, templates, updating files, analysing the data
   (plotting, MATLAB and Python loading, file layouts) and running unattended, a
   light configuration page, and a command reference generated from the click
-  commands (sphinx-click). It's published to GitHub Pages for each release.
+  commands (sphinx-click). GitHub Pages serves the latest release's documentation at
+  the root and `main`'s at `/dev/` (with a banner saying it's unreleased).
 - **Developer documentation** in the same site: contributing (setup, checks, code
   layout, conventions), making a release (tagging, GitHub release, PyPI), and an
   API reference generated from the docstrings.
@@ -839,8 +840,12 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   later), since raw values have sub-second times.
 - Items in a group are named `item_<id>`, with `_2`, `_3`, ... when items on
   different servers share an ID; readers use the stored server and ID, not the names.
-- CI moved from GitLab to GitHub Actions. It also builds the documentation; a
-  separate workflow publishes it to GitHub Pages when a release is published.
+- CI moved from GitLab to GitHub Actions, running on every push and on pull
+  requests from forks. It also builds the documentation; a separate workflow
+  publishes it to GitHub Pages on every push to `main` and every release, building
+  the latest release's tag for the root and `main` for `/dev/` each time (a Pages
+  deployment replaces the whole site). Release events re-run that workflow on
+  `main`, since Pages only accepts deployments from the default branch.
   Releases are tagged by hand (setuptools_scm takes the version from the tag) and
   aren't uploaded to PyPI automatically.
 - Tests run in UK time, which their expected local times are written in. Windows

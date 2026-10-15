@@ -1,0 +1,16 @@
+{#- Alabaster's layout, plus a banner on the development docs. -#}
+{% extends "!layout.html" %}
+{%- block document %}
+  {%- if development %}
+  <div class="admonition warning">
+    <p class="admonition-title">Development version</p>
+    <p>
+      This documents zabgrab's unreleased development version (<code>main</code>),
+      which may differ from the latest release.
+      <a href="{{ pathto('', 1) }}../">See the documentation for the
+      latest release.</a>
+    </p>
+  </div>
+  {%- endif %}
+  {{ super() }}
+{%- endblock %}

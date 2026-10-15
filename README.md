@@ -3,7 +3,8 @@
 zabgrab is a command line tool that fetches data from [Zabbix](https://www.zabbix.com/)
 servers into files you can analyse: MATLAB (`.mat`), HDF5 (`.h5`), TSV and CSV.
 
-**Documentation: https://seands.github.io/zabgrab/**
+**Documentation: https://seands.github.io/zabgrab/** (development version:
+https://seands.github.io/zabgrab/dev/)
 
 ## Installation
 
