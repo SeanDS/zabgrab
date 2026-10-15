@@ -1,9 +1,9 @@
 # zabgrab
 
-A command line tool for fetching data from Zabbix, being rewritten as 1.0.0 in
-phases. [PLAN.md](PLAN.md) holds the design, the phases and the decisions log: read
-it before starting work, and keep it in sync when the design changes. Development
-happens on the `rewrite` branch (or branches merged into it).
+A command line tool for fetching data from Zabbix, rewritten for 1.0.0 in phases.
+[PLAN.md](PLAN.md) holds the design, the phases and the decisions log: read it before
+starting work, and keep it in sync when the design changes. Development happens in
+feature branches, merged into `main` through pull requests.
 
 ## Setup and checks
 
