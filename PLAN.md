@@ -806,7 +806,7 @@ alongside the MATLAB check files.
 | 4 ✅ | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
 | 5 ✅ | `--save-template` (tomlkit), "Next time" hint | Round-trip tests pass |
 | 6 ✅ | `plot` extra (merged view, coverage gaps, text-item errors) | Plots from live fetch and from multi-group files |
-| 7 | Sphinx documentation (published to GitHub Pages on release), short README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
+| 7 ✅ | Sphinx documentation (published to GitHub Pages on release), short README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
 
 Each phase includes its tests and docstrings. The old code is deleted in phase 1.
 
