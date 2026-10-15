@@ -38,7 +38,6 @@ intersphinx_mapping = {
 }
 
 html_theme = "alabaster"
-html_static_path = ["_static"]
 html_title = f"zabgrab {release}"
 html_theme_options = {
     "description": "Fetch data from Zabbix into MATLAB, HDF5 and CSV files.",
