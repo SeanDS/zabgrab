@@ -37,7 +37,7 @@ Items
 .. code-block:: bash
 
    zabgrab items "Particles *"                     # by item name
-   zabgrab items --host lab1                 # every item on a host
+   zabgrab items --host lab1                       # every item on a host
    zabgrab items --key "net.if.in[*]"              # by item key
    zabgrab items --tag area:lab                    # by tag ("name" or "name:value")
    zabgrab items temperature --host "rack*" --tag location:basement
@@ -52,7 +52,7 @@ as in the table header, in any case:
 .. code-block:: bash
 
    zabgrab items --host lab1 --sort "last value"
-   zabgrab items --host lab1 --sort age          # most recently updated first
+   zabgrab items --host lab1 --sort age    # most recently updated first
 
 Searches return at most 500 results per server; ``--limit`` changes this. zabgrab
 says when the limit cut the results short.
