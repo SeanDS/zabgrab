@@ -295,7 +295,7 @@ def _follow_redirect(
         try:
             update_url(server.name, redirect.target)
         except ZabgrabError as err:
-            ui.warning(f"{err.message} {err.hint or ''}".strip())
+            _warn(err, ui)
         else:
             ui.success(f"Updated server {server.name!r} in your config.")
     return followed
@@ -358,7 +358,7 @@ async def _token_login(
         try:
             secrets.set_token(server.url, token)
         except ZabgrabError as err:
-            ui.warning(f"{err.message} {err.hint or ''}".strip())
+            _warn(err, ui)
         else:
             ui.success("Token saved.")
 
@@ -367,13 +367,7 @@ def _move_token(
     token: str, old_url: str, server: Server, ui: UI, secrets: SecretStore
 ) -> None:
     """Offer to move a token stored under a server's old (redirected) URL."""
-    if not ui.interactive:
-        ui.warning(
-            f"The token for {server.display} is stored for {old_url}, which "
-            f"redirects to {server.url}. Run zabgrab interactively to move it, or "
-            f"store it again with `zabgrab token add {server.name or server.url}`."
-        )
-        return
+    # Only reached interactively: redirects stop non-interactive runs before this.
     if not ui.confirm(
         f"The token in your keyring is stored for {old_url}. Move it to {server.url}?",
         fix="",
@@ -384,7 +378,7 @@ def _move_token(
         secrets.set_token(server.url, token)
         secrets.delete_token(old_url)
     except ZabgrabError as err:
-        ui.warning(f"{err.message} {err.hint or ''}".strip())
+        _warn(err, ui)
     else:
         ui.success(f"Moved the token to {server.url}.")
 
@@ -411,3 +405,8 @@ async def _password_login(client: ZabbixClient, server: Server, ui: UI) -> None:
             return
         except AuthenticationFailed:
             ui.error("Incorrect username or password; try again.")
+
+
+def _warn(err: ZabgrabError, ui: UI) -> None:
+    """Show an error that doesn't stop the login as a warning, with its hint."""
+    ui.warning(f"{err.message} {err.hint or ''}".strip())

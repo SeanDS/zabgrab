@@ -1,4 +1,4 @@
-"""Turning command line options, templates and config into a :class:`Query`.
+"""Turning command line options, a template and config into a :class:`Query`.
 
 Attributes
 ----------
@@ -8,7 +8,7 @@ DefaultsSource : type
     Gets where a ``[defaults]`` key's value came from (a file path or
     ``built-in``).
 SETTINGS : tuple of str
-    Settings resolved from the command line, templates and ``[defaults]``, in the
+    Settings resolved from the command line, the template and ``[defaults]``, in the
     order they're resolved (the timezone is needed to compare and parse times).
 DATA_SETTINGS : frozenset of str
     Settings that change which data is fetched (used to mark a query as custom).
@@ -462,17 +462,12 @@ def _server(
         sources["server"] = f"template {template[0]!r}"
         return configured, False
     sources["server"] = f"command line ({flag('server')})"
-    if configured is None:
+    if template is None or configured is None or cli.server == configured:
         return cli.server, False
     if isinstance(configured, Choice) and cli.server in configured.choices:
         return cli.server, False
-    if configured != cli.server:
-        assert template is not None
-        ui.info(
-            f"--server {cli.server} overrides the server of template {template[0]!r}."
-        )
-        return cli.server, True
-    return cli.server, False
+    ui.info(f"--server {cli.server} overrides the server of template {template[0]!r}.")
+    return cli.server, True
 
 
 def _requests(

@@ -21,7 +21,7 @@ from ..errors import Cancelled, InputRequired
 from ..model.answers import Answers
 from ..model.choice import Choice
 from ..model.item import ItemSpec
-from ..model.query import Query, Request
+from ..model.query import CUSTOM, Query, Request
 from ..model.server import Server
 from ..model.zabbix import Item
 from .discover import find_items
@@ -252,7 +252,7 @@ def _ids(items: list[Item]) -> tuple[ItemSpec, ...]:
 
 def _describe(label: str) -> str:
     """Describe a request for messages: the command line, or the template."""
-    return "the command line" if label.startswith("__") else f"template {label!r}"
+    return "the command line" if label == CUSTOM else f"template {label!r}"
 
 
 def _non_empty(text: str) -> str:

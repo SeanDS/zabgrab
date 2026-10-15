@@ -37,15 +37,15 @@ LAB = Server("lab", ServerConfig(url="https://lab.example.org"))
 def name(**kwargs: Any) -> str:
     args: dict[str, Any] = {
         "hosts": ["demo1"],
-        "templates": ["particles"],
+        "template": "particles",
         "custom": False,
         "start": START,
         "end": END,
-        "servers": ["demo"],
+        "server": "demo",
         "resolution": "raw",
     }
     args.update(kwargs)
-    pattern = args.pop("pattern", "{hosts}_{templates}_{from}--{to}")
+    pattern = args.pop("pattern", "{hosts}_{template}_{from}--{to}")
     return output_name(pattern, **args)
 
 
@@ -62,22 +62,17 @@ class TestOutputName:
     def test_no_hosts(self) -> None:
         assert name(hosts=[]).startswith("nohosts_")
 
-    def test_several_templates(self) -> None:
-        assert "_particles+temps_" in name(templates=["particles", "temps"])
-
     def test_custom(self) -> None:
         assert "_particles+__custom_" in name(custom=True)
-        assert "___custom_" in name(templates=[], custom=True)
-        assert "___custom_" in name(templates=[])
+        assert "___custom_" in name(template=None, custom=True)
+        assert "___custom_" in name(template=None)
 
     def test_times_in_utc(self) -> None:
         local = START.astimezone(ZoneInfo("Europe/London"))
         assert "20261013T101500Z" in name(start=local)
 
     def test_other_placeholders(self) -> None:
-        assert name(pattern="{server}-{resolution}", servers=["demo", "lab"]) == (
-            "demo+lab-raw"
-        )
+        assert name(pattern="{server}-{resolution}") == "demo-raw"
 
     def test_unsafe_characters(self) -> None:
         assert name(pattern="a b/c:{hosts}", hosts=["web 01"]) == "a-b-c-web-01"
@@ -315,7 +310,7 @@ def test_metadata() -> None:
     metadata = build_metadata(
         query,
         result(),
-        templates={"particles": template},
+        template=template,
         command=["zabgrab", "fetch", "-t", "particles"],
         created=END,
     )

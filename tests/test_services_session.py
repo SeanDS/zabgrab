@@ -19,7 +19,7 @@ from zabgrab.errors import (
 from zabgrab.model.config import AuthMethod, ServerConfig
 from zabgrab.model.server import Server
 from zabgrab.services.ports import ZabbixClient
-from zabgrab.services.session import _token_login, connect
+from zabgrab.services.session import connect
 
 from .fakes import MemorySecrets, RecordingUI
 from .fakezabbix import (
@@ -362,16 +362,3 @@ class TestTokenStoredForRedirectedUrl:
         ui = RecordingUI(answers=[True, False])
         hosts(harness.connect(Server("demo", ServerConfig(url=HTTP)), ui))
         assert harness.secrets.tokens == {HTTP: "old", URL: TOKEN}
-
-    def test_non_interactive_warns_and_continues(self) -> None:
-        # Redirects themselves stop non-interactive runs, so test the login step.
-        secrets = MemorySecrets({HTTP: TOKEN})
-        ui = RecordingUI(interactive=False)
-        api = ZabbixAPI(FakeTransport(seeded()))
-        server = Server("demo", ServerConfig(url=URL))
-        asyncio.run(_token_login(api, server, ui, secrets, {}, previous_url=HTTP))
-        assert hosts(api) == ["demo1", "demo2", "web01"]
-        (warning,) = ui.levels("warning")
-        assert warning.startswith(f"The token for 'demo' is stored for {HTTP}")
-        assert "`zabgrab token add demo`" in warning
-        assert secrets.tokens == {HTTP: TOKEN}

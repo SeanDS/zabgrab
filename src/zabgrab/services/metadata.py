@@ -32,7 +32,7 @@ def build_metadata(
     query: Query,
     result: FetchResult,
     *,
-    templates: Mapping[str, Template],
+    template: Template | None,
     command: Sequence[str],
     created: datetime,
 ) -> dict[str, Any]:
@@ -44,8 +44,9 @@ def build_metadata(
         What was fetched, and where each setting came from.
     result : FetchResult
         The data, and items skipped or failed.
-    templates : mapping of str to Template
-        The configured templates (the one used is copied in).
+    template : Template or None
+        The template used, copied in so the fetch can be understood (and updated
+        with ``--rematch``) without the config.
     command : sequence of str
         The command line.
     created : datetime
@@ -65,6 +66,7 @@ def build_metadata(
         "created": created.isoformat(),
         "command": list(command),
         "query": {
+            # A list, from when fetches could use several templates.
             "templates": [query.template] if query.template else [],
             "custom": query.custom,
             "from": query.from_text,
@@ -87,13 +89,14 @@ def build_metadata(
                 for request in query.requests
             ],
         },
+        # A table of templates, from when fetches could use several.
         "templates": {
-            name: templates[name].model_dump(
+            query.template: template.model_dump(
                 mode="json", by_alias=True, exclude_none=True
             )
-            for name in ([query.template] if query.template else [])
-            if name in templates
-        },
+        }
+        if query.template and template is not None
+        else {},
         "servers": [{"name": s.name, "url": url} for url, s in servers.items()],
         "items": [_series(series) for series in result.series],
         "skipped": [_skipped(s) for s in result.skipped],

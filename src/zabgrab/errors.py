@@ -7,8 +7,8 @@ the user how to fix the problem. The CLI renders them without a traceback (unles
 
 Attributes
 ----------
-EXIT_OK, EXIT_ERROR, EXIT_USAGE : int
-    Exit codes for success, errors and command line mistakes.
+EXIT_ERROR : int
+    Exit code for errors (command line mistakes exit with click's 2).
 EXIT_PARTIAL : int
     Exit code when some items couldn't be fetched but others were.
 EXIT_INTERRUPTED : int
@@ -20,9 +20,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-EXIT_OK = 0
 EXIT_ERROR = 1
-EXIT_USAGE = 2
 EXIT_PARTIAL = 3
 EXIT_INTERRUPTED = 130
 

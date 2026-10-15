@@ -145,6 +145,15 @@ class TestSaving:
         ok(run("fetch", "-t", "particles", "-o", f"{directory}/", "--format", "csv"))
         assert (directory / f"{NAME}.csv").exists()
 
+    def test_output_dir_in_home(
+        self, configured: Servers, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        args = ("-o", "--output-dir", "~/data", "--format", "csv")
+        ok(run("fetch", "-t", "particles", *args))
+        assert (tmp_path / "data" / f"{NAME}.csv").exists()
+
     def test_existing_directory(self, configured: Servers, tmp_path: Path) -> None:
         ok(run("fetch", "-t", "particles", "-o", str(tmp_path), "--format", "csv"))
         assert (tmp_path / f"{NAME}.csv").exists()

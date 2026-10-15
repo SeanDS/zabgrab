@@ -538,10 +538,15 @@ def requests_table(query: Query) -> Table:
     for request in query.requests:
         items = [format_item_spec_safe(spec) for spec in request.items] or ["(asked)"]
         table.add_row(
-            "command line" if request.label == CUSTOM else request.label,
+            _request_name(request.label),
             "\n".join(items),
         )
     return table
+
+
+def _request_name(label: str) -> str:
+    """Name a request in tables: its template, or the command line."""
+    return "command line" if label == CUSTOM else label
 
 
 def _server_text(server: str | Choice[str] | None) -> str:
@@ -609,9 +614,7 @@ def plan_table(jobs: Sequence[Job], resolution: Resolution) -> Table:
             job.item.host,
             job.item.name,
             job.item.value_type.label,
-            ", ".join(
-                "command line" if label == CUSTOM else label for label in job.requests
-            ),
+            ", ".join(map(_request_name, job.requests)),
             Text(f"skip: {reason}", style="yellow")
             if reason
             else Text("fetch", style="green"),

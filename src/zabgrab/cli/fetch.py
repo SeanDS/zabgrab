@@ -28,7 +28,7 @@ from ..model.names import NAME_RULE, is_valid_name
 from ..model.query import Query
 from ..model.series import FetchResult
 from ..model.server import Server
-from ..services.collect import collect
+from ..services.collect import Plan, collect
 from ..services.fetch import fetch, stored_end
 from ..services.metadata import build_metadata
 from ..services.output import (
@@ -195,9 +195,9 @@ def fetch_command(
     save_to: str | None,
     force: bool,
 ) -> None:
-    """Fetch data from Zabbix, from templates and/or items.
+    """Fetch data from Zabbix: a template's items and/or items given with --item.
 
-    Settings come from the command line, then the templates, then [defaults] in
+    Settings come from the command line, then the template, then [defaults] in
     your config. Anything missing is asked for.
     """
     given = {
@@ -380,40 +380,26 @@ def _fetch_and_save(
         return False
 
     report_problems(app, result)
-    if not result.series:
-        raise ZabgrabError("Nothing was fetched.")
-
-    servers_used = list(dict.fromkeys(series.server for series in result.series))
+    server = result.series[0].server
     name = auto_name(
         query,
         hosts=[series.item.host for series in result.series],
-        servers=[_short(server) for server in servers_used],
+        server=_short(server),
     )
     chosen = targets(output, query, app.ui, name=name, options=options)
+    template = config.templates.get(query.template) if query.template else None
     saved = []
     for target in chosen:
-        target, data = guard_large_text(
-            target,
-            result,
-            app.ui,
-            threshold=query.mat_text_warn_entries,
-            allow=options.allow_large_text,
-            existing_entries=hdf5.text_entries,
-            accepted_before=hdf5.large_text_accepted,
-        )
+        target, data = guard_text(app, target, result, query, options.allow_large_text)
         metadata = build_metadata(
-            query,
-            data,
-            templates=config.templates,
-            command=sys.argv,
-            created=now,
+            query, data, template=template, command=sys.argv, created=now
         )
         saved.append(save_target(target, data, metadata, query, options))
 
     count = len(result.series)
     summary = (
         f"Fetched {count} item{'' if count == 1 else 's'} ({result.points:,} points) "
-        f"from {', '.join(server.display for server in servers_used)}, "
+        f"from {server.display}, "
         f"{format_time(query.start, query.tz)} to {format_time(query.end, query.tz)}"
     )
     if saved:
@@ -438,12 +424,43 @@ async def _download(
         connect=app.connect,
         yes=yes,
     )
+    return await run_plan(
+        app,
+        plan,
+        query,
+        dry_run=dry_run,
+        empty=ZabgrabError(
+            "No items to fetch.", hint="Check the item patterns with `zabgrab items`."
+        ),
+    )
+
+
+async def run_plan(
+    app: AppContext, plan: Plan, query: Query, *, dry_run: bool, empty: ZabgrabError
+) -> FetchResult | None:
+    """Download the data for a plan's jobs, then close its connections.
+
+    Parameters
+    ----------
+    app : AppContext
+        For the UI and the clock.
+    plan : Plan
+        The items to download, and the connections to their servers.
+    query : Query
+        The time range and settings.
+    dry_run : bool
+        Show the items that would be downloaded instead.
+    empty : ZabgrabError
+        The error to raise if there are no items.
+
+    Returns
+    -------
+    FetchResult or None
+        The data, or ``None`` for a dry run.
+    """
     try:
         if not plan.jobs:
-            raise ZabgrabError(
-                "No items to fetch.",
-                hint="Check the item patterns with `zabgrab items`.",
-            )
+            raise empty
         warn_beyond_retention(
             plan.jobs,
             start=query.start,
@@ -466,6 +483,42 @@ async def _download(
         )
     finally:
         await plan.close()
+
+
+def guard_text(
+    app: AppContext, target: Target, result: FetchResult, query: Query, allow: bool
+) -> tuple[Target, FetchResult]:
+    """Check before writing a lot of text to a .mat file.
+
+    See :func:`zabgrab.services.output.guard_large_text`.
+
+    Parameters
+    ----------
+    app : AppContext
+        For the UI.
+    target : Target
+        Where the data is to be saved.
+    result : FetchResult
+        The data.
+    query : Query
+        For the ``mat_text_warn_entries`` setting.
+    allow : bool
+        ``--allow-large-text``.
+
+    Returns
+    -------
+    tuple of Target and FetchResult
+        Where to save, and what.
+    """
+    return guard_large_text(
+        target,
+        result,
+        app.ui,
+        threshold=query.mat_text_warn_entries,
+        allow=allow,
+        existing_entries=hdf5.text_entries,
+        accepted_before=hdf5.large_text_accepted,
+    )
 
 
 def save_target(
@@ -523,6 +576,11 @@ def report_problems(app: AppContext, result: FetchResult) -> None:
         For the UI.
     result : FetchResult
         The fetched data.
+
+    Raises
+    ------
+    ZabgrabError
+        If nothing was fetched.
     """
     for skipped in result.skipped:
         app.ui.warning(
@@ -535,6 +593,8 @@ def report_problems(app: AppContext, result: FetchResult) -> None:
             f"({failed.item.itemid}).",
             details=[failed.reason],
         )
+    if not result.series:
+        raise ZabgrabError("Nothing was fetched.")
 
 
 def _short(server: Server) -> str:

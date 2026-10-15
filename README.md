@@ -158,7 +158,7 @@ Times can be ISO 8601 (`2026-10-14 09:00`, `2026-10-14T09:00:00Z`), natural lang
 
 `-o`/`--output` takes a file name, a directory (ending in `/`), or no value for an
 automatic name built from `output_pattern` (default
-`{hosts}_{templates}_{from}--{to}`). The format comes from `--format`, the file
+`{hosts}_{template}_{from}--{to}`). The format comes from `--format`, the file
 extension, or the `format` setting. Saved files start with `#` comment lines
 containing metadata (as JSON) describing exactly what was fetched; numpy and pandas
 skip them with `comment="#"`.

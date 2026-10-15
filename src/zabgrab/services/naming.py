@@ -25,7 +25,7 @@ from ..model.query import CUSTOM
 
 MAX_LENGTH = 120
 MAX_HOSTS = 3
-PLACEHOLDERS = ("hosts", "templates", "from", "to", "server", "resolution")
+PLACEHOLDERS = ("hosts", "template", "from", "to", "server", "resolution")
 
 EXTENSIONS = {
     Format.TSV: ".tsv",
@@ -52,11 +52,11 @@ def output_name(
     pattern: str,
     *,
     hosts: Sequence[str],
-    templates: Sequence[str],
+    template: str | None,
     custom: bool,
     start: datetime,
     end: datetime,
-    servers: Sequence[str],
+    server: str,
     resolution: str,
 ) -> str:
     """Build a file name (without extension) from ``output_pattern``.
@@ -68,20 +68,20 @@ def output_name(
     ----------
     pattern : str
         The pattern. Placeholders: ``{hosts}`` (matched hosts, sorted, joined with
-        ``+``; more than three are shortened), ``{templates}`` (the template's
+        ``+``; more than three are shortened), ``{template}`` (the template's
         name, plus ``__custom`` if the command line added or changed data),
         ``{from}``/``{to}`` (UTC, e.g. ``20261014T101500Z``), ``{server}`` and
         ``{resolution}``.
     hosts : sequence of str
         The hosts of the fetched items.
-    templates : sequence of str
+    template : str or None
         The template used, if any.
     custom : bool
         Whether the command line added or changed data.
     start, end : datetime
         The fetched time range.
-    servers : sequence of str
-        Short names of the servers.
+    server : str
+        A short name for the server.
     resolution : str
         ``raw`` or ``1h``.
 
@@ -95,7 +95,9 @@ def output_name(
     ZabgrabError
         If the pattern is invalid (e.g. an unknown placeholder).
     """
-    names = list(templates) + ([CUSTOM] if custom or not templates else [])
+    names = ([template] if template else []) + (
+        [CUSTOM] if custom or not template else []
+    )
     unique_hosts = sorted(set(hosts)) or ["nohosts"]
 
     def render(max_hosts: int) -> str:
@@ -105,10 +107,10 @@ def output_name(
             shown = [*shown[: max(max_hosts - 1, 1)], f"{hidden}more"]
         values = {
             "hosts": "+".join(shown),
-            "templates": "+".join(names),
+            "template": "+".join(names),
             "from": _stamp(start),
             "to": _stamp(end),
-            "server": "+".join(servers),
+            "server": server,
             "resolution": resolution,
         }
         try:

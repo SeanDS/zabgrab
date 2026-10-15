@@ -232,7 +232,7 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
     "resolution": "raw",
     "agg": ["min", "avg", "max"],
     "output_dir": ".",
-    "output_pattern": "{hosts}_{templates}_{from}--{to}",
+    "output_pattern": "{hosts}_{template}_{from}--{to}",
     "timezone": "local",
     "jobs": 6,
     "max_items": 50,

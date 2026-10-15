@@ -7,8 +7,8 @@ phased delivery plan, and the remaining open questions.
 ## Goals
 
 - Find Zabbix items without digging IDs out of the web UI; wildcard item selection.
-- Multi-server configs; templates that can run against one, several or a user-chosen
-  server.
+- Multi-server configs; templates that run against one server, or one the user
+  chooses when asked.
 - Templates that can set every fetch argument. One template and one server per fetch.
 - Fast parallel downloads with clear progress, colour and helpful errors.
 - MATLAB-friendly HDF5 output that can be incrementally updated.
@@ -153,7 +153,7 @@ opens a file in `$EDITOR`.
 timezone = "local"                 # or e.g. "UTC", "Europe/London"
 format = "mat"                     # mat | h5 | tsv | csv
 output_dir = "."
-output_pattern = "{hosts}_{templates}_{from}--{to}"
+output_pattern = "{hosts}_{template}_{from}--{to}"
 jobs = 6                           # parallel downloads
 max_items = 50                     # confirm before wildcard expansions larger than this
 
@@ -201,7 +201,7 @@ Keys that support it accept either a plain value or
 
 | `select` | Behaviour |
 |---|---|
-| `all` | Use every choice, stacking the results into one output. |
+| `all` | Use every choice: every host (for `host`), or write every format (for `format`). |
 | `prompt` (default) | Interactive: the user picks. Non-interactive: an error unless the CLI sets the value. |
 | `first` | Use the first choice that works. |
 
@@ -217,11 +217,10 @@ See "Missing and invalid input".
 
 `zabgrab fetch ... --save-template NAME [--save-to user|project|system|PATH] [--force]`
 
-- Saves the settings given on the command line, by the templates used, and as
+- Saves the settings given on the command line, by the template used, and as
   answers at prompts. `[defaults]` and built-in values are not frozen into the
   template. Templates can't build on each other, so the new one is self-contained:
-  it combines the templates' items and settings (the command line winning). If the
-  templates used different servers, saving fails and says so.
+  it copies the template's items and settings (the command line winning).
 - Saves values as the user typed them: wildcard patterns rather than resolved item
   IDs, and relative times such as `"24 hours ago"`. Items picked at a prompt are
   saved as the search pattern if all its matches were picked, otherwise as IDs.
@@ -425,13 +424,13 @@ default.
 | `--output DIR/` | Automatic filename in `DIR`. |
 | `--output PATH` | Exactly that path. The extension sets the format unless `--format` is given. |
 
-Default pattern: `{hosts}_{templates}_{from}--{to}`.
-Example: `demo1+demo2_particles+temps_20261013T101500Z--20261014T101500Z.mat`
+Default pattern: `{hosts}_{template}_{from}--{to}`.
+Example: `demo1+demo2_particles_20261013T101500Z--20261014T101500Z.mat`
 
 - `{hosts}`: the matched hosts, sorted and joined with `+`. More than 3 become
   `a+b+5more`.
-- `{templates}`: template names in CLI order, joined with `+`.
-  - No templates: `__custom`.
+- `{template}`: the template's name.
+  - No template: `__custom`.
   - If CLI flags changed data-affecting template values (items, server outside the
     template's choices, from/to, resolution, agg) or added items, append `+__custom`.
   - Changes to output, format or verbosity don't count.
@@ -554,7 +553,8 @@ The JSON contains:
 - the zabgrab version and output format version
 - the run time (UTC) and the full command line
 - the server name and URL (never credentials)
-- the templates used, both as written and as resolved, and the item specs as written
+- the template used (in a list and a table, from when fetches could use several),
+  as written and as resolved, and the item specs as written
 - the matched items: itemid, host, name, key, units, value_type
 - the resolved from/to, the timezone, the resolution and agg
 - the provenance of each resolved value
@@ -802,7 +802,7 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   that defines the server. Non-interactive runs fail with the URL to use.
 - A token stored under a URL that redirects is still used after following the
   redirect; interactive users are offered to move it to the new URL (non-interactive
-  runs would warn and continue, though they currently stop at the redirect itself).
+  runs stop at the redirect itself, so never get this far).
   `token add` follows redirects the same way when checking a token, so it's stored
   under the final URL.
 - Search patterns use Zabbix's own semantics (substring match, `*` wildcard), so
@@ -817,13 +817,13 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Raw downloads are chunked by day and trends by 30 days; network errors are retried
   three times with backoff; each item downloads its chunks in order, `jobs` items at
   a time.
-- `--save-template` saves a self-contained template (the templates used, the command
+- `--save-template` saves a self-contained template (the template used, the command
   line and prompt answers; never `[defaults]` or built-in values), rather than only
   the command line's values, which would leave a template built on another one
   without its items.
 - The "Next time" command is the command line as typed, with answered prompts added
   as options (replacing any given). Answers it can't express (items narrowed from a
-  template, several formats, different servers per template) are noted instead.
+  template, several formats) are noted instead.
 
 - `.mat`/`.h5` files are written with HDF5's earliest file format so that MATLAB's
   older HDF5 library can read them. The layout passed `tests/matlab/check_files.m`
@@ -851,6 +851,14 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Storage periods come from the item settings (`history`, `trends`); a server-wide
   housekeeping override isn't visible through the API, so retention warnings say
   data *may* have been deleted, and fetches and updates still go ahead.
+
+- With one template per fetch, the `output_pattern` placeholder `{templates}` became
+  `{template}` (before 1.0.0, so with no compatibility alias). The metadata keeps
+  `query.templates` as a list and `templates` as a table, so the file layout is
+  unchanged.
+- `update --server` refuses groups fetched from several servers, as `--rematch`
+  does: item IDs only mean something on the server they came from.
+- `~` in `output_dir` means the home directory.
 
 ## Follow-up tasks
 

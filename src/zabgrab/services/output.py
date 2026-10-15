@@ -124,7 +124,7 @@ class SaveOptions:
                 )
 
 
-def auto_name(query: Query, *, hosts: Sequence[str], servers: Sequence[str]) -> str:
+def auto_name(query: Query, *, hosts: Sequence[str], server: str) -> str:
     """Make the automatic file name (without extension) for a query's data.
 
     Parameters
@@ -133,8 +133,8 @@ def auto_name(query: Query, *, hosts: Sequence[str], servers: Sequence[str]) -> 
         The query, whose ``output_pattern`` is filled in.
     hosts : sequence of str
         The names of the hosts the data comes from.
-    servers : sequence of str
-        The labels of the servers the data comes from.
+    server : str
+        A short name for the server the data comes from.
 
     Returns
     -------
@@ -144,11 +144,11 @@ def auto_name(query: Query, *, hosts: Sequence[str], servers: Sequence[str]) -> 
     return output_name(
         query.output_pattern,
         hosts=hosts,
-        templates=[query.template] if query.template else [],
+        template=query.template,
         custom=query.custom,
         start=query.start,
         end=query.end,
-        servers=servers,
+        server=server,
         resolution=str(query.resolution),
     )
 
@@ -201,9 +201,9 @@ def targets(
         shown = ", ".join(f"{name}{EXTENSIONS[f]}" for f in formats)
         if not ui.confirm(f"Save the data to {shown}?", fix="", default=True):
             return []
-        directory, file = Path(query.output_dir), None
+        directory, file = Path(query.output_dir).expanduser(), None
     elif output == "" or output.endswith(("/", "\\")) or Path(output).is_dir():
-        directory, file = Path(output or query.output_dir), None
+        directory, file = Path(output or query.output_dir).expanduser(), None
         formats = choose_formats(query.formats, options.format, None, ui, query.answers)
     else:
         file = Path(output)
