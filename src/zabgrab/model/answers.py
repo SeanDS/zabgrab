@@ -16,20 +16,30 @@ from .item import ItemSpec
 
 @dataclass
 class Answers:
-    """Answers given at prompts, in the form the command line or a template takes."""
+    """Answers given at prompts, in the form the command line or a template takes.
+
+    Attributes
+    ----------
+    template : str or None
+        The template chosen instead of an unknown one.
+    settings : dict of str to Any
+        Settings by config key, e.g. ``{"from": "24 hours ago", "format": ["mat"]}``.
+    server : str or None
+        The server name or URL chosen.
+    items : dict of str to tuple of ItemSpec
+        Request label to the items chosen, replacing the request's own.
+    all_items : bool
+        The user chose to fetch every match despite ``max_items`` (``--yes``).
+    """
 
     template: str | None = None
-    """The template chosen instead of an unknown one."""
     settings: dict[str, Any] = field(default_factory=dict)
-    """Settings by config key, e.g. ``{"from": "24 hours ago", "format": ["mat"]}``."""
     server: str | None = None
-    """The server name or URL chosen."""
     items: dict[str, tuple[ItemSpec, ...]] = field(default_factory=dict)
-    """Request label → the items chosen, replacing the request's own."""
     all_items: bool = False
-    """The user chose to fetch every match despite ``max_items`` (``--yes``)."""
 
     def __bool__(self) -> bool:
+        """Whether anything was answered."""
         return bool(
             self.template
             or self.settings
@@ -40,8 +50,18 @@ class Answers:
 
 
 def config_value(value: Any) -> Any:
-    """``value`` as it's written in a config file (enums as strings, choices as
-    tables, tuples as lists)."""
+    """Convert a setting's value to the form it takes in a config file.
+
+    Parameters
+    ----------
+    value : Any
+        A setting's value, as parsed (e.g. an enum or a :class:`Choice`).
+
+    Returns
+    -------
+    Any
+        The value with enums as strings, choices as tables and tuples as lists.
+    """
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, Choice):

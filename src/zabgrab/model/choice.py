@@ -15,20 +15,35 @@ T = TypeVar("T")
 
 
 class Select(StrEnum):
-    """How to select between the options of a :class:`Choice`."""
+    """How to select between the options of a :class:`Choice`.
+
+    Attributes
+    ----------
+    ALL
+        Use every option, stacking the results.
+    PROMPT
+        Ask the user (an error if non-interactive). The only one allowed for
+        servers, since a fetch uses one server.
+    FIRST
+        Use the first option that works (for hosts, the first with matching
+        items).
+    """
 
     ALL = "all"
-    """Use every option, stacking the results."""
-
     PROMPT = "prompt"
-    """Ask the user (error if non-interactive)."""
-
     FIRST = "first"
-    """Use the first option that works (failover)."""
 
 
 class Choice(BaseModel, Generic[T]):
-    """A list of options and a selection rule."""
+    """A list of options and a selection rule.
+
+    Attributes
+    ----------
+    choices : list
+        The options, without duplicates.
+    select : Select
+        How to choose between them.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -37,6 +52,7 @@ class Choice(BaseModel, Generic[T]):
 
     @model_validator(mode="after")
     def _unique(self) -> Choice[T]:
+        """Reject duplicate options."""
         seen: list[T] = []
         for choice in self.choices:
             if choice in seen:
@@ -54,15 +70,25 @@ UNION_TAGS = frozenset({SINGLE_TAG, CHOICE_TAG})
 
 
 def _discriminate(value: Any) -> str:
+    """Tell a choice (a table) from a single value, for pydantic's union."""
     return CHOICE_TAG if isinstance(value, dict | Choice) else SINGLE_TAG
 
 
 def choice_or(type_: Any) -> Any:
-    """Type for config values that are either a single ``type_`` or a
-    :class:`Choice` of ``type_``.
+    """Make the type of a setting that takes a value or a choice of values.
 
-    (A generic type alias can't express this: ``Choice[T]`` is a concrete pydantic
-    class, so substituting ``T`` later doesn't reach it.)
+    A generic type alias can't express this: ``Choice[T]`` is a concrete pydantic
+    class, so substituting ``T`` later doesn't reach it.
+
+    Parameters
+    ----------
+    type_ : type
+        The type of a single value.
+
+    Returns
+    -------
+    type
+        A pydantic type accepting a ``type_`` or a :class:`Choice` of ``type_``.
     """
     return Annotated[
         Union[  # noqa: UP007

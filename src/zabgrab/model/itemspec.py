@@ -9,6 +9,13 @@ Forms accepted by ``--item``:
 
 Values may contain commas (common in item keys such as ``net.if.in[eth0,bytes]``);
 only a comma followed by ``field=`` starts a new pair.
+
+Attributes
+----------
+FIELDS : tuple of str
+    The fields an item spec can have.
+EXAMPLE : str
+    Examples of the command line form, for messages.
 """
 
 from __future__ import annotations
@@ -30,6 +37,16 @@ _LOOKS_LIKE_FIELD = re.compile(r",\s*([A-Za-z_]+)\s*=")
 
 def parse_item_spec(text: str) -> ItemSpec:
     """Parse the command line form of an item spec.
+
+    Parameters
+    ----------
+    text : str
+        An ``--item`` value (see the module docstring).
+
+    Returns
+    -------
+    ItemSpec
+        The item spec.
 
     Raises
     ------
@@ -62,7 +79,19 @@ def parse_item_spec(text: str) -> ItemSpec:
 
 
 def format_item_spec(spec: ItemSpec) -> str:
-    """The command line form of an item spec (inverse of :func:`parse_item_spec`).
+    """Write an item spec in its command line form.
+
+    The inverse of :func:`parse_item_spec`.
+
+    Parameters
+    ----------
+    spec : ItemSpec
+        The item spec.
+
+    Returns
+    -------
+    str
+        The ``--item`` value that gives ``spec``.
 
     Raises
     ------
@@ -86,8 +115,23 @@ def format_item_spec(spec: ItemSpec) -> str:
 
 
 def _check_for_typos(value: str, text: str) -> None:
-    """Reject values containing ``,word=`` where ``word`` is close to a field name,
-    which is almost certainly a mistyped field rather than part of the value."""
+    """Reject a value with a mistyped field in it.
+
+    A value containing ``,word=``, where ``word`` is close to a field name, is
+    almost certainly a mistyped field rather than part of the value.
+
+    Parameters
+    ----------
+    value : str
+        A field's value.
+    text : str
+        The whole item spec, for the message.
+
+    Raises
+    ------
+    ValueError
+        If the value looks like it contains a mistyped field.
+    """
     for match in _LOOKS_LIKE_FIELD.finditer(value):
         if suggestion := difflib.get_close_matches(match[1], FIELDS, n=1):
             raise ValueError(
@@ -97,6 +141,7 @@ def _check_for_typos(value: str, text: str) -> None:
 
 
 def _validate(fields: dict[str, str]) -> ItemSpec:
+    """Build an item spec, turning validation errors into one plain message."""
     try:
         return ItemSpec.model_validate(fields)
     except ValidationError as exc:

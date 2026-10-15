@@ -1,4 +1,10 @@
-"""Parsing of user-supplied times, such as ``2026-10-14 09:00`` or ``24 hours ago``."""
+"""Parsing of user-supplied times, such as ``2026-10-14 09:00`` or ``24 hours ago``.
+
+Attributes
+----------
+EXAMPLES : str
+    Examples of times zabgrab understands, for messages.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +17,18 @@ EXAMPLES = "e.g. 'now', '24 hours ago', 'yesterday', '2026-10-14 09:00' or '14/1
 
 
 def timezone_for(name: str) -> tzinfo | None:
-    """The timezone for a config ``timezone`` value (``None`` for local time)."""
+    """Get the time zone for a ``timezone`` setting.
+
+    Parameters
+    ----------
+    name : str
+        ``"local"`` or an IANA name such as ``"Europe/London"``.
+
+    Returns
+    -------
+    tzinfo or None
+        The time zone, or ``None`` for local time.
+    """
     return None if name == "local" else ZoneInfo(name)
 
 
@@ -23,6 +40,20 @@ def parse_time(text: str, *, now: datetime, tz: tzinfo | None) -> datetime:
     times and natural language, with day-first numeric dates (``14/10/2026``).
     Times without an explicit offset are in ``tz`` (``None`` for local time), and
     relative times are relative to ``now``.
+
+    Parameters
+    ----------
+    text : str
+        The time as typed.
+    now : datetime
+        The current time, for relative times.
+    tz : tzinfo or None
+        The time zone for times without an offset (``None`` for local time).
+
+    Returns
+    -------
+    datetime
+        The time, as an aware UTC datetime.
 
     Raises
     ------
@@ -41,6 +72,7 @@ def parse_time(text: str, *, now: datetime, tz: tzinfo | None) -> datetime:
 
 
 def _natural(text: str, *, now: datetime, tz: tzinfo | None) -> datetime:
+    """Parse a relative or natural-language time with dateparser (see parse_time)."""
     local_now = now.astimezone(tz)
     settings = {
         "RELATIVE_BASE": local_now.replace(tzinfo=None),

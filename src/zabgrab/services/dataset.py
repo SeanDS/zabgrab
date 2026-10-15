@@ -23,7 +23,11 @@ COVERAGE_TOLERANCE = 1.0
 
 
 class Group(Protocol):
-    """A fetch group read from a file."""
+    """A fetch group read from a file.
+
+    See :class:`zabgrab.adapters.formats.hdf5.FetchGroup`, which this describes
+    without the services depending on the adapter.
+    """
 
     name: str
     metadata: dict[str, Any]
@@ -34,18 +38,50 @@ class Group(Protocol):
 
 @dataclass
 class Dataset:
-    """Every series in a file (or selection of its groups), merged."""
+    """Every series in a file (or selection of its groups), merged.
+
+    Attributes
+    ----------
+    series : list of Series
+        One series per item (and resolution), joined across groups.
+    coverage : list of (float, float)
+        The fetched time ranges, merged, in POSIX seconds.
+    groups : list of str
+        The names of the groups merged.
+    last_metadata : dict
+        The metadata of the last group (the most recent query).
+    """
 
     series: list[Series]
     coverage: list[tuple[float, float]]
-    """The fetched time ranges, merged, in POSIX seconds."""
     groups: list[str]
     last_metadata: dict[str, Any] = field(default_factory=dict)
-    """The metadata of the last group (the most recent query)."""
 
 
 def merge(groups: Sequence[Group], ui: UI) -> Dataset:
-    """Merge groups' series by (server, item, resolution, columns)."""
+    """Merge fetch groups into one dataset.
+
+    Series are matched by server, item, resolution and columns. Each is joined
+    across groups and sorted by time; points with the same time keep the later
+    group's value. The item's details come from the latest group.
+
+    Parameters
+    ----------
+    groups : sequence of Group
+        The groups, in the order they were written.
+    ui : UI
+        Warns if an item's units changed between groups.
+
+    Returns
+    -------
+    Dataset
+        The merged data.
+
+    Raises
+    ------
+    ZabgrabError
+        If there are no groups.
+    """
     if not groups:
         raise ZabgrabError("The file has no data.")
 
@@ -72,6 +108,7 @@ def merge(groups: Sequence[Group], ui: UI) -> Dataset:
                 r for r in series.requests if r not in entry["requests"]
             ]
             names = list(series.columns)
+            # Keyed by time, so a later group's point replaces an earlier one's.
             for row in zip(*series.columns.values(), strict=True):
                 entry["rows"][row[0]] = row
             entry["names"] = names
@@ -103,7 +140,25 @@ def merge(groups: Sequence[Group], ui: UI) -> Dataset:
 
 
 def select_groups(groups: Sequence[Group], names: Sequence[str]) -> list[Group]:
-    """The groups with the given names (all of them if none are given)."""
+    """Pick groups by name.
+
+    Parameters
+    ----------
+    groups : sequence of Group
+        Every group in the file.
+    names : sequence of str
+        The names wanted (all groups if empty).
+
+    Returns
+    -------
+    list of Group
+        The groups, in the order named.
+
+    Raises
+    ------
+    ZabgrabError
+        If a name doesn't match a group.
+    """
     if not names:
         return list(groups)
     known = {group.name: group for group in groups}
@@ -123,8 +178,23 @@ def filter_dataset(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> Dataset:
-    """Only the series matching any of ``items`` (patterns, see :func:`matches`),
-    and only their data between ``start`` and ``end``."""
+    """Limit a dataset to some items and a time range.
+
+    Parameters
+    ----------
+    dataset : Dataset
+        The data.
+    items : sequence of str, optional
+        Patterns (see :func:`matches`); a series is kept if any matches. All
+        series are kept if there are none.
+    start, end : datetime, optional
+        The time range to keep (unbounded if not given).
+
+    Returns
+    -------
+    Dataset
+        The selected data, with its coverage cut to the time range.
+    """
     first = start.timestamp() if start else float("-inf")
     last = end.timestamp() if end else float("inf")
     series = []
@@ -147,14 +217,27 @@ def filter_dataset(
 
 
 def matches(series: Series, pattern: str) -> bool:
-    """Whether a series' item ID, name, key or "host: name" matches a glob pattern
-    (case-insensitive)."""
+    """Check whether a series' item ID, name, key or ``host: name`` matches a pattern.
+
+    Parameters
+    ----------
+    series : Series
+        The series.
+    pattern : str
+        A glob pattern (``*`` and ``?`` wildcards), matched case-insensitively.
+
+    Returns
+    -------
+    bool
+        Whether it matches.
+    """
     item = series.item
     candidates = (str(item.itemid), item.name, item.key, f"{item.host}: {item.name}")
     return any(fnmatch.fnmatchcase(c.lower(), pattern.lower()) for c in candidates)
 
 
 def _union(ranges: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Merge overlapping (or nearly touching) time ranges, sorted."""
     merged: list[tuple[float, float]] = []
     for start, end in sorted(ranges):
         if merged and start <= merged[-1][1] + COVERAGE_TOLERANCE:

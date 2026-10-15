@@ -16,6 +16,26 @@ def load_with_repair(load: Callable[[], T], ui: UI, editor: Editor) -> T:
 
     Interactive sessions are shown the error and offered the editor, after which
     loading is retried. Otherwise (or if the user declines) the error is raised.
+
+    Parameters
+    ----------
+    load : callable
+        Loads the config.
+    ui : UI
+        Shows the error and asks about editing.
+    editor : Editor
+        Opens the file.
+
+    Returns
+    -------
+    T
+        What ``load`` returns.
+
+    Raises
+    ------
+    ConfigError
+        If a file is invalid and isn't fixed (marked as reported if the user was
+        already shown it).
     """
     while True:
         try:

@@ -29,7 +29,15 @@ from .names import Name, ServerRef, Url
 
 
 class Format(StrEnum):
-    """Output file formats."""
+    """Output file formats.
+
+    Attributes
+    ----------
+    H5, MAT
+        HDF5 and MATLAB v7.3 (the same layout), which can hold several fetches.
+    TSV, CSV
+        Tab- and comma-separated values, with ``#`` comment lines of metadata.
+    """
 
     H5 = "h5"
     MAT = "mat"
@@ -38,14 +46,22 @@ class Format(StrEnum):
 
 
 class Resolution(StrEnum):
-    """Data resolution: raw history or Zabbix's hourly trends."""
+    """Data resolution.
+
+    Attributes
+    ----------
+    RAW
+        Every value collected (Zabbix's history).
+    HOURLY
+        Hourly statistics (Zabbix's trends), for numeric items only.
+    """
 
     RAW = "raw"
     HOURLY = "1h"
 
 
 class Agg(StrEnum):
-    """Hourly trend statistics."""
+    """Hourly trend statistics: the minimum, average, maximum and count."""
 
     MIN = "min"
     AVG = "avg"
@@ -61,6 +77,7 @@ class AuthMethod(StrEnum):
 
 
 def _validate_timezone(value: str) -> str:
+    """Accept ``"local"`` or a known IANA time zone name."""
     if value == "local":
         return value
     try:
@@ -74,12 +91,14 @@ def _validate_timezone(value: str) -> str:
 
 
 def _validate_unique(values: list[Agg]) -> list[Agg]:
+    """Reject repeated statistics."""
     if len(set(values)) != len(values):
         raise ValueError("duplicate values")
     return values
 
 
 def _validate_env_name(value: str) -> str:
+    """Accept only valid environment variable names."""
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) is None:
         raise ValueError(f"invalid environment variable name {value!r}")
     return value
@@ -92,6 +111,7 @@ NonEmptyStr = Annotated[str, Field(min_length=1)]
 
 
 def _ask_only(value: Any) -> Any:
+    """Allow a choice of servers only as a question, since a fetch uses one."""
     if isinstance(value, Choice) and value.select is not Select.PROMPT:
         raise ValueError(
             "a choice of servers is only for choosing one when asked (zabgrab "
@@ -113,7 +133,23 @@ _MODEL_CONFIG = ConfigDict(
 
 
 class ServerConfig(BaseModel):
-    """A Zabbix server."""
+    """A Zabbix server (a ``[servers.NAME]`` table).
+
+    Attributes
+    ----------
+    url : str
+        The frontend or API URL.
+    auth : AuthMethod
+        Log in with an API token (default) or a username and password.
+    token_env : str or None
+        An environment variable holding the token (else the keyring is used).
+    username : str or None
+        The default username for password logins.
+    verify_ssl : bool
+        Whether to check the server's TLS certificate.
+    timeout : float
+        Seconds to wait for each API request.
+    """
 
     model_config = _MODEL_CONFIG
 
@@ -129,7 +165,8 @@ class FetchSettings(BaseModel):
     """Settings shared by ``[defaults]`` and templates.
 
     Each field corresponds to a ``zabgrab fetch`` option of the same name (``from``
-    is ``--from``, ``output_dir`` is ``--output-dir``, and so on).
+    is ``--from``, ``output_dir`` is ``--output-dir``, and so on), except
+    ``mat_text_warn_entries``, which is config only. Unset fields are ``None``.
     """
 
     model_config = _MODEL_CONFIG
@@ -153,14 +190,32 @@ class Defaults(FetchSettings):
 
 
 class Template(FetchSettings):
-    """A named, reusable fetch."""
+    """A named, reusable fetch (a ``[templates.NAME]`` table).
+
+    Attributes
+    ----------
+    description : str or None
+        What the template is for.
+    items : list of ItemSpec
+        The items to fetch.
+    """
 
     description: NonEmptyStr | None = None
     items: list[ItemSpec] = Field(default_factory=list)
 
 
 class Config(BaseModel):
-    """A config file, or the merged result of several."""
+    """A config file, or the merged result of several.
+
+    Attributes
+    ----------
+    defaults : Defaults
+        Settings for every fetch.
+    servers : dict of str to ServerConfig
+        The configured servers, by name.
+    templates : dict of str to Template
+        The templates, by name.
+    """
 
     model_config = _MODEL_CONFIG
 

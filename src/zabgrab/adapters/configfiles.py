@@ -14,13 +14,23 @@ Layers, lowest to highest priority:
 
 Merge rules: each key in ``[defaults]`` is taken from the highest layer that sets it.
 Named entries (``servers.X``, ``templates.X``) are replaced whole by higher layers.
+
+Attributes
+----------
+CONFIG_NAME : str
+    The file name of system and user config files.
+PROJECT_CONFIG_NAME : str
+    The file name of project config files.
+BUILTIN_SOURCE : str
+    The source label of built-in values.
+NAMED_SECTIONS : tuple of str
+    The tables whose entries are replaced whole by higher layers.
 """
 
 from __future__ import annotations
 
 import difflib
 import os
-import tempfile
 import tomllib
 from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import dataclass, field
@@ -43,7 +53,7 @@ from ..model.config import (
     Template,
 )
 from ..model.item import ItemSpec
-from .files import match_permissions
+from .files import replacing
 
 CONFIG_NAME = "config.toml"
 PROJECT_CONFIG_NAME = f"{PROGRAM}.toml"
@@ -63,7 +73,17 @@ class LayerKind(StrEnum):
 
 @dataclass(frozen=True)
 class Environment:
-    """The parts of the process environment that affect config discovery."""
+    """The parts of the process environment that affect config discovery.
+
+    Attributes
+    ----------
+    variables : mapping of str to str
+        Environment variables.
+    cwd, home : Path
+        The working and home directories.
+    windows : bool
+        Whether to use Windows locations.
+    """
 
     variables: Mapping[str, str]
     cwd: Path
@@ -72,6 +92,7 @@ class Environment:
 
     @classmethod
     def current(cls) -> Environment:
+        """Get the running process's environment."""
         return cls(
             variables=dict(os.environ),
             cwd=Path.cwd(),
@@ -82,7 +103,19 @@ class Environment:
 
 @dataclass(frozen=True)
 class ConfigLayer:
-    """One config layer and its file, if any."""
+    """One config layer and its file, if any.
+
+    Attributes
+    ----------
+    kind : LayerKind
+        Which layer.
+    path : Path or None
+        Its file (``None`` for built-in values, or no project file).
+    exists : bool
+        Whether the file exists.
+    skipped : bool
+        Whether ``--isolated`` skips it.
+    """
 
     kind: LayerKind
     path: Path | None
@@ -102,21 +135,42 @@ class ConfigLayer:
 
 @dataclass
 class LoadedConfig:
-    """The merged config, plus where each part of it came from."""
+    """The merged config, plus where each part of it came from.
+
+    Attributes
+    ----------
+    config : Config
+        The merged config.
+    layers : tuple of ConfigLayer
+        Every layer, lowest priority first.
+    sources : dict of tuple of str to str
+        Maps ``("defaults", key)``, ``("servers", name)`` and
+        ``("templates", name)`` to the source label of the layer that provided the
+        value.
+    """
 
     config: Config
     layers: tuple[ConfigLayer, ...]
-    #: Maps ``("defaults", key)``, ``("servers", name)`` and ``("templates", name)``
-    #: to the source label of the layer that provided the value.
     sources: dict[tuple[str, ...], str] = field(default_factory=dict)
 
     def source_of(self, *path: str) -> str | None:
-        """Source label for a ``[defaults]`` key or a named entry."""
+        """Get the source label of a ``[defaults]`` key or a named entry.
+
+        Parameters
+        ----------
+        *path : str
+            ``"defaults", key``, ``"servers", name`` or ``"templates", name``.
+
+        Returns
+        -------
+        str or None
+            The file path, ``"built-in"``, or ``None`` if nothing sets it.
+        """
         return self.sources.get(path)
 
 
 def system_config_path(env: Environment) -> Path:
-    """Path of the system-wide config file."""
+    """Get the path of the system-wide config file."""
     if env.windows:
         base = Path(env.variables.get("PROGRAMDATA", r"C:\ProgramData"))
     else:
@@ -125,7 +179,7 @@ def system_config_path(env: Environment) -> Path:
 
 
 def user_config_path(env: Environment) -> Path:
-    """Path of the user's config file."""
+    """Get the path of the user's config file."""
     xdg = env.variables.get("XDG_CONFIG_HOME", "")
     # The XDG spec says relative paths must be ignored.
     if xdg and Path(xdg).is_absolute():
@@ -138,10 +192,20 @@ def user_config_path(env: Environment) -> Path:
 
 
 def find_project_config(env: Environment) -> Path | None:
-    """The nearest ``zabgrab.toml`` in the working directory or its parents.
+    """Find the nearest ``zabgrab.toml`` in the working directory or its parents.
 
     The search stops before the home directory, so a file there is never treated as
     a project config.
+
+    Parameters
+    ----------
+    env : Environment
+        Where to start, and the home directory.
+
+    Returns
+    -------
+    Path or None
+        The project config file, if there is one.
     """
     for directory in (env.cwd, *env.cwd.parents):
         if directory == env.home:
@@ -153,14 +217,29 @@ def find_project_config(env: Environment) -> Path | None:
 
 
 def project_config_target(env: Environment) -> Path:
-    """Where the project config is, or would be created."""
+    """Get where the project config is, or would be created."""
     return find_project_config(env) or env.cwd / PROJECT_CONFIG_NAME
 
 
 def discover_layers(
     env: Environment, *, explicit: Path | None = None, isolated: bool = False
 ) -> list[ConfigLayer]:
-    """All config layers, lowest priority first, including ones without a file."""
+    """Find every config layer.
+
+    Parameters
+    ----------
+    env : Environment
+        Where to look.
+    explicit : Path, optional
+        A config file given with ``--config`` or ``$ZABGRAB_CONFIG``.
+    isolated : bool, optional
+        Skip the system, user and project layers (``--isolated``).
+
+    Returns
+    -------
+    list of ConfigLayer
+        The layers, lowest priority first, including ones without a file.
+    """
     system = system_config_path(env)
     user = user_config_path(env)
     project = find_project_config(env)
@@ -184,6 +263,16 @@ def load_config(layers: Iterable[ConfigLayer]) -> LoadedConfig:
 
     Each file is validated on its own first, so errors point at the file that
     caused them.
+
+    Parameters
+    ----------
+    layers : iterable of ConfigLayer
+        The layers, lowest priority first.
+
+    Returns
+    -------
+    LoadedConfig
+        The merged config and where each value came from.
 
     Raises
     ------
@@ -223,7 +312,25 @@ def load_config(layers: Iterable[ConfigLayer]) -> LoadedConfig:
 
 
 def read_config_file(path: Path, *, kind: LayerKind | None = None) -> dict[str, Any]:
-    """Read and validate a single config file, returning its raw contents."""
+    """Read and validate a single config file.
+
+    Parameters
+    ----------
+    path : Path
+        The file.
+    kind : LayerKind, optional
+        Its layer, for the hint on how to fix it.
+
+    Returns
+    -------
+    dict
+        The file's contents, as parsed TOML.
+
+    Raises
+    ------
+    ConfigError
+        If the file can't be read, isn't valid TOML, or isn't a valid config.
+    """
     hint = edit_hint(path, kind)
 
     try:
@@ -257,7 +364,7 @@ def read_config_file(path: Path, *, kind: LayerKind | None = None) -> dict[str, 
 
 
 def edit_hint(path: Path, kind: LayerKind | None) -> str:
-    """A hint telling the user how to edit a config file."""
+    """Get a hint telling the user how to edit a config file."""
     if kind in (LayerKind.SYSTEM, LayerKind.USER, LayerKind.PROJECT):
         return f"Fix it with `zabgrab config edit --target {kind}`, or edit {path}."
     return f"Edit {path} to fix it."
@@ -269,6 +376,7 @@ def _merge_layer(
     raw: Mapping[str, Any],
     source: str,
 ) -> None:
+    """Merge one layer into ``merged``, recording each value's source."""
     for key, value in raw.get("defaults", {}).items():
         merged.setdefault("defaults", {})[key] = value
         sources["defaults", key] = source
@@ -280,6 +388,7 @@ def _merge_layer(
 
 
 def _known_keys() -> set[str]:
+    """Get every key a config file can have, for "did you mean" suggestions."""
     keys: set[str] = set()
     models: tuple[type[BaseModel], ...] = (
         Config,
@@ -296,7 +405,19 @@ def _known_keys() -> set[str]:
 
 
 def format_validation_errors(exc: ValidationError) -> list[str]:
-    """Turn a pydantic error into user-friendly lines like ``key.path: message``."""
+    """Describe a validation error for users.
+
+    Parameters
+    ----------
+    exc : pydantic.ValidationError
+        The error.
+
+    Returns
+    -------
+    list of str
+        One line per problem, like ``templates.x.items[1]: unknown key 'nmae'
+        (did you mean 'name'?)``.
+    """
     known = _known_keys()
     lines = []
 
@@ -324,6 +445,7 @@ def format_validation_errors(exc: ValidationError) -> list[str]:
 
 
 def _format_loc(loc: Iterable[int | str]) -> str:
+    """Write an error location as a dotted key path, e.g. ``items[1].name``."""
     text = ""
     for part in loc:
         if isinstance(part, int):
@@ -338,26 +460,23 @@ def add_server(path: Path, name: str, url: str) -> None:
 
     The file (and its directory) is created if needed.
 
+    Parameters
+    ----------
+    path : Path
+        The config file.
+    name : str
+        The server's name.
+    url : str
+        The server's URL.
+
     Raises
     ------
     ConfigError
         If the file can't be parsed, already defines the server, or can't be
         written.
     """
-    try:
-        text = path.read_text(encoding="utf-8") if path.exists() else ""
-        document = tomlkit.parse(text)
-    except (OSError, UnicodeDecodeError, tomlkit.exceptions.ParseError) as exc:
-        raise ConfigError(
-            f"Can't update config file {path}.", path=path, details=[str(exc)]
-        ) from exc
-
-    servers = document.get("servers")
-    if servers is None:
-        servers = tomlkit.table(is_super_table=True)
-        document.add("servers", servers)
-    if not isinstance(servers, Table):
-        raise ConfigError(f"'servers' in {path} isn't a table.", path=path)
+    document = _read_document(path)
+    servers = _named_section(document, "servers", path)
     if name in servers:
         raise ConfigError(f"Server {name!r} already exists in {path}.", path=path)
 
@@ -372,8 +491,24 @@ def add_template(
 ) -> str:
     """Add ``[templates.NAME]`` to a config file, keeping its existing formatting.
 
-    The file (and its directory) is created if needed. Returns the TOML of the
-    template as written.
+    The file (and its directory) is created if needed.
+
+    Parameters
+    ----------
+    path : Path
+        The config file.
+    name : str
+        The template's name.
+    table : mapping
+        The template's settings, as config values (see
+        :func:`zabgrab.services.templates.template_table`).
+    replace : bool, optional
+        Replace a template with the same name (``--force``).
+
+    Returns
+    -------
+    str
+        The TOML of the template as written, for showing to the user.
 
     Raises
     ------
@@ -381,20 +516,8 @@ def add_template(
         If the file can't be parsed or written, or already defines the template and
         ``replace`` isn't set.
     """
-    try:
-        text = path.read_text(encoding="utf-8") if path.exists() else ""
-        document = tomlkit.parse(text)
-    except (OSError, UnicodeDecodeError, tomlkit.exceptions.ParseError) as exc:
-        raise ConfigError(
-            f"Can't update config file {path}.", path=path, details=[str(exc)]
-        ) from exc
-
-    templates = document.get("templates")
-    if templates is None:
-        templates = tomlkit.table(is_super_table=True)
-        document.add("templates", templates)
-    if not isinstance(templates, Table):
-        raise ConfigError(f"'templates' in {path} isn't a table.", path=path)
+    document = _read_document(path)
+    templates = _named_section(document, "templates", path)
     if name in templates and not replace:
         raise ConfigError(
             f"Template {name!r} already exists in {path}.",
@@ -416,7 +539,49 @@ def add_template(
     return tomlkit.dumps(shown).strip()
 
 
+def _read_document(path: Path, *, create: bool = True) -> tomlkit.TOMLDocument:
+    """Parse a config file for editing.
+
+    Parameters
+    ----------
+    path : Path
+        The config file.
+    create : bool, optional
+        Treat a missing file as empty (it will be created), rather than an error.
+
+    Raises
+    ------
+    ConfigError
+        If the file can't be read or parsed.
+    """
+    try:
+        text = "" if create and not path.exists() else path.read_text(encoding="utf-8")
+        return tomlkit.parse(text)
+    except (OSError, UnicodeDecodeError, tomlkit.exceptions.ParseError) as exc:
+        raise ConfigError(
+            f"Can't update config file {path}.", path=path, details=[str(exc)]
+        ) from exc
+
+
+def _named_section(document: tomlkit.TOMLDocument, section: str, path: Path) -> Table:
+    """Get the ``servers`` or ``templates`` table, adding it if needed.
+
+    Raises
+    ------
+    ConfigError
+        If the document has the key but it isn't a table.
+    """
+    table = document.get(section)
+    if table is None:
+        table = tomlkit.table(is_super_table=True)
+        document.add(section, table)
+    if not isinstance(table, Table):
+        raise ConfigError(f"'{section}' in {path} isn't a table.", path=path)
+    return table
+
+
 def _toml_table(values: Mapping[str, Any]) -> Table:
+    """Build a TOML table of config values (see _toml_value)."""
     table = tomlkit.table()
     for key, value in values.items():
         table.add(key, _toml_value(value))
@@ -424,7 +589,10 @@ def _toml_table(values: Mapping[str, Any]) -> Table:
 
 
 def _toml_value(value: Any) -> Any:
-    """Choices as inline tables; lists of tables (items) one per line."""
+    """Convert a config value for tomlkit.
+
+    Choices become inline tables, and lists of tables (items) go one per line.
+    """
     if isinstance(value, Mapping):
         inline = tomlkit.inline_table()
         inline.update({k: _toml_value(v) for k, v in value.items()})
@@ -441,18 +609,21 @@ def _toml_value(value: Any) -> Any:
 def set_server_url(path: Path, name: str, url: str) -> None:
     """Change the URL of ``[servers.NAME]`` in a config file, keeping its formatting.
 
+    Parameters
+    ----------
+    path : Path
+        The config file that defines the server.
+    name : str
+        The server's name.
+    url : str
+        The new URL.
+
     Raises
     ------
     ConfigError
         If the file can't be parsed or written, or doesn't define the server.
     """
-    try:
-        document = tomlkit.parse(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomlkit.exceptions.ParseError) as exc:
-        raise ConfigError(
-            f"Can't update config file {path}.", path=path, details=[str(exc)]
-        ) from exc
-
+    document = _read_document(path, create=False)
     servers = document.get("servers")
     server = servers.get(name) if isinstance(servers, MutableMapping) else None
     if not isinstance(server, MutableMapping) or "url" not in server:
@@ -462,18 +633,23 @@ def set_server_url(path: Path, name: str, url: str) -> None:
 
 
 def write_atomically(path: Path, text: str) -> None:
-    """Write a file via a temporary file, so it's never left half-written."""
+    """Write a config file via a temporary file, so it's never left half-written.
+
+    Parameters
+    ----------
+    path : Path
+        The file (created, with its directory, if needed).
+    text : str
+        The new contents.
+
+    Raises
+    ------
+    ConfigError
+        If the file can't be written.
+    """
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-                file.write(text)
-            match_permissions(Path(temporary), path)
-            os.replace(temporary, path)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
+        with replacing(path) as temporary:
+            temporary.write_text(text, encoding="utf-8")
     except OSError as exc:
         raise ConfigError(
             f"Can't write config file {path}.", path=path, details=[str(exc)]

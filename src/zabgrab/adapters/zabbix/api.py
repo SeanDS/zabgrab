@@ -1,4 +1,10 @@
-"""Zabbix 7 JSON-RPC API client."""
+"""Zabbix 7 JSON-RPC API client.
+
+Attributes
+----------
+MIN_VERSION : tuple of int
+    The oldest Zabbix version supported.
+"""
 
 from __future__ import annotations
 
@@ -45,6 +51,11 @@ class ZabbixAPI:
 
     Patterns passed to the search methods follow the Zabbix web UI's filters: they
     are case-insensitive, match anywhere in the value, and ``*`` matches any text.
+
+    Parameters
+    ----------
+    transport : Transport
+        Sends the requests (HTTP in normal use; a fake in tests).
     """
 
     def __init__(self, transport: Transport) -> None:
@@ -54,6 +65,7 @@ class ZabbixAPI:
         self._logout_on_close = False
 
     async def __aenter__(self) -> ZabbixAPI:
+        """Use the client as an async context manager, closing it on exit."""
         return self
 
     async def __aexit__(
@@ -62,10 +74,25 @@ class ZabbixAPI:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """Close the client (see :meth:`close`)."""
         await self.close()
 
     async def call(self, method: str, params: Any, *, auth: bool = True) -> Any:
         """Call an API method and return its result.
+
+        Parameters
+        ----------
+        method : str
+            The API method, e.g. ``"item.get"``.
+        params : Any
+            The method's parameters.
+        auth : bool, optional
+            Whether to send the token or session (if logged in).
+
+        Returns
+        -------
+        Any
+            The ``result`` of the response.
 
         Raises
         ------
@@ -99,11 +126,22 @@ class ZabbixAPI:
     # Session.
 
     async def version(self) -> str:
-        """The server's API version (e.g. ``"7.0.5"``)."""
+        """Get the server's API version (e.g. ``"7.0.5"``)."""
         return str(await self.call("apiinfo.version", [], auth=False))
 
     async def check_version(self) -> str:
-        """Return the server's version, raising if it's too old."""
+        """Get the server's version, checking zabgrab supports it.
+
+        Returns
+        -------
+        str
+            The version, e.g. ``"7.0.5"``.
+
+        Raises
+        ------
+        UnsupportedServer
+            If the server is older than :data:`MIN_VERSION`.
+        """
         version = await self.version()
         if _version_tuple(version) < MIN_VERSION:
             raise UnsupportedServer(
@@ -113,13 +151,37 @@ class ZabbixAPI:
         return version
 
     async def login_token(self, token: str) -> None:
-        """Authenticate with an API token, checking it's valid."""
+        """Authenticate with an API token, checking it's valid.
+
+        Parameters
+        ----------
+        token : str
+            The API token.
+
+        Raises
+        ------
+        AuthenticationFailed
+            If the server rejects the token.
+        """
         await self.call("user.checkAuthentication", {"token": token}, auth=False)
         self._auth = token
         self._logout_on_close = False
 
     async def login_password(self, username: str, password: str) -> None:
-        """Authenticate with a username and password."""
+        """Authenticate with a username and password.
+
+        The session is logged out again when the client is closed.
+
+        Parameters
+        ----------
+        username, password : str
+            The credentials.
+
+        Raises
+        ------
+        AuthenticationFailed
+            If the server rejects them.
+        """
         self._auth = str(
             await self.call(
                 "user.login", {"username": username, "password": password}, auth=False
@@ -146,8 +208,22 @@ class ZabbixAPI:
         group: str | None = None,
         limit: int | None = None,
     ) -> list[Host]:
-        """Hosts whose technical or visible name matches ``pattern``, optionally
-        only those in a host group matching ``group``."""
+        """Find hosts.
+
+        Parameters
+        ----------
+        pattern : str, optional
+            A pattern for the technical or visible name (all hosts if not given).
+        group : str, optional
+            Only hosts in a host group matching this pattern.
+        limit : int, optional
+            The most hosts to return.
+
+        Returns
+        -------
+        list of Host
+            The hosts, sorted by visible name.
+        """
         params: dict[str, Any] = {
             "output": ["hostid", "host", "name", "status"],
             "selectHostGroups": ["name"],
@@ -186,10 +262,24 @@ class ZabbixAPI:
         tag: str | None = None,
         limit: int | None = None,
     ) -> list[Item]:
-        """Items on hosts (not templates) matching all of the given filters.
+        """Find items on hosts (not templates) matching all of the given filters.
 
-        ``tag`` is ``"name"`` (the tag exists) or ``"name:value"`` (exact value).
-        An empty ``itemids`` or ``hostids`` matches nothing.
+        Parameters
+        ----------
+        itemids, hostids : sequence of int, optional
+            Only these items, or items on these hosts. Empty matches nothing.
+        name, key : str, optional
+            Patterns for the item's name and key.
+        tag : str, optional
+            ``"name"`` (the tag exists) or ``"name:value"`` (with exactly that
+            value).
+        limit : int, optional
+            The most items to return.
+
+        Returns
+        -------
+        list of Item
+            The items, sorted by name.
         """
         if (itemids is not None and not itemids) or (
             hostids is not None and not hostids
@@ -222,7 +312,20 @@ class ZabbixAPI:
         return [_item(row) for row in await self.call("item.get", params)]
 
     async def history(self, item: Item, start: int, end: int) -> list[HistoryRow]:
-        """Raw values of ``item`` between two POSIX times (inclusive), oldest first."""
+        """Get an item's raw values.
+
+        Parameters
+        ----------
+        item : Item
+            The item.
+        start, end : int
+            The time range in POSIX seconds (inclusive).
+
+        Returns
+        -------
+        list of HistoryRow
+            The values, oldest first.
+        """
         rows = await self.call(
             "history.get",
             {
@@ -238,8 +341,20 @@ class ZabbixAPI:
         return sorted((_history_row(row) for row in rows), key=lambda row: row.time)
 
     async def trends(self, item: Item, start: int, end: int) -> list[TrendRow]:
-        """Hourly trends of ``item`` for hours starting between two POSIX times
-        (inclusive), oldest first."""
+        """Get an item's hourly trends.
+
+        Parameters
+        ----------
+        item : Item
+            The item (numeric).
+        start, end : int
+            The range of hour starts, in POSIX seconds (inclusive).
+
+        Returns
+        -------
+        list of TrendRow
+            The hours, oldest first.
+        """
         rows = await self.call(
             "trend.get",
             {
@@ -253,6 +368,7 @@ class ZabbixAPI:
 
 
 def _api_error(method: str, error: Any) -> ZabbixAPIError:
+    """Turn an API error response into an exception (rejected credentials apart)."""
     if not isinstance(error, dict):
         return ZabbixAPIError(f"Zabbix API error in {method}: {error!r}")
     message = str(error.get("message", "")).rstrip(".")
@@ -270,6 +386,7 @@ def _api_error(method: str, error: Any) -> ZabbixAPIError:
 
 
 def _version_tuple(version: str) -> tuple[int, ...]:
+    """Get (major, minor) from a version such as ``"7.0.5"`` or ``"7.2.0rc1"``."""
     parts = []
     for part in version.split(".")[:2]:
         digits = "".join(itertools.takewhile(str.isdigit, part))
@@ -278,6 +395,7 @@ def _version_tuple(version: str) -> tuple[int, ...]:
 
 
 def _host(row: dict[str, Any]) -> Host:
+    """Convert a ``host.get`` row."""
     return Host(
         hostid=int(row["hostid"]),
         host=row["host"],
@@ -288,6 +406,7 @@ def _host(row: dict[str, Any]) -> Host:
 
 
 def _item(row: dict[str, Any]) -> Item:
+    """Convert an ``item.get`` row (``lastclock`` 0 means no value yet)."""
     hosts = row.get("hosts") or [{}]
     clock = int(row.get("lastclock") or 0)
     return Item(
@@ -306,6 +425,7 @@ def _item(row: dict[str, Any]) -> Item:
 
 
 def _history_row(row: dict[str, Any]) -> HistoryRow:
+    """Convert a ``history.get`` row (log fields are absent for other types)."""
     log_time = int(row.get("timestamp") or 0)
     return HistoryRow(
         time=int(row["clock"]) + int(row.get("ns") or 0) / 1e9,
@@ -318,6 +438,7 @@ def _history_row(row: dict[str, Any]) -> HistoryRow:
 
 
 def _trend_row(row: dict[str, Any]) -> TrendRow:
+    """Convert a ``trend.get`` row."""
     return TrendRow(
         time=int(row["clock"]),
         count=int(row["num"]),

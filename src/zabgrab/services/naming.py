@@ -1,4 +1,16 @@
-"""Output file names."""
+"""Output file names.
+
+Attributes
+----------
+MAX_LENGTH : int
+    The longest automatic name (without extension).
+MAX_HOSTS : int
+    The most host names in an automatic name before the rest are counted.
+PLACEHOLDERS : tuple of str
+    The placeholders ``output_pattern`` can use.
+EXTENSIONS : dict of Format to str
+    The file extension for each format.
+"""
 
 from __future__ import annotations
 
@@ -32,7 +44,7 @@ _FORMATS_BY_SUFFIX = {
 
 
 def format_for(path: Path) -> Format | None:
-    """The output format implied by a file name's extension, if any."""
+    """Get the output format implied by a file name's extension, if any."""
     return _FORMATS_BY_SUFFIX.get(path.suffix.lower())
 
 
@@ -47,13 +59,41 @@ def output_name(
     servers: Sequence[str],
     resolution: str,
 ) -> str:
-    """A file name (without extension) from ``pattern``.
+    """Build a file name (without extension) from ``output_pattern``.
 
-    Placeholders: ``{hosts}`` (matched hosts, sorted, joined with ``+``; more than
-    three are shortened), ``{templates}`` (template names, plus ``__custom`` if the
-    command line added or changed data), ``{from}``/``{to}`` (UTC, e.g.
-    ``20261014T101500Z``), ``{server}`` and ``{resolution}``. Unsafe characters
-    become ``-``, and the name is kept under 120 characters.
+    Unsafe characters become ``-``, and the name is kept to :data:`MAX_LENGTH`
+    characters, showing fewer hosts if needed.
+
+    Parameters
+    ----------
+    pattern : str
+        The pattern. Placeholders: ``{hosts}`` (matched hosts, sorted, joined with
+        ``+``; more than three are shortened), ``{templates}`` (the template's
+        name, plus ``__custom`` if the command line added or changed data),
+        ``{from}``/``{to}`` (UTC, e.g. ``20261014T101500Z``), ``{server}`` and
+        ``{resolution}``.
+    hosts : sequence of str
+        The hosts of the fetched items.
+    templates : sequence of str
+        The template used, if any.
+    custom : bool
+        Whether the command line added or changed data.
+    start, end : datetime
+        The fetched time range.
+    servers : sequence of str
+        Short names of the servers.
+    resolution : str
+        ``raw`` or ``1h``.
+
+    Returns
+    -------
+    str
+        The name.
+
+    Raises
+    ------
+    ZabgrabError
+        If the pattern is invalid (e.g. an unknown placeholder).
     """
     names = list(templates) + ([CUSTOM] if custom or not templates else [])
     unique_hosts = sorted(set(hosts)) or ["nohosts"]
@@ -73,6 +113,8 @@ def output_name(
         }
         try:
             name = pattern.format_map(values)
+        # Patterns are user config, so they can name unknown placeholders or be
+        # malformed.
         except (KeyError, IndexError, ValueError) as exc:
             raise ZabgrabError(
                 f"Invalid output_pattern {pattern!r}: {exc}",
@@ -90,7 +132,7 @@ def output_name(
 
 
 def unique_path(path: Path) -> Path:
-    """``path``, or ``path`` with ``-2``, ``-3``, ... added if it exists."""
+    """Get ``path``, or ``path`` with ``-2``, ``-3``, ... added if it exists."""
     candidate, number = path, 2
     while candidate.exists():
         candidate = path.with_name(f"{path.stem}-{number}{path.suffix}")
@@ -99,4 +141,5 @@ def unique_path(path: Path) -> Path:
 
 
 def _stamp(time: datetime) -> str:
+    """Format a time for file names, e.g. ``20261014T101500Z``."""
     return time.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")

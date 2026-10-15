@@ -8,7 +8,17 @@ from enum import IntEnum
 
 
 class ValueType(IntEnum):
-    """Zabbix item value types (the ``value_type`` / ``history`` API values)."""
+    """Zabbix item value types (the ``value_type``/``history`` API values).
+
+    Attributes
+    ----------
+    FLOAT, UNSIGNED
+        Numbers, which have hourly trends and can be plotted.
+    CHAR, LOG, TEXT
+        Text. Log items also have a log time, source, severity and event ID.
+    BINARY
+        Binary data, which zabgrab doesn't fetch.
+    """
 
     FLOAT = 0
     CHAR = 1
@@ -40,27 +50,57 @@ _LABELS = {
 
 @dataclass(frozen=True)
 class Host:
-    """A monitored host."""
+    """A monitored host.
+
+    Attributes
+    ----------
+    hostid : int
+        The host's ID.
+    host : str
+        The technical name.
+    name : str
+        The visible name.
+    enabled : bool
+        Whether it's monitored.
+    groups : tuple of str
+        The names of its host groups.
+    """
 
     hostid: int
     host: str
-    """Technical name."""
     name: str
-    """Visible name."""
     enabled: bool = True
     groups: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class Item:
-    """An item on a host."""
+    """An item on a host.
+
+    Attributes
+    ----------
+    itemid, hostid : int
+        The item's and its host's IDs.
+    host, host_name : str
+        The host's technical and visible names.
+    name, key : str
+        The item's name and key.
+    value_type : ValueType
+        The type of its values.
+    units : str
+        The units of its values (may be empty).
+    enabled : bool
+        Whether it's monitored.
+    last_value : str or None
+        The latest value, if any.
+    last_clock : datetime or None
+        When the latest value was collected.
+    """
 
     itemid: int
     hostid: int
     host: str
-    """Technical name of the host."""
     host_name: str
-    """Visible name of the host."""
     name: str
     key: str
     value_type: ValueType
@@ -72,12 +112,20 @@ class Item:
 
 @dataclass(frozen=True)
 class HistoryRow:
-    """One raw value of an item."""
+    """One raw value of an item.
+
+    Attributes
+    ----------
+    time : float
+        When it was collected, in POSIX seconds including the nanosecond part.
+    value : str
+        The value, as Zabbix returns it.
+    log_time, source, severity, event_id
+        The log entry's own time, source, severity and event ID (log items only).
+    """
 
     time: float
-    """POSIX seconds, including the nanosecond part."""
     value: str
-    # Log items only.
     log_time: int | None = None
     source: str = ""
     severity: int = 0
@@ -86,10 +134,19 @@ class HistoryRow:
 
 @dataclass(frozen=True)
 class TrendRow:
-    """Hourly statistics of a numeric item."""
+    """Hourly statistics of a numeric item.
+
+    Attributes
+    ----------
+    time : int
+        The start of the hour, in POSIX seconds.
+    count : int
+        How many values the hour had.
+    min, avg, max : str
+        The hour's minimum, average and maximum, as Zabbix returns them.
+    """
 
     time: int
-    """Start of the hour, POSIX seconds."""
     count: int
     min: str
     avg: str

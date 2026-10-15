@@ -10,13 +10,23 @@ from .names import frontend_url
 
 @dataclass(frozen=True)
 class Server:
-    """A Zabbix server: a configured one (with a name) or a literal URL."""
+    """A Zabbix server: a configured one (with a name) or a literal URL.
+
+    Attributes
+    ----------
+    name : str or None
+        The name in the config (``[servers.NAME]``), or ``None`` for a URL given
+        directly.
+    config : ServerConfig
+        The server's settings (defaults for a URL given directly).
+    """
 
     name: str | None
     config: ServerConfig
 
     @property
     def url(self) -> str:
+        """The server's API URL, as configured or given."""
         return self.config.url
 
     @property
