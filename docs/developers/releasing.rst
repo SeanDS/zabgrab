@@ -56,6 +56,11 @@ Each release is prepared on its own branch, which is tagged and then merged into
 
    Wait for CI to pass on it. Fix anything that comes up on the same branch.
 
+6. Optionally, try the package out first: run the ``Publish to PyPI`` workflow by
+   hand on the release branch (*Actions* → *Publish to PyPI* → *Run workflow*,
+   choosing ``release/1.2.0``). It uploads a development build to TestPyPI, which
+   you can install and try (see :ref:`pypi-setup`).
+
 Tagging and publishing
 ----------------------
 
@@ -83,10 +88,23 @@ tag, then open *Releases* → *Draft a new release*, choose the tag, use the ver
 as the title, paste the version's changelog entries as the description (*Generate
 release notes* adds the merged pull requests too), and click *Publish release*.
 
-Publishing the release starts the ``Publish documentation`` workflow, which builds
-the documentation for the tagged version and deploys it to
-https://seands.github.io/zabgrab/. Check it ran under the repository's *Actions*
-tab (the release's own run only starts another on ``main``, which does the work).
+Publishing the release (not saving it as a draft) starts two workflows; check
+both ran under the repository's *Actions* tab:
+
+``Publish to PyPI``
+   Builds the release from its tag and uploads it to PyPI, at once: this can't be
+   undone, since PyPI never accepts the same version twice. If the ``pypi``
+   environment has required reviewers, the upload waits for one of them to
+   approve it on the run's page. See :ref:`pypi`.
+``Publish documentation``
+   Builds the documentation for the tagged version and deploys it to
+   https://seands.github.io/zabgrab/ (the release's own run only starts another on
+   ``main``, which does the work).
+
+A release marked as a *pre-release* on GitHub, tagged e.g. ``1.2.0rc1``, is
+uploaded to PyPI too, where ``pip install zabgrab`` skips it unless given ``--pre``
+or the exact version. The documentation site's root keeps showing the latest full
+release.
 
 The documentation site
 ----------------------
@@ -107,6 +125,8 @@ by hand (*Actions* → *Publish documentation* → *Run workflow*), e.g. to repu
 the site after a failed run. Pages must be set to deploy from GitHub Actions (the
 repository's *Settings* → *Pages* → *Source*).
 
+.. _pypi:
+
 Publishing to PyPI
 ------------------
 
@@ -125,6 +145,8 @@ The workflow uploads with PyPI's `trusted publishing
 <https://docs.pypi.org/trusted-publishers/>`_: PyPI trusts uploads from this
 workflow in this repository, so no API token is stored anywhere.
 
+.. _pypi-setup:
+
 Setting it up
 ~~~~~~~~~~~~~
 
@@ -140,8 +162,15 @@ This is done once, before the first automatic release:
    - Environment name: ``pypi``
 
 2. On GitHub, open the repository's *Settings* → *Environments*, and create an
-   environment named ``pypi``. Optionally, add yourself under *Required reviewers*:
-   each upload then waits for you to approve it, in the workflow run's page.
+   environment named ``pypi``. Optionally:
+
+   - add yourself under *Required reviewers*, so each upload waits for you to
+     approve it, in the workflow run's page;
+   - under *Deployment branches and tags*, choose *Selected branches and tags* and
+     add a tag rule ``*.*.*``, so only runs from a version tag can upload.
+
+   The environments need no secrets or variables: the workflow proves where it
+   runs to PyPI itself.
 3. To try the setup without a release, do the same on `TestPyPI
    <https://test.pypi.org/>`_ (a separate account), with the environment name
    ``testpypi``, and create a ``testpypi`` environment on GitHub. Then run the
