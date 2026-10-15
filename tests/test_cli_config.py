@@ -47,6 +47,14 @@ def write(path: Path, text: str) -> Path:
     return path
 
 
+def test_example_config_is_valid(fake_home: Path) -> None:
+    # The documentation includes this file, so it mustn't go stale.
+    example = Path(__file__).parents[1] / "config.example.toml"
+    result = run("--isolated", "--config", str(example), "config", "show")
+    assert result.exit_code == 0, result.output
+    assert "[templates.network]" in result.stdout
+
+
 def test_version() -> None:
     result = run("--version")
     assert result.exit_code == 0

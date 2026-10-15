@@ -66,7 +66,7 @@ from .discovery import ItemSpecType
     type=ItemSpecType(),
     multiple=True,
     help="Item to fetch as well (repeat for several), e.g. '12345' or "
-    "'host=myhost,name=CPU *'.",
+    "'host=myhost,name=CPU*'.",
 )
 @click.option(
     "-s",

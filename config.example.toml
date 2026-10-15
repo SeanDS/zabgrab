@@ -1,0 +1,58 @@
+# Example zabgrab configuration.
+#
+# Copy what you need into your user config (`zabgrab config edit` opens it), or into
+# a zabgrab.toml in a project directory. Every setting is optional: anything missing
+# is asked for when it's needed. `zabgrab config show --sources` shows the merged
+# result and where each value came from.
+
+# Zabbix servers, by name. Use a name wherever a server is expected, e.g.
+# `zabgrab fetch --server lab`.
+[servers.lab]
+url = "https://zabbix.lab.example.org"  # the Zabbix web frontend's URL
+token_env = "LAB_ZABBIX_TOKEN"          # read the API token from this variable
+                                        # (without it, the keyring is used)
+
+[servers.office]
+url = "https://zabbix.office.example.org:8443/zabbix"
+auth = "password"                       # log in with a username and password
+username = "monitoring"                 # the default username, when asked
+verify_ssl = false                      # self-signed certificate (insecure)
+timeout = 60                            # seconds to wait for each request
+
+# Settings for every fetch, unless the command line or a template sets them.
+[defaults]
+server = "lab"                          # the server to use without --server
+timezone = "Europe/London"              # for times given and shown ("local" by default)
+format = "h5"                           # h5, mat, tsv or csv
+output_dir = "~/zabbix-data"            # where automatic file names go
+output_pattern = "{hosts}_{template}_{from}--{to}"
+jobs = 6                                # items downloaded at once
+max_items = 50                          # ask before fetching more items than this
+
+# Templates: named, reusable fetches (`zabgrab fetch --template particles`). They
+# take the same settings as [defaults], plus the items to fetch.
+[templates.particles]
+description = "Particle counts in the labs"
+items = [
+  # Patterns work like the Zabbix web UI's filters: case-insensitive, matching
+  # anywhere in the text, with * wildcards. All given patterns must match.
+  { host = "lab*", name = "Particles *" },
+  { itemid = 12345 },                   # one item, by ID
+]
+from = "24 hours ago"
+to = "now"
+
+[templates.network]
+# Ask which server to use, each time.
+server = { choices = ["lab", "office"] }
+items = [
+  { host = "router1", key = "net.if.in[*]" },
+  { tag = "component:network" },        # items with this tag (or just "network")
+  # Use the first host that has matching items.
+  { host = { choices = ["switch-a", "switch-b"], select = "first" }, name = "Uptime" },
+]
+from = "7 days ago"
+to = "now"
+resolution = "1h"                       # hourly trends instead of raw values
+agg = ["avg", "max"]                    # the trend statistics to save
+format = { choices = ["h5", "csv"], select = "all" }  # save both

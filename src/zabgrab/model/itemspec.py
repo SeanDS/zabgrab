@@ -29,7 +29,7 @@ from .choice import Choice
 from .item import ItemSpec
 
 FIELDS = ("itemid", "host", "name", "key", "tag")
-EXAMPLE = "e.g. '12345', 'host=myhost,name=CPU *' or 'key=system.cpu.load[*]'"
+EXAMPLE = "e.g. '12345', 'host=myhost,name=CPU*' or 'key=system.cpu.load[*]'"
 
 _PAIR_SPLIT = re.compile(rf",(?=\s*(?:{'|'.join(FIELDS)})\s*=)")
 _LOOKS_LIKE_FIELD = re.compile(r",\s*([A-Za-z_]+)\s*=")

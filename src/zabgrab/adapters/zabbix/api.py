@@ -63,7 +63,7 @@ class ZabbixAPI:
 
     Parameters
     ----------
-    transport : Transport
+    transport : zabgrab.adapters.zabbix.transport.Transport
         Sends the requests (HTTP in normal use; a fake in tests).
     """
 

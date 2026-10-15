@@ -372,7 +372,7 @@ default.
     trends for `1h`), warn that it may have been deleted, suggesting
     `--resolution 1h` for raw data when trends are kept longer. Items sharing a
     period share a warning; periods set by macros aren't known, so aren't checked.
-  - The README documents the Zabbix-side way to get other averages: a calculated item
+  - The documentation describes the Zabbix-side way to get other averages: a calculated item
     such as `avg(//key,5m)`.
 - **Progress:** rich, written to stderr. One bar per active item plus an overall bar
   (chunks done / total). Hidden when stderr is not a terminal.
@@ -456,7 +456,7 @@ Both formats share one layout, written with h5py:
             value_type  int
             time    double  N×1, POSIX seconds UTC
             value   N×1: double (type 0), uint64 (type 3), text (types 1, 2, 4)
-            log_time, source, severity, logeventid  (log items only)
+            log_time, source, severity, event_id    (log items only)
             min, avg, max, count                    (1h trends; the ones selected by agg)
         item_67890/ ...
 /fetch_0002 ...
@@ -582,7 +582,7 @@ Extends an existing `.h5`/`.mat` file with new data:
 
 Options: `--to`, `--server`, `--rematch`, `--dry-run`, `--in-place`.
 
-README example to include:
+Documentation example:
 
 ```bash
 # Initial fetch of the last week into a MATLAB file
@@ -676,7 +676,7 @@ convert it to CSV.
 
 ### MATLAB helper
 
-`matlab/zabgrab_load.m` is shipped in the repo and documented in the README.
+`matlab/zabgrab_load.m` is shipped in the repo and documented in the user guide.
 `S = zabgrab_load('particles.mat')` returns the merged series per item, with `datetime`
 times. This makes groups invisible to MATLAB users too. It is tested manually
 alongside the MATLAB check files.
@@ -741,17 +741,20 @@ alongside the MATLAB check files.
 
 ## Documentation
 
-- **README:**
-  - install, including `[plot]`
-  - quick start, `zabgrab token add`, finding items (`hosts`/`items`)
-  - a **complete commented config example** (servers, defaults, templates with
-    choices and wildcards)
-  - templates, output naming, formats and MATLAB/Python loading snippets
-  - the `update` example, trends vs raw, and the calculated-item note for other
-    averages
-- A test parses the README's TOML example so it cannot go stale. Ship the same
-  example as `config.example.toml`.
-- **CHANGELOG:** the rewrite is released as **1.0.0** and is a breaking change.
+- **User documentation** is a Sphinx site (Alabaster theme) in `docs/`, focused on
+  using zabgrab rather than on configuration: installation, a quickstart, guides
+  to finding items, fetching, templates, updating files, analysing the data
+  (plotting, MATLAB and Python loading, file layouts) and running unattended, a
+  light configuration page, and a command reference generated from the click
+  commands (sphinx-click). It's published to GitHub Pages for each release.
+- **Developer documentation** in the same site: contributing (setup, checks, code
+  layout, conventions), making a release (tagging, GitHub release, PyPI), and an
+  API reference generated from the docstrings.
+- **README:** installation, running zabgrab, and where to find or how to build the
+  documentation; nothing about configuration or advanced use.
+- `config.example.toml` is a complete commented config example, included in the
+  documentation; a test checks it's valid.
+- **CHANGELOG** (`CHANGELOG.rst`, included in the documentation): the rewrite is released as **1.0.0** and is a breaking change.
 - **Docstrings:** all public functions have docstrings and type hints.
 
 ## Phases
@@ -764,7 +767,7 @@ alongside the MATLAB check files.
 | 4 ✅ | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
 | 5 ✅ | `--save-template` (tomlkit), "Next time" hint | Round-trip tests pass |
 | 6 ✅ | `plot` extra (merged view, coverage gaps, text-item errors) | Plots from live fetch and from multi-group files |
-| 7 | Full README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
+| 7 | Sphinx documentation (published to GitHub Pages on release), short README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
 
 Each phase includes its tests and docstrings. The old code is deleted in phase 1.
 
@@ -836,7 +839,10 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   later), since raw values have sub-second times.
 - Items in a group are named `item_<id>`, with `_2`, `_3`, ... when items on
   different servers share an ID; readers use the stored server and ID, not the names.
-- CI moved from GitLab to GitHub Actions, with no release or deployment jobs yet.
+- CI moved from GitLab to GitHub Actions. It also builds the documentation; a
+  separate workflow publishes it to GitHub Pages when a release is published.
+  Releases are tagged by hand (setuptools_scm takes the version from the tag) and
+  aren't uploaded to PyPI automatically.
 - Tests run in UK time, which their expected local times are written in. Windows
   can't change a running process's time zone, so there the system time zone must
   be UK time (CI sets it with `tzutil`), and the tests stop with an error otherwise.
