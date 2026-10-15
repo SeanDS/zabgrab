@@ -18,7 +18,7 @@ from zabgrab.adapters.formats.hdf5 import (
 )
 from zabgrab.errors import EXIT_ERROR, EXIT_INTERRUPTED, EXIT_PARTIAL
 
-from .cli_support import CONFIG, Servers, run, table_rows
+from .cli_support import BST, CONFIG, Servers, run, table_rows
 from .fakezabbix import T0, seeded
 
 TEMPLATES = """
@@ -651,6 +651,29 @@ class TestStructured:
         ok(run("fetch", "-t", "logs", *outputs, "--append", "--group", "logs"))
         for path in paths:
             assert [g.name for g in read_fetches(path)] == ["fetch_0001", "logs"]
+
+    def test_appending_overlapping_data_is_noted(
+        self, configured: Servers, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "data.h5"
+        result = ok(run("fetch", "-t", "particles", "-o", str(path), "--append"))
+        assert "Note:" not in result.stderr  # a new file
+        result = ok(run("fetch", "-t", "particles", "-o", str(path), "--append"))
+        assert (
+            f"Note: group fetch_0001 of {path} already holds 2025-10-09 07:58:20 "
+            f"{BST} to 2025-10-09 09:58:20 {BST} for 2 items of this fetch."
+        ) in " ".join(result.stderr.split())
+        assert result.stderr.count(f"zabgrab info {path} --overlaps") == 1
+        # With several overlapping groups, each is noted, and the hint given once.
+        result = ok(run("fetch", "-t", "particles", "-o", str(path), "--append"))
+        assert result.stderr.count("Note: group") == 2
+        assert result.stderr.count("--overlaps") == 1
+        # Other items, or a range that only touches, don't overlap.
+        result = ok(run("fetch", "-t", "logs", "-o", str(path), "--append"))
+        assert "Note:" not in result.stderr
+        later = ("--from", "2025-10-09T08:58:20Z", "--to", "2025-10-09T09:00:00Z")
+        args = ("-s", "demo", "-i", "20001", *later, "-o", str(path), "--append")
+        assert "Note:" not in ok(run("fetch", *args)).stderr
 
     def test_trend_end_is_the_last_complete_hour(
         self, configured: Servers, tmp_path: Path

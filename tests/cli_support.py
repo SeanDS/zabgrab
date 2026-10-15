@@ -26,6 +26,9 @@ from .fakezabbix import (
 
 NOW = datetime.fromtimestamp(1_760_000_000 + 300, UTC)
 
+# UK summer time's name, as the system gives it (the tests run in UK time).
+BST = "GMT Daylight Time" if sys.platform == "win32" else "BST"
+
 CONFIG = """\
 [servers.demo]
 url = "https://demo.example.org"

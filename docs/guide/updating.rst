@@ -49,6 +49,12 @@ it), e.g. data from other items, or a range you missed:
 Groups are named ``fetch_0001``, ``fetch_0002``, and so on, unless ``--group`` names
 them.
 
+If the new range overlaps a group already in the file that has some of the same
+items, zabgrab notes it. That's often what you meant (re-fetching a range to fill a
+gap, say), and the repeated points are only used once when the file is read; to see
+how many there are, run ``zabgrab info FILE --overlaps``. To continue a file from
+where it ends, without overlap, use ``zabgrab update`` instead.
+
 Working with the whole file
 ---------------------------
 

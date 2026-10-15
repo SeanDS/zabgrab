@@ -9,7 +9,14 @@ import click
 
 from ..adapters.formats import hdf5
 from ..model.item import ItemSpec
-from ..services.dataset import Dataset, Group, filter_dataset, merge, select_groups
+from ..services.dataset import (
+    Dataset,
+    Group,
+    filter_dataset,
+    merge,
+    repeated_points,
+    select_groups,
+)
 from ..ui.render import file_groups_table, file_items_table
 from .app import AppContext, global_options, pass_app
 from .reading import check_readable, selection_options, time_range
@@ -24,6 +31,12 @@ from .reading import check_readable, selection_options, time_range
     is_flag=True,
     help="List the fetch groups instead of the items.",
 )
+@click.option(
+    "--overlaps",
+    is_flag=True,
+    help="List the fetch groups with how many of each one's points another group "
+    "also holds (implies --groups).",
+)
 @global_options
 @pass_app
 def info_command(
@@ -35,13 +48,17 @@ def info_command(
     to: str | None,
     groups: tuple[str, ...],
     by_group: bool,
+    overlaps: bool,
 ) -> None:
     """List the items in FILE (.mat or .h5).
 
     Shows each item's ID, host, name, key, units, resolution, number of points and
     time range, merged across the file's fetch groups. --item, --match, --from,
     --to and --group select as for plot and export, so this shows what they would
-    select. With --groups, lists the fetch groups instead.
+    select. With --groups, lists the fetch groups instead. With --overlaps, the
+    groups list also counts each group's points that another group holds too
+    (they're kept once when the file is read; export flattens the file to store
+    them once).
     """
     check_readable(file, ("read", "read"))
     start, end, tz = time_range(app, from_, to)
@@ -53,10 +70,10 @@ def info_command(
             merge(group_list, app.ui), items=items, patterns=match, start=start, end=end
         )
 
-    if by_group:
+    if by_group or overlaps:
         rows = []
-        for group in selected:
-            data = narrow([group])
+        datasets = [narrow([group]) for group in selected]
+        for group, data in zip(selected, datasets, strict=True):
             rows.append(
                 (
                     group.name,
@@ -67,7 +84,8 @@ def info_command(
                     sum(len(one.columns["time"]) for one in data.series),
                 )
             )
-        app.ui.print_data(file_groups_table(rows, tz))
+        repeated = repeated_points(datasets) if overlaps else None
+        app.ui.print_data(file_groups_table(rows, tz, repeated=repeated))
         return
 
     dataset = narrow(selected)

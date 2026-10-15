@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from zabgrab.errors import EXIT_ERROR
 
-from .cli_support import run, table_rows
+from .cli_support import BST, run, table_rows
 from .test_cli_export import data
 from .test_cli_fetch import ok
 
 __all__ = ["data"]  # the fixture, used by name
-
-# UK summer time's name, as the system gives it.
-BST = "GMT Daylight Time" if sys.platform == "win32" else "BST"
 
 
 def test_items(data: Path) -> None:
@@ -102,6 +98,25 @@ def test_groups(data: Path) -> None:
         ("logs", "0", "0"),
     ]
     assert rows[0][1].endswith(BST)
+
+
+def test_overlaps(data: Path) -> None:
+    # The two particles fetches are the same, so each holds the other's points.
+    result = ok(run("info", str(data), "--overlaps"))
+    assert "Repeated" in result.stdout
+    rows = table_rows(result.stdout)
+    assert [(row[0], row[5], row[6]) for row in rows] == [
+        ("fetch_0001", "4", "4"),
+        ("fetch_0002", "4", "4"),
+        ("logs", "3", "0"),
+    ]
+    # Selections apply, as for --groups.
+    result = ok(run("info", str(data), "--groups", "--overlaps", "-i", "20001"))
+    assert [row[6] for row in table_rows(result.stdout)] == ["3", "3", "0"]
+
+
+def test_groups_without_overlaps(data: Path) -> None:
+    assert "Repeated" not in ok(run("info", str(data), "--groups")).stdout
 
 
 def test_delimited_files(tmp_path: Path) -> None:

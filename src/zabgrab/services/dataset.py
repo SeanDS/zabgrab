@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -91,12 +92,7 @@ def merge(groups: Sequence[Group], ui: UI) -> Dataset:
     merged: dict[tuple[Any, ...], dict[str, Any]] = {}
     for group in groups:
         for series in group.series:
-            key = (
-                series.server.url,
-                series.item.itemid,
-                series.resolution,
-                tuple(series.columns),
-            )
+            key = _key(series)
             entry = merged.get(key)
             if entry is None:
                 entry = merged[key] = {"series": series, "rows": {}, "requests": []}
@@ -140,6 +136,115 @@ def merge(groups: Sequence[Group], ui: UI) -> Dataset:
         groups=[g.name for g in groups],
         last_metadata=groups[-1].metadata,
     )
+
+
+def _key(series: Series) -> tuple[Any, ...]:
+    """Identify a series across groups: the same item, resolution and columns."""
+    return (
+        series.server.url,
+        series.item.itemid,
+        series.resolution,
+        tuple(series.columns),
+    )
+
+
+def repeated_points(datasets: Sequence[Dataset]) -> list[int]:
+    """Count the points each dataset shares with any of the others.
+
+    A point is shared if another dataset has the same series (item, resolution and
+    columns) with a point at the same time. Use it with each group read on its own,
+    to see how much of a file is held twice.
+
+    Parameters
+    ----------
+    datasets : sequence of Dataset
+        Typically one per fetch group.
+
+    Returns
+    -------
+    list of int
+        For each dataset, how many of its points another also holds.
+    """
+    points = [
+        {
+            (_key(series), time)
+            for series in data.series
+            for time in series.columns["time"]
+        }
+        for data in datasets
+    ]
+    holders = Counter(point for held in points for point in held)
+    return [sum(holders[point] > 1 for point in held) for held in points]
+
+
+@dataclass(frozen=True)
+class Overlap:
+    """Part of a new fetch's range that an existing group already covers.
+
+    Attributes
+    ----------
+    group : str
+        The existing group's name.
+    start, end : float
+        The time range covered by both, in POSIX seconds.
+    items : int
+        How many of the new fetch's items the group also holds.
+    """
+
+    group: str
+    start: float
+    end: float
+    items: int
+
+
+class GroupRange(Protocol):
+    """A fetch group's metadata and range, without its data.
+
+    See :class:`zabgrab.adapters.formats.hdf5.GroupRange`.
+    """
+
+    name: str
+    metadata: dict[str, Any]
+    t_from: float
+    t_to: float
+
+
+def overlaps(
+    groups: Sequence[GroupRange], series: Sequence[Series], t_from: float, t_to: float
+) -> list[Overlap]:
+    """Find the existing groups that already hold some of a new fetch's data.
+
+    A group overlaps if it holds any of the same items at the same resolution, and
+    its range and the new fetch's overlap for longer than an instant (an update
+    starting where the last fetch ended doesn't count).
+
+    Parameters
+    ----------
+    groups : sequence of GroupRange
+        The file's existing groups.
+    series : sequence of Series
+        The newly fetched series.
+    t_from, t_to : float
+        The new fetch's range, in POSIX seconds.
+
+    Returns
+    -------
+    list of Overlap
+        The overlapping groups, in the order they were written.
+    """
+    fetched = {(s.server.url, s.item.itemid, str(s.resolution)) for s in series}
+    found = []
+    for group in groups:
+        resolution = group.metadata.get("query", {}).get("resolution", "raw")
+        held = {
+            (entry["server"], entry["itemid"], resolution)
+            for entry in group.metadata.get("items", [])
+        }
+        shared = len(fetched & held)
+        start, end = max(t_from, group.t_from), min(t_to, group.t_to)
+        if shared and start < end:
+            found.append(Overlap(group.name, start, end, shared))
+    return found
 
 
 def select_groups(groups: Sequence[Group], names: Sequence[str]) -> list[Group]:

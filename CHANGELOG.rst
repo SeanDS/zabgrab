@@ -59,6 +59,9 @@ configuration. See the documentation at https://seands.github.io/zabgrab/.
   ``?``, ``[seq]``) matched against each item's whole ID, name, key or
   ``host: name``.
   When nothing matches, they suggest ``zabgrab info``.
+- ``fetch --append`` notes when the new data's range overlaps a group already in
+  the file for the same items, and ``info --overlaps`` counts each group's points
+  that another group also holds.
 - Fetched files store each item's Zabbix tags, so ``--item 'tag=...'`` works on
   them too.
 - New documentation, built with Sphinx, including an example configuration

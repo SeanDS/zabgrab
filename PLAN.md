@@ -687,7 +687,14 @@ often-updated file, or to convert it to CSV.
 `zabgrab info FILE` lists the merged items (ID, host, name, key, units, raw or
 hourly, points, time range); `--groups` lists the fetch groups instead (name,
 created, range, items and points selected). It takes the same selection options, so
-it shows what `plot` and `export` would use.
+it shows what `plot` and `export` would use. `--overlaps` (implying `--groups`) adds
+a *Repeated* column: how many of each group's selected points another group also
+holds (same series and time).
+
+`fetch --append` notes (an info message, not a warning) each existing group whose
+range overlaps the new fetch's for any of the same items at the same resolution,
+pointing to `info --overlaps`. Ranges that only touch don't count, so `update`
+(which starts where the last fetch ended) never triggers it, and it doesn't check.
 
 ### Selecting from files
 
@@ -849,6 +856,10 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Without `--output`, interactive runs ask whether to save under the automatic name:
   `y`, `n`, or `o` to type another path, then handled as if given with `--output`
   (keeping any format just asked for).
+- Overlapping groups aren't warned about when reading: overlap is often deliberate,
+  is merged away, and a warning on every `plot`/`export` couldn't be dealt with short
+  of flattening the file. Instead `fetch --append` notes it once, when it's added,
+  and `info --overlaps` shows it on request.
 - `--output` (and `export`/`plot`'s `-o`) can be repeated, to save several formats
   from one fetch rather than fetching again or exporting afterwards.
 - Non-interactive runs never write files unasked: without `--output`, they warn that

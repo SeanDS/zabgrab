@@ -12,6 +12,14 @@ hourly trends, and how many points it has over what time range.
 
    zabgrab info particles.h5
    zabgrab info particles.h5 --groups       # the fetch groups instead
+   zabgrab info particles.h5 --overlaps     # ... and the points they share
+
+``--overlaps`` lists the groups with a *Repeated* column: how many of each group's
+points another group also holds (the same item at the same time), as happens when
+``fetch --append`` adds a range already in the file. ``plot``, ``export`` and
+``zabgrab_load`` merge the groups, keeping each point once, so repeated points do no
+harm, but they take up space; ``zabgrab export`` writes a copy of the file that
+holds each point once.
 
 .. _choosing-items:
 
