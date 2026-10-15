@@ -1,4 +1,12 @@
-"""Choosing which Zabbix server(s) to use."""
+"""Choosing which Zabbix server(s) to use.
+
+Attributes
+----------
+SaveServer : type
+    Saves a new server (name, URL) to the user's config.
+ADD_SERVER_SNIPPET : str
+    Config showing how to add a server, for hints.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +22,6 @@ from ..model.server import Server
 from .ports import UI, Option
 
 SaveServer = Callable[[str, str], None]
-"""Saves a new server (name, URL) to the user's config."""
 
 ADD_SERVER_SNIPPET = """\
 [servers.myserver]
@@ -30,10 +37,29 @@ def select_server(
 ) -> Server:
     """Resolve the one server to fetch from.
 
-    ``configured`` is a server name or URL, a choice to ask about, or ``None`` (ask
-    which of the configured servers to use).
+    Parameters
+    ----------
+    configured : str or Choice of str or None
+        A server name or URL, a choice to ask about, or ``None`` to ask which of the
+        configured servers to use.
+    config : Config
+        The configuration.
+    ui : UI
+        For questions and warnings.
+    save : SaveServer, optional
+        If given, offered for custom URLs entered at a prompt.
 
-    ``save``, if given, is offered for custom URLs entered at a prompt.
+    Returns
+    -------
+    Server
+        The server.
+
+    Raises
+    ------
+    ZabgrabError
+        If a server name is unknown and the user can't be asked.
+    InputRequired
+        If a question is needed but the session isn't interactive.
     """
     if configured is None:
         return _ask_for_server(config, ui, save=save)
@@ -57,8 +83,26 @@ def select_servers(
     *,
     save: SaveServer | None = None,
 ) -> list[Server]:
-    """The servers to search (``hosts``, ``items``): each ``--server`` given, else the
-    one from ``configured`` (see :func:`select_server`)."""
+    """Resolve the servers to search (``hosts``, ``items``).
+
+    Parameters
+    ----------
+    cli : sequence of str
+        The ``--server`` names or URLs given; each is used if there are any.
+    configured : str or Choice of str or None
+        Otherwise, the one server to use (see :func:`select_server`).
+    config : Config
+        The configuration.
+    ui : UI
+        For questions and warnings.
+    save : SaveServer, optional
+        If given, offered for custom URLs entered at a prompt.
+
+    Returns
+    -------
+    list of Server
+        The servers.
+    """
     if cli:
         return [resolve_server(ref, config, ui, save=save) for ref in cli]
     return [select_server(configured, config, ui, save=save)]
@@ -69,7 +113,29 @@ def resolve_server(
 ) -> Server:
     """Resolve a server name or URL.
 
-    Unknown names get a "did you mean" suggestion (a question, if interactive).
+    Unknown names get a "did you mean" suggestion: a question if the session is
+    interactive (falling back to asking which server to use), else a hint.
+
+    Parameters
+    ----------
+    ref : str
+        A configured server's name, or a URL.
+    config : Config
+        The configuration.
+    ui : UI
+        For questions and warnings.
+    save : SaveServer, optional
+        If given, offered for custom URLs entered at a prompt.
+
+    Returns
+    -------
+    Server
+        The server.
+
+    Raises
+    ------
+    ZabgrabError
+        If the name is unknown and the session isn't interactive.
     """
     if ref in config.servers:
         return Server(ref, config.servers[ref])
@@ -98,10 +164,12 @@ def resolve_server(
 
 
 def _option(server: Server) -> Option[Server | None]:
+    """Offer a server, showing its URL next to its name."""
     return Option(server.label, server, server.url if server.name else None)
 
 
 def _ask_for_server(config: Config, ui: UI, *, save: SaveServer | None) -> Server:
+    """Ask which configured server to use, or for a URL if there are none."""
     fix = (
         "Pass --server NAME or --server URL, or set `server` in the template or in "
         "[defaults]."
@@ -122,7 +190,23 @@ def _ask_for_server(config: Config, ui: UI, *, save: SaveServer | None) -> Serve
 
 
 def parse_url(text: str) -> str:
-    """Parse a server URL typed by the user, adding ``https://`` if needed."""
+    """Parse a server URL typed by the user, adding ``https://`` if needed.
+
+    Parameters
+    ----------
+    text : str
+        What the user typed.
+
+    Returns
+    -------
+    str
+        The URL.
+
+    Raises
+    ------
+    ValueError
+        If it isn't a URL.
+    """
     text = text.strip()
     if text and "://" not in text:
         text = f"https://{text}"
@@ -135,7 +219,28 @@ def parse_url(text: str) -> str:
 
 
 def suggest_name(url: str, existing: Sequence[str]) -> str:
-    """A server name derived from a URL's hostname, not clashing with ``existing``."""
+    """Suggest a name for a server from its URL's hostname.
+
+    The first hostname label that isn't ``zabbix`` or ``www`` is used, made into a
+    valid name and numbered if needed to avoid clashes.
+
+    Parameters
+    ----------
+    url : str
+        The server's URL.
+    existing : sequence of str
+        Names already taken.
+
+    Returns
+    -------
+    str
+        The name.
+
+    Examples
+    --------
+    >>> suggest_name("https://zabbix.demo.example.org", ["demo"])
+    'demo-2'
+    """
     labels = (urlsplit(url).hostname or "").split(".")
     candidates = [label for label in labels if label not in ("zabbix", "www")]
     base = "".join(
@@ -151,6 +256,7 @@ def suggest_name(url: str, existing: Sequence[str]) -> str:
 
 
 def _ask_for_url(config: Config, ui: UI, *, save: SaveServer | None) -> Server:
+    """Ask for a server URL, offering to save it to the config if ``save`` is given."""
     url = ui.prompt(
         "Zabbix server URL",
         fix="Pass --server URL.",
@@ -160,6 +266,7 @@ def _ask_for_url(config: Config, ui: UI, *, save: SaveServer | None) -> Server:
         return Server(None, ServerConfig(url=url))
 
     def parse_name(text: str) -> str:
+        """Check a new server name is valid and free."""
         text = text.strip()
         if not is_valid_name(text):
             raise ValueError(

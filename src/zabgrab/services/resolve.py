@@ -1,4 +1,18 @@
-"""Turning command line options, templates and config into a :class:`Query`."""
+"""Turning command line options, templates and config into a :class:`Query`.
+
+Attributes
+----------
+TimeParser : type
+    Parses a user-supplied time in a timezone (``None`` for local) to aware UTC.
+DefaultsSource : type
+    Gets where a ``[defaults]`` key's value came from (a file path or
+    ``built-in``).
+SETTINGS : tuple of str
+    Settings resolved from the command line, templates and ``[defaults]``, in the
+    order they're resolved (the timezone is needed to compare and parse times).
+DATA_SETTINGS : frozenset of str
+    Settings that change which data is fetched (used to mark a query as custom).
+"""
 
 from __future__ import annotations
 
@@ -19,13 +33,8 @@ from ..model.query import CUSTOM, Query, Request
 from .ports import UI, Option
 
 TimeParser = Callable[[str, tzinfo | None], datetime]
-"""Parses a user-supplied time in a timezone (``None`` for local) to aware UTC."""
-
 DefaultsSource = Callable[[str], str | None]
-"""Where a ``[defaults]`` key's value came from (a file path or ``built-in``)."""
 
-#: Settings resolved from the command line, templates and [defaults], in the order
-#: they're resolved (the timezone is needed to compare and parse times).
 SETTINGS = (
     "timezone",
     "from",
@@ -40,23 +49,49 @@ SETTINGS = (
     "mat_text_warn_entries",
 )
 
-#: Settings that change which data is fetched (used to mark a query as custom).
 DATA_SETTINGS = frozenset({"from", "to", "resolution", "agg"})
 
 
 @dataclass(frozen=True)
 class CliRequest:
-    """What was given on the command line."""
+    """What was given on the command line.
+
+    Attributes
+    ----------
+    template : str or None
+        ``--template``.
+    items : tuple of ItemSpec
+        The items given as arguments.
+    server : str or None
+        ``--server``.
+    values : mapping
+        Settings given explicitly, by config key (e.g. ``"from"``).
+    """
 
     template: str | None = None
     items: tuple[ItemSpec, ...] = ()
     server: str | None = None
     values: Mapping[str, Any] = field(default_factory=dict)
-    """Settings given explicitly, by config key (e.g. ``"from"``)."""
 
 
 def flag(key: str) -> str:
-    """The command line option for a config key."""
+    """Get the command line option for a config key.
+
+    Parameters
+    ----------
+    key : str
+        The config key.
+
+    Returns
+    -------
+    str
+        The option.
+
+    Examples
+    --------
+    >>> flag("output_dir")
+    '--output-dir'
+    """
     return "--" + key.replace("_", "-")
 
 
@@ -68,11 +103,37 @@ def resolve_query(
     parse_time: TimeParser,
     defaults_source: DefaultsSource,
 ) -> Query:
-    """Combine the command line, templates and config into a :class:`Query`.
+    """Combine the command line, template and config into a :class:`Query`.
 
     Precedence: the command line, then the template, then ``[defaults]`` (including
     built-in values). Missing times are asked for. Overrides of template values are
     logged.
+
+    Parameters
+    ----------
+    cli : CliRequest
+        What was given on the command line.
+    config : Config
+        The configuration.
+    ui : UI
+        For questions and messages.
+    parse_time : TimeParser
+        Parses times.
+    defaults_source : DefaultsSource
+        Says where ``[defaults]`` values came from, for ``--dry-run``.
+
+    Returns
+    -------
+    Query
+        The query.
+
+    Raises
+    ------
+    ZabgrabError
+        If the template is unknown or a time is invalid, and the user can't be
+        asked.
+    InputRequired
+        If a question is needed but the session isn't interactive.
     """
     answers = Answers()
     template = (
@@ -167,8 +228,27 @@ def find_template(
 ) -> tuple[str, Template]:
     """Look up a template, with "did you mean" for unknown names.
 
-    Returns the name of the template used, which differs from ``name`` if the user
-    chose another (recorded in ``answers``).
+    Parameters
+    ----------
+    name : str
+        The template's name.
+    config : Config
+        The configuration.
+    ui : UI
+        For questions, when the name is unknown.
+    answers : Answers, optional
+        Where to record the template chosen instead, if any.
+
+    Returns
+    -------
+    tuple of str and Template
+        The template used and its name, which differs from ``name`` if the user
+        chose another.
+
+    Raises
+    ------
+    ZabgrabError
+        If the name is unknown and the user can't choose another.
     """
     if name in config.templates:
         return name, config.templates[name]
@@ -198,7 +278,26 @@ def find_template(
 
 
 class _Resolver:
-    """Resolves settings, recording their sources and logging overrides."""
+    """Resolves settings, recording their sources and logging overrides.
+
+    Parameters
+    ----------
+    cli : CliRequest
+        What was given on the command line.
+    config : Config
+        The configuration, for ``[defaults]``.
+    template : tuple of str and Template, or None
+        The template used, and its name.
+    ui : UI
+        For logging overrides.
+    defaults_source : DefaultsSource
+        Says where ``[defaults]`` values came from.
+
+    Attributes
+    ----------
+    sources : dict of str to str
+        Where each setting resolved so far came from, for ``--dry-run``.
+    """
 
     def __init__(
         self,
@@ -208,6 +307,7 @@ class _Resolver:
         ui: UI,
         defaults_source: DefaultsSource,
     ) -> None:
+        """Start resolving."""
         self.cli = cli
         self.config = config
         self.template = template
@@ -216,11 +316,21 @@ class _Resolver:
         self.sources: dict[str, str] = {}
 
     def setting(self, key: str, *, same: Callable[[Any], Any] = lambda v: v) -> Any:
-        """The value of a setting (``None`` if nothing sets it).
+        """Resolve a setting.
 
-        ``same`` maps values to something that compares equal when they mean the
-        same (e.g. parsed times), to tell whether the command line overrides the
-        template.
+        Parameters
+        ----------
+        key : str
+            The config key.
+        same : callable, optional
+            Maps values to something that compares equal when they mean the same
+            (e.g. parsed times), to tell whether the command line overrides the
+            template.
+
+        Returns
+        -------
+        Any
+            The value, or ``None`` if nothing sets it.
         """
         attribute = "from_" if key == "from" else key
         name, template = self.template or ("", None)
@@ -254,6 +364,7 @@ class _Resolver:
 
 
 def _hashable(value: Any) -> Any:
+    """Make a setting's value comparable, turning lists and choices into tuples."""
     if isinstance(value, Choice):
         return ("choice", tuple(value.choices), value.select)
     if isinstance(value, list):
@@ -262,6 +373,7 @@ def _hashable(value: Any) -> Any:
 
 
 def _show(value: Any) -> str:
+    """Show a setting's value as it'd be written on the command line."""
     if isinstance(value, Choice):
         return f"{' or '.join(map(str, value.choices))} ({value.select})"
     if isinstance(value, list):
@@ -279,6 +391,7 @@ def _time(
     tz: tzinfo | None,
     answers: Answers,
 ) -> tuple[str, datetime]:
+    """Parse a start or end time, asking for it if it's missing or invalid."""
     if text is not None:
         try:
             return text, parse_time(text, tz)
@@ -290,6 +403,7 @@ def _time(
             ui.error(str(exc))
 
     def parse(answer: str) -> tuple[str, datetime]:
+        """Keep the answer's text as well as its time."""
         return answer.strip(), parse_time(answer, tz)
 
     answered = ui.prompt(
@@ -305,6 +419,7 @@ def _time(
 def _formats(
     value: Format | Choice[Format] | None, ui: UI, answers: Answers
 ) -> tuple[Format, ...]:
+    """Resolve the configured format(s), asking when the choice is ``prompt``."""
     if value is None:
         return ()
     if not isinstance(value, Choice):
@@ -332,9 +447,9 @@ def _server(
     sources: dict[str, str],
     defaults_source: DefaultsSource,
 ) -> tuple[str | Choice[str] | None, bool]:
-    """The server to fetch from: --server, else the template's, else [defaults]'.
+    """Find the server to fetch from: --server, else the template's, else [defaults]'.
 
-    Returns it and whether --server changed the template's server (choosing one of
+    Also returns whether --server changed the template's server (choosing one of
     the template's server choices doesn't).
     """
     configured = None if template is None else template[1].server
@@ -363,7 +478,7 @@ def _server(
 def _requests(
     cli: CliRequest, template: tuple[str, Template] | None, ui: UI
 ) -> tuple[Request, ...]:
-    """The template's items, plus a request for any items on the command line."""
+    """Build the template's request, plus one for any items on the command line."""
     requests = []
     if template is not None:
         name, settings = template
