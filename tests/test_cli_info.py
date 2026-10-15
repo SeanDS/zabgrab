@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from zabgrab.errors import EXIT_ERROR
@@ -11,6 +12,9 @@ from .test_cli_export import data
 from .test_cli_fetch import ok
 
 __all__ = ["data"]  # the fixture, used by name
+
+# UK summer time's name, as the system gives it.
+BST = "GMT Daylight Time" if sys.platform == "win32" else "BST"
 
 
 def test_items(data: Path) -> None:
@@ -24,8 +28,8 @@ def test_items(data: Path) -> None:
             "#/m3",
             "raw",
             "3",
-            "2025-10-09 09:00:00 BST",
-            "2025-10-09 09:02:00 BST",
+            f"2025-10-09 09:00:00 {BST}",
+            f"2025-10-09 09:02:00 {BST}",
         ],
         [
             "20002",
@@ -35,8 +39,8 @@ def test_items(data: Path) -> None:
             "#/m3",
             "raw",
             "1",
-            "2025-10-09 09:00:30 BST",
-            "2025-10-09 09:00:30 BST",
+            f"2025-10-09 09:00:30 {BST}",
+            f"2025-10-09 09:00:30 {BST}",
         ],
         [
             "20005",
@@ -46,11 +50,11 @@ def test_items(data: Path) -> None:
             "",
             "raw",
             "2",
-            "2025-10-09 09:00:00 BST",
-            "2025-10-09 09:00:01 BST",
+            f"2025-10-09 09:00:00 {BST}",
+            f"2025-10-09 09:00:01 {BST}",
         ],
         ["20006", "DEMO 1", "Agent version", "agent.version", "", "raw", "1"]
-        + ["2025-10-09 09:00:00 BST"] * 2,
+        + [f"2025-10-09 09:00:00 {BST}"] * 2,
     ]
 
 
@@ -97,7 +101,7 @@ def test_groups(data: Path) -> None:
         ("fetch_0002", "2", "4"),
         ("logs", "0", "0"),
     ]
-    assert rows[0][1].endswith("BST")
+    assert rows[0][1].endswith(BST)
 
 
 def test_delimited_files(tmp_path: Path) -> None:
