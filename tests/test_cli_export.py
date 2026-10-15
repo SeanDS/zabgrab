@@ -42,6 +42,18 @@ def test_merged_csv(data: Path, tmp_path: Path) -> None:
     ]
 
 
+def test_several_outputs(data: Path, tmp_path: Path) -> None:
+    h5, csv_ = tmp_path / "out.h5", tmp_path / "out.csv"
+    outputs = ("-o", str(h5), "-o", str(csv_), "-o", str(h5))
+    result = ok(run("export", str(data), *outputs))
+    # The repeated output is written once.
+    assert f"of {data} to {h5}, {csv_}." in result.stderr
+    assert "already exists" not in result.stderr
+    (group,) = read_fetches(h5)
+    assert [s.points for s in group.series] == [3, 1, 2, 1]
+    assert read(csv_)[0]["export"]["groups"] == ["fetch_0001", "fetch_0002", "logs"]
+
+
 @pytest.mark.parametrize("suffix", [".h5", ".mat"])
 def test_single_group(data: Path, tmp_path: Path, suffix: str) -> None:
     out = tmp_path / f"out{suffix}"

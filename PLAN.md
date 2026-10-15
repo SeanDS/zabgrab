@@ -425,6 +425,12 @@ default.
 | `--output DIR/` | Automatic filename in `DIR`. |
 | `--output PATH` | Exactly that path. The extension sets the format unless `--format` is given. |
 
+`--output` can be repeated to save to several files (e.g. `-o data.h5 -o data.csv`),
+each handled as above; a path given twice is written once, and a format asked for
+one output without an extension is reused for the others. `--append` then applies to
+every output, so each must be a `.h5` or `.mat` file. `export -o` and `plot -o` can
+be repeated too (`plot` draws the figure once and saves it in each format).
+
 Default pattern: `{hosts}_{template}_{from}--{to}`.
 Example: `demo1+demo2_particles_20261013T101500Z--20261014T101500Z.mat`
 
@@ -648,7 +654,7 @@ reading operation sees **one merged dataset** (`services/dataset.py`):
   [-o IMAGE]` plots the merged dataset (the same selection options as `export`
   and `info`).
   `--from`/`--to` set the plotted window. `-o` saves an image instead of showing a
-  window, which also works without a display.
+  window, which also works without a display; repeat it to save several formats.
 - `zabgrab fetch ... --plot` plots the fetched data without saving (or asking to),
   unless `--output` is given too.
 - `--log-y` (on `plot`, and on `fetch` with `--plot`) uses log scales for the
@@ -834,8 +840,8 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   runs stop at the redirect itself, so never get this far).
   `token add` follows redirects the same way when checking a token, so it's stored
   under the final URL.
-- Search patterns use Zabbix's own semantics (substring match, `*` wildcard), so
-  results match the web UI and server-side limits are exact.
+- Search patterns use Zabbix's own semantics (whole-value match ignoring case, `*`
+  wildcard), so server-side limits are exact.
 
 - Times: ISO 8601 is parsed exactly first (dateparser alone, with day-first order,
   reads `2026-10-01` as 10 January); everything else goes to
@@ -843,6 +849,8 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Without `--output`, interactive runs ask whether to save under the automatic name:
   `y`, `n`, or `o` to type another path, then handled as if given with `--output`
   (keeping any format just asked for).
+- `--output` (and `export`/`plot`'s `-o`) can be repeated, to save several formats
+  from one fetch rather than fetching again or exporting afterwards.
 - Non-interactive runs never write files unasked: without `--output`, they warn that
   the data wasn't saved. An existing explicit output file is saved alongside under a
   new name, with a warning (`--overwrite` replaces it).

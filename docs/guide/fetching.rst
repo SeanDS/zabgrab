@@ -96,6 +96,16 @@ Saving
    An automatic name in the ``output_dir`` setting (by default the current
    directory).
 
+Repeat ``--output`` to save to several files at once, e.g. in several formats:
+
+.. code-block:: bash
+
+   zabgrab fetch -t particles -o data.h5 -o data.csv
+   zabgrab fetch -t particles -o -o results/     # automatic names in both places
+
+If a format is asked for (see below), it's asked once and used for every output
+without an extension.
+
 Without ``--output``, zabgrab asks whether to save the data under an automatic name:
 answer ``y`` to save it there, ``n`` not to save it, or ``o`` to type another path
 (a file, or a directory ending in ``/``), which works like giving it with
@@ -147,7 +157,8 @@ Existing files
 If the output file exists, zabgrab asks whether to overwrite it, save next to it
 under a new name, or (for ``.h5`` and ``.mat`` files) add the data to it as a new
 group. ``--overwrite`` replaces it without asking, and ``--append`` adds to it (see
-:doc:`updating`). When zabgrab can't ask, it saves next to the existing file.
+:doc:`updating`; with several outputs, it adds to each, so they must all be ``.h5``
+or ``.mat`` files). When zabgrab can't ask, it saves next to the existing file.
 
 Large numbers of items
 ----------------------

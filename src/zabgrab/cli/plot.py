@@ -20,9 +20,11 @@ from .reading import nothing_selected, read_dataset, selection_options
 @click.option(
     "-o",
     "--output",
+    "outputs",
+    multiple=True,
     type=click.Path(dir_okay=False, path_type=Path),
     help="Save the plot to this image file (e.g. .png, .pdf or .svg) instead of "
-    "showing it.",
+    "showing it. Repeat to save it to several files, e.g. in several formats.",
 )
 @click.option("--log-y", is_flag=True, help="Use log scales for the vertical axes.")
 @global_options
@@ -35,7 +37,7 @@ def plot_command(
     from_: str | None,
     to: str | None,
     groups: tuple[str, ...],
-    output: Path | None,
+    outputs: tuple[Path, ...],
     log_y: bool,
 ) -> None:
     """Plot the data in FILE (.mat or .h5).
@@ -62,6 +64,6 @@ def plot_command(
     spec = plot_spec(
         dataset.series, dataset.coverage, app.ui, title=file.name, log_y=log_y
     )
-    plot.show_or_save(spec, tz, output)
-    if output is not None:
-        app.ui.success(f"Saved the plot to {output}.")
+    plot.show_or_save(spec, tz, outputs)
+    if outputs:
+        app.ui.success(f"Saved the plot to {', '.join(map(str, outputs))}.")

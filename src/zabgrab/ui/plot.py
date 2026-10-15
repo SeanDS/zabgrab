@@ -5,6 +5,7 @@ matplotlib is imported only when a plot is drawn, so zabgrab works without it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, tzinfo
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -116,8 +117,10 @@ def draw(spec: PlotSpec, tz: tzinfo | None, *, interactive: bool = False) -> Fig
     return cast("Figure", figure)
 
 
-def show_or_save(spec: PlotSpec, tz: tzinfo | None, output: Path | None = None) -> None:
-    """Show a plot in a window, or save it to a file.
+def show_or_save(
+    spec: PlotSpec, tz: tzinfo | None, outputs: Sequence[Path] = ()
+) -> None:
+    """Show a plot in a window, or save it to files.
 
     Parameters
     ----------
@@ -125,21 +128,24 @@ def show_or_save(spec: PlotSpec, tz: tzinfo | None, output: Path | None = None) 
         What to draw.
     tz : tzinfo or None
         The time zone to show times in (``None`` for local time).
-    output : Path, optional
-        The image file to save to (its extension picks the format, e.g. ``.png``,
-        ``.pdf`` or ``.svg``). If not given, the plot is shown in a window.
+    outputs : sequence of Path, optional
+        The image files to save to (each one's extension picks its format, e.g.
+        ``.png``, ``.pdf`` or ``.svg``). If none are given, the plot is shown in a
+        window.
 
     Raises
     ------
     ZabgrabError
-        If matplotlib isn't installed, or the file can't be written.
+        If matplotlib isn't installed, or a file can't be written.
     """
-    figure = draw(spec, tz, interactive=output is None)
-    plt = _pyplot(interactive=output is None)
+    interactive = not outputs
+    figure = draw(spec, tz, interactive=interactive)
+    plt = _pyplot(interactive=interactive)
     try:
-        if output is None:
+        if interactive:
             plt.show()
-        else:
+        # The figure is drawn once and saved in each format.
+        for output in outputs:
             try:
                 figure.savefig(output)
             except (OSError, ValueError) as exc:

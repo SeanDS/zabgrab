@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, tzinfo
 from pathlib import Path
@@ -92,12 +93,14 @@ from .discovery import ItemSpecType
 @click.option(
     "-o",
     "--output",
+    "outputs",
+    multiple=True,
     is_flag=False,
     flag_value="",
-    default=None,
     metavar="[PATH]",
     help="Save the data: to PATH, to a directory ending in '/', or with no value "
-    "to an automatic name.",
+    "to an automatic name. Repeat to save to several files, e.g. in several "
+    "formats.",
 )
 @click.option(
     "--format",
@@ -174,7 +177,7 @@ def fetch_command(
     to: str | None,
     resolution: str | None,
     agg: tuple[str, ...],
-    output: str | None,
+    outputs: tuple[str, ...],
     format_: str | None,
     output_dir: str | None,
     output_pattern: str | None,
@@ -230,7 +233,7 @@ def fetch_command(
     if log_y and not plot_:
         raise click.UsageError("--log-y only applies with --plot.")
     if not explain:
-        save.check(output)
+        save.check(outputs)
 
     loaded = app.config()
     template_target = _template_target(
@@ -267,7 +270,7 @@ def fetch_command(
             app,
             query,
             loaded.config,
-            output=output,
+            outputs=outputs,
             options=save,
             yes=yes,
             dry_run=dry_run,
@@ -367,7 +370,7 @@ def _fetch_and_save(
     query: Query,
     config: Config,
     *,
-    output: str | None,
+    outputs: Sequence[str],
     options: SaveOptions,
     yes: bool,
     dry_run: bool,
@@ -386,7 +389,7 @@ def _fetch_and_save(
         hosts=[series.item.host for series in result.series],
         server=_short(server),
     )
-    chosen = targets(output, query, app.ui, name=name, options=options)
+    chosen = targets(outputs, query, app.ui, name=name, options=options)
     template = config.templates.get(query.template) if query.template else None
     saved = []
     for target in chosen:

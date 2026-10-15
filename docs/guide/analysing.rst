@@ -62,6 +62,7 @@ shows a file's data in a window, or saves the figure:
 
    zabgrab plot particles.h5
    zabgrab plot particles.h5 -o particles.png        # or .pdf, .svg, ...
+   zabgrab plot particles.h5 -o plot.png -o plot.pdf # several formats
    zabgrab plot particles.h5 --item "*0.3um" --from "2 days ago"
    zabgrab plot particles.h5 --log-y                 # log scales
 
@@ -197,5 +198,6 @@ to extract some items or a time range:
 
    zabgrab export particles.h5 -o particles.mat
    zabgrab export particles.h5 -o recent.csv --item "*0.3um" --from "2 days ago"
+   zabgrab export particles.h5 -o flat.h5 -o flat.csv     # several files at once
 
 It chooses items, times and groups as described in :ref:`choosing-items`.

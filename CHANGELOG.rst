@@ -48,6 +48,9 @@ configuration. See the documentation at https://seands.github.io/zabgrab/.
   append to their files.
 - When ``fetch`` asks whether to save the data under its automatic name, ``o``
   lets you type another path instead.
+- ``-o`` can be given several times to ``fetch``, ``export`` and ``plot``, to save
+  to several files at once, e.g. ``-o data.h5 -o data.csv`` or ``-o plot.png -o
+  plot.pdf``.
 - New ``zabgrab info FILE`` command listing a file's items (or, with ``--groups``,
   its fetch groups), with the same selection options as ``plot`` and ``export``.
 - ``plot``, ``export`` and ``info`` select items with ``--item`` item specs, as

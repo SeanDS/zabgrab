@@ -80,17 +80,19 @@ def test_local_time_and_no_title() -> None:
     assert figure.axes[0].get_xlabel() == "Time (local time)"
 
 
-def test_save(tmp_path: Path) -> None:
-    path = tmp_path / "plot.png"
-    plot.show_or_save(SPEC, None, path)
-    assert path.read_bytes().startswith(b"\x89PNG")
+def test_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(plt, "show", lambda: pytest.fail("shown"))
+    png, pdf = tmp_path / "plot.png", tmp_path / "plot.pdf"
+    plot.show_or_save(SPEC, None, [png, pdf])
+    assert png.read_bytes().startswith(b"\x89PNG")
+    assert pdf.read_bytes().startswith(b"%PDF")
     assert plt.get_fignums() == []
 
 
 @pytest.mark.parametrize("name", ["missing/plot.png", "plot.unknown"])
 def test_save_fails(tmp_path: Path, name: str) -> None:
     with pytest.raises(ZabgrabError, match="Can't save the plot"):
-        plot.show_or_save(SPEC, None, tmp_path / name)
+        plot.show_or_save(SPEC, None, [tmp_path / name])
     assert plt.get_fignums() == []
 
 

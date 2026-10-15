@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import tzinfo
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from ..model.config import Format
 from ..model.item import ItemSpec
 from ..model.itemspec import format_item_spec
 from ..model.series import FetchResult
+from ..services.dataset import Dataset
 from ..services.metadata import export_metadata
 from ..services.output import (
     STRUCTURED,
@@ -32,9 +34,12 @@ from .reading import nothing_selected, read_dataset, selection_options
 @click.option(
     "-o",
     "--output",
+    "outputs",
+    multiple=True,
     required=True,
     type=click.Path(dir_okay=False, path_type=Path),
-    help="File to write (.mat, .h5, .tsv or .csv).",
+    help="File to write (.mat, .h5, .tsv or .csv). Repeat to write several files, "
+    "e.g. in several formats.",
 )
 @click.option(
     "--format",
@@ -54,7 +59,7 @@ from .reading import nothing_selected, read_dataset, selection_options
 def export_command(
     app: AppContext,
     file: Path,
-    output: Path,
+    outputs: tuple[Path, ...],
     format_: str | None,
     items: tuple[ItemSpec, ...],
     match: tuple[str, ...],
@@ -80,7 +85,6 @@ def export_command(
         to=to,
         groups=groups,
     )
-    defaults = app.config().config.defaults
     now = app.clock.now()
     resolutions = {series.resolution for series in dataset.series}
     if len(resolutions) > 1:
@@ -96,23 +100,6 @@ def export_command(
         overwrite=overwrite,
         allow_large_text=allow_large_text,
     )
-    (format,) = choose_formats(
-        [Format(defaults.format)] if isinstance(defaults.format, str) else [],
-        options.format,
-        output,
-        app.ui,
-    )
-    target = existing_target(output, format, app.ui, options)
-    result = FetchResult(series=dataset.series)
-    target, result = guard_large_text(
-        target,
-        result,
-        app.ui,
-        threshold=defaults.mat_text_warn_entries or 0,
-        allow=allow_large_text,
-        existing_entries=hdf5.text_entries,
-        accepted_before=hdf5.large_text_accepted,
-    )
     filters: dict[str, Any] = {
         "items": [format_item_spec(spec) for spec in items],
         "match": list(match),
@@ -122,6 +109,50 @@ def export_command(
     }
     metadata = export_metadata(
         dataset, source=str(file), filters=filters, command=sys.argv, created=now
+    )
+    result = FetchResult(series=dataset.series)
+    written = []
+    # The same output given twice is only written once.
+    for output in dict.fromkeys(outputs):
+        written.append(
+            _write(app, output, dataset, result, metadata, options=options, tz=tz)
+        )
+
+    count = len(result.series)
+    app.ui.success(
+        f"Exported {count} item{'' if count == 1 else 's'} ({result.points:,} points) "
+        f"from {len(dataset.groups)} group{'' if len(dataset.groups) == 1 else 's'} "
+        f"of {file} to {', '.join(map(str, written))}."
+    )
+
+
+def _write(
+    app: AppContext,
+    output: Path,
+    dataset: Dataset,
+    result: FetchResult,
+    metadata: dict[str, Any],
+    *,
+    options: SaveOptions,
+    tz: tzinfo | None,
+) -> Path:
+    """Write the exported data to one output file, returning the path written."""
+    defaults = app.config().config.defaults
+    (format,) = choose_formats(
+        [Format(defaults.format)] if isinstance(defaults.format, str) else [],
+        options.format,
+        output,
+        app.ui,
+    )
+    target = existing_target(output, format, app.ui, options)
+    target, result = guard_large_text(
+        target,
+        result,
+        app.ui,
+        threshold=defaults.mat_text_warn_entries or 0,
+        allow=options.allow_large_text,
+        existing_entries=hdf5.text_entries,
+        accepted_before=hdf5.large_text_accepted,
     )
     if target.format in STRUCTURED:
         hdf5.write_fetch(
@@ -136,10 +167,4 @@ def export_command(
     else:
         delimiter = "\t" if target.format is Format.TSV else ","
         write_delimited(target.path, result, metadata, delimiter=delimiter, tz=tz)
-
-    count = len(result.series)
-    app.ui.success(
-        f"Exported {count} item{'' if count == 1 else 's'} ({result.points:,} points) "
-        f"from {len(dataset.groups)} group{'' if len(dataset.groups) == 1 else 's'} "
-        f"of {file} to {target.path}."
-    )
+    return target.path
