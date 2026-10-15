@@ -1,10 +1,18 @@
-"""Zabbix objects as seen by zabgrab."""
+"""Zabbix objects as seen by zabgrab.
+
+Attributes
+----------
+TIME_UNITS : dict of str to int
+    Seconds per Zabbix time suffix.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
 from enum import IntEnum
+
+TIME_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86_400, "w": 604_800}
 
 
 class ValueType(IntEnum):
@@ -95,6 +103,9 @@ class Item:
         The latest value, if any.
     last_clock : datetime or None
         When the latest value was collected.
+    history, trends : int or None
+        How long raw values and hourly trends are kept, in seconds (0 means they
+        aren't), or ``None`` if not known.
     """
 
     itemid: int
@@ -108,6 +119,8 @@ class Item:
     enabled: bool = True
     last_value: str | None = None
     last_clock: datetime | None = None
+    history: int | None = None
+    trends: int | None = None
 
 
 @dataclass(frozen=True)
@@ -151,3 +164,29 @@ class TrendRow:
     min: str
     avg: str
     max: str
+
+
+def parse_period(text: str) -> int | None:
+    """Parse a Zabbix storage period, such as ``31d`` or ``3600``.
+
+    Parameters
+    ----------
+    text : str
+        The period, as ``item.get`` returns it: whole seconds, optionally with a
+        time suffix (``s``, ``m``, ``h``, ``d`` or ``w``), or a user macro.
+
+    Returns
+    -------
+    int or None
+        The period in seconds (0 means nothing is kept), or ``None`` if it isn't
+        known (e.g. a macro, which the API doesn't resolve).
+
+    Examples
+    --------
+    >>> parse_period("2w"), parse_period("3600"), parse_period("{$HISTORY}")
+    (1209600, 3600, None)
+    """
+    text = text.strip()
+    multiplier = TIME_UNITS.get(text[-1:], 1)
+    number = text[:-1] if text[-1:] in TIME_UNITS else text
+    return int(number) * multiplier if number.isdigit() else None

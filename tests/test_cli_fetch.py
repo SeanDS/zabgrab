@@ -99,6 +99,26 @@ class TestExplainAndDryRun:
         ]
         assert list(Path().glob("*.tsv")) == []
 
+    def test_warns_beyond_history_retention(self, configured: Servers) -> None:
+        result = ok(
+            run(
+                "fetch",
+                "-s",
+                "demo",
+                "-i",
+                "20001",
+                "--from",
+                "60 days ago",
+                "--to",
+                "now",
+                "--dry-run",
+            )
+        )
+        assert (
+            "Warning: Item 20001 (demo1: Particles 0.3um) keeps raw values for 31d, "
+            "but the requested range starts 60d ago" in result.stderr
+        )
+
 
 class TestSaving:
     def test_explicit_file(self, configured: Servers, tmp_path: Path) -> None:

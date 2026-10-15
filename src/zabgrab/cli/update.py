@@ -19,6 +19,7 @@ from ..services.collect import Plan, collect
 from ..services.fetch import fetch
 from ..services.metadata import build_metadata
 from ..services.output import SaveOptions, Target, guard_large_text
+from ..services.retention import warn_beyond_retention
 from ..services.servers import resolve_server
 from ..services.update import (
     UpdatePlan,
@@ -188,6 +189,13 @@ async def _download(
     try:
         if not collected.jobs:
             raise ZabgrabError("No items to update.")
+        warn_beyond_retention(
+            collected.jobs,
+            start=query.start,
+            now=app.clock.now(),
+            resolution=query.resolution,
+            ui=app.ui,
+        )
         if dry_run:
             app.ui.print_data(plan_table(collected.jobs, query.resolution))
             return None

@@ -41,6 +41,7 @@ from ..services.output import (
 )
 from ..services.plotting import plot_spec
 from ..services.resolve import CliRequest, resolve_query
+from ..services.retention import warn_beyond_retention
 from ..services.templates import equivalent_command, template_table
 from ..ui import plot
 from ..ui.render import explain_table, format_time, plan_table, requests_table
@@ -443,6 +444,13 @@ async def _download(
                 "No items to fetch.",
                 hint="Check the item patterns with `zabgrab items`.",
             )
+        warn_beyond_retention(
+            plan.jobs,
+            start=query.start,
+            now=app.clock.now(),
+            resolution=query.resolution,
+            ui=app.ui,
+        )
         if dry_run:
             app.ui.print_data(plan_table(plan.jobs, query.resolution))
             return None

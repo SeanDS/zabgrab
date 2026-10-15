@@ -369,8 +369,10 @@ default.
 - **`resolution = "raw"`:** `history.get`.
 - **`resolution = "1h"`:** `trend.get`. Hourly min/avg/max/count is the only trend
   data Zabbix keeps, so zabgrab does no resampling of its own.
-  - If raw data is requested outside an item's history retention, warn and suggest
-    `--resolution 1h`.
+  - If data is requested from before an item's storage period (history for raw,
+    trends for `1h`), warn that it may have been deleted, suggesting
+    `--resolution 1h` for raw data when trends are kept longer. Items sharing a
+    period share a warning; periods set by macros aren't known, so aren't checked.
   - The README documents the Zabbix-side way to get other averages: a calculated item
     such as `avg(//key,5m)`.
 - **Progress:** rich, written to stderr. One bar per active item plus an overall bar
@@ -846,10 +848,13 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   `Returns`, `Raises`), enforced by ruff's `D` rules; docstring examples run as
   doctests.
 
+- Storage periods come from the item settings (`history`, `trends`); a server-wide
+  housekeeping override isn't visible through the API, so retention warnings say
+  data *may* have been deleted, and fetches and updates still go ahead.
+
 ## Follow-up tasks
 
-- A warning when raw data is requested beyond an item's history retention (deferred
-  from phase 3).
+None at present.
 
 ## Open questions
 

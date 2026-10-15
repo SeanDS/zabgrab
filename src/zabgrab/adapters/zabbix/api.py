@@ -15,7 +15,14 @@ from types import TracebackType
 from typing import Any
 
 from ...errors import AuthenticationFailed, UnsupportedServer, ZabbixAPIError
-from ...model.zabbix import HistoryRow, Host, Item, TrendRow, ValueType
+from ...model.zabbix import (
+    HistoryRow,
+    Host,
+    Item,
+    TrendRow,
+    ValueType,
+    parse_period,
+)
 from .transport import Transport
 
 MIN_VERSION = (7, 0)
@@ -39,6 +46,8 @@ _ITEM_FIELDS = [
     "status",
     "lastvalue",
     "lastclock",
+    "history",
+    "trends",
 ]
 
 # Zabbix tag operators.
@@ -421,6 +430,8 @@ def _item(row: dict[str, Any]) -> Item:
         enabled=str(row.get("status", "0")) == "0",
         last_value=row.get("lastvalue") if clock else None,
         last_clock=datetime.fromtimestamp(clock, UTC) if clock else None,
+        history=parse_period(row.get("history", "")),
+        trends=parse_period(row.get("trends", "")),
     )
 
 

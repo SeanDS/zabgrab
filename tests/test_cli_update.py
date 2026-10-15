@@ -56,6 +56,15 @@ def test_appends_new_data(data: Path, zabbix: FakeZabbix, servers: Servers) -> N
     assert second.metadata["templates"] == first.metadata["templates"]
 
 
+def test_warns_beyond_history_retention(
+    data: Path, zabbix: FakeZabbix, servers: Servers
+) -> None:
+    zabbix.items[0].history = "10m"
+    later(servers)
+    result = ok(run("update", str(data)))
+    assert "Particles 0.3um) keeps raw values for 10m" in result.stderr
+
+
 def test_up_to_date(data: Path) -> None:
     result = ok(run("update", str(data)))
     assert "is already up to date" in result.stderr

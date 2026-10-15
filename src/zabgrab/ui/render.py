@@ -35,6 +35,7 @@ from ..model.query import CUSTOM, Query
 from ..model.server import Server
 from ..model.zabbix import Host, Item
 from ..services.fetch import Job, skip_reason
+from ..services.retention import format_duration
 from ..services.tokens import CheckResult, CheckState, TokenStatus
 from .console import TomlHighlighter
 
@@ -263,11 +264,7 @@ def format_age(age: timedelta) -> str:
     >>> format_age(timedelta(minutes=150))
     '2h'
     """
-    seconds = max(0, int(age.total_seconds()))
-    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
-        if seconds >= size:
-            return f"{seconds // size}{unit}"
-    return f"{seconds}s"
+    return format_duration(age.total_seconds())
 
 
 def _shorten(text: str, width: int = 40) -> str:
