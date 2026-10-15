@@ -12,6 +12,8 @@ from ..adapters.formats import hdf5
 from ..adapters.formats.delimited import write_delimited
 from ..errors import ZabgrabError
 from ..model.config import Format
+from ..model.item import ItemSpec
+from ..model.itemspec import format_item_spec
 from ..model.series import FetchResult
 from ..services.metadata import export_metadata
 from ..services.output import (
@@ -22,7 +24,7 @@ from ..services.output import (
     guard_large_text,
 )
 from .app import AppContext, global_options, pass_app
-from .reading import read_dataset, selection_options
+from .reading import nothing_selected, read_dataset, selection_options
 
 
 @click.command("export")
@@ -54,7 +56,8 @@ def export_command(
     file: Path,
     output: Path,
     format_: str | None,
-    items: tuple[str, ...],
+    items: tuple[ItemSpec, ...],
+    match: tuple[str, ...],
     from_: str | None,
     to: str | None,
     groups: tuple[str, ...],
@@ -72,6 +75,7 @@ def export_command(
         file,
         verb=("export", "exported"),
         items=items,
+        match=match,
         from_=from_,
         to=to,
         groups=groups,
@@ -85,7 +89,7 @@ def export_command(
             hint="Export them separately, choosing groups with --group.",
         )
     if not dataset.series or not dataset.coverage:
-        raise ZabgrabError("Nothing to export.", hint="Check --item, --from and --to.")
+        raise ZabgrabError("Nothing to export.", hint=nothing_selected(file))
 
     options = SaveOptions(
         format=Format(format_) if format_ else None,
@@ -110,7 +114,8 @@ def export_command(
         accepted_before=hdf5.large_text_accepted,
     )
     filters: dict[str, Any] = {
-        "items": list(items),
+        "items": [format_item_spec(spec) for spec in items],
+        "match": list(match),
         "from": from_,
         "to": to,
         "groups": list(groups),

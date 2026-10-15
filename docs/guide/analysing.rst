@@ -1,6 +1,52 @@
 Analysing the data
 ==================
 
+What's in a file
+----------------
+
+``zabgrab info`` lists the items a ``.mat`` or ``.h5`` file holds, merged across its
+fetch groups: each item's ID, host, name, key and units, whether it's raw data or
+hourly trends, and how many points it has over what time range.
+
+.. code-block:: bash
+
+   zabgrab info particles.h5
+   zabgrab info particles.h5 --groups       # the fetch groups instead
+
+.. _choosing-items:
+
+Choosing items, times and groups
+--------------------------------
+
+``zabgrab info``, ``plot`` and ``export`` choose what to use from a file the same way,
+so ``info`` shows what ``plot`` or ``export`` would use:
+
+``--item SPEC`` (``-i``)
+   Items selected by an :ref:`item spec <item-specs>`, just as when fetching: an
+   item ID (``12345``), a name pattern (``0.3um``), or fields such as
+   ``host=lab1,name=0.3,tag=area:lab``. Patterns match like Zabbix's filters
+   (ignoring case, anywhere in the text, with ``*`` wildcards), and a tag must be
+   one the item had when it was fetched. Repeat for several.
+``--match PATTERN`` (``-m``)
+   Items whose whole ID, name, key or ``host: name`` matches a pattern (with ``*``
+   wildcards, ignoring case), e.g. ``--match "lab1: *0.3um"``. Repeat for several.
+``--from TIME``, ``--to TIME``
+   A time range.
+``--group NAME``
+   Only some fetch groups (repeat for several).
+
+Items are used if any ``--item`` or ``--match`` selects them, or if neither is
+given.
+
+.. code-block:: bash
+
+   zabgrab info particles.h5 --item "host=lab1,name=0.3"
+   zabgrab plot particles.h5 --item "0.3um" --from "2 days ago"
+   zabgrab export particles.h5 -o recent.csv --match "*0.5um" --from "1 week ago"
+
+If nothing matches, ``plot`` and ``export`` say so, and suggest ``zabgrab info`` to
+see what the file holds.
+
 Plotting
 --------
 
@@ -11,7 +57,7 @@ shows a file's data in a window, or saves the figure:
 
    zabgrab plot particles.h5
    zabgrab plot particles.h5 -o particles.png        # or .pdf, .svg, ...
-   zabgrab plot particles.h5 --item "*0.3um" --from "2 days ago"
+   zabgrab plot particles.h5 --item 0.3um --from "2 days ago"
    zabgrab plot particles.h5 --log-y                 # log scales
 
 All of a file's groups are plotted as one dataset. Items with the same units share an
@@ -20,15 +66,8 @@ trends are drawn as the average, with the minimum and maximum as a shaded band. 
 only break where no fetch covered the time, so sparse data and appended groups join
 up, and gaps show where data is missing. Text items can't be plotted.
 
-Choose what to plot with:
-
-``--item PATTERN`` (``-i``)
-   Items whose ID, name, key or ``host: name`` matches (with ``*`` wildcards; repeat
-   for several).
-``--from TIME``, ``--to TIME``
-   A time range.
-``--group NAME``
-   Only some fetch groups (repeat for several).
+Choose what to plot with ``--item``, ``--match``, ``--from``, ``--to`` and
+``--group`` (see :ref:`choosing-items`).
 
 ``zabgrab fetch --plot`` plots data as it's fetched (see :doc:`fetching`).
 
@@ -152,7 +191,6 @@ to extract some items or a time range:
 .. code-block:: bash
 
    zabgrab export particles.h5 -o particles.mat
-   zabgrab export particles.h5 -o recent.csv --item "*0.3um" --from "2 days ago"
+   zabgrab export particles.h5 -o recent.csv --item 0.3um --from "2 days ago"
 
-``export`` takes the same ``--item``, ``--from``, ``--to`` and ``--group`` options as
-``plot``.
+It chooses items, times and groups as described in :ref:`choosing-items`.

@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import io
-from datetime import timedelta
+from datetime import UTC, timedelta
 from typing import ClassVar
 
 import pytest
 
 from zabgrab.errors import Cancelled, InputRequired
+from zabgrab.model.config import Resolution, ServerConfig
+from zabgrab.model.series import Series
+from zabgrab.model.server import Server
+from zabgrab.model.zabbix import Item, ValueType
 from zabgrab.services.ports import Option
 from zabgrab.ui.console import RichUI, is_interactive
-from zabgrab.ui.render import format_age
+from zabgrab.ui.render import file_items_table, format_age
 from zabgrab.ui.selection import parse_selection
 
 
@@ -264,3 +268,19 @@ def test_progress_hidden_when_quiet(capsys: pytest.CaptureFixture[str]) -> None:
     with ui.progress("Downloading", 1) as progress:
         progress.advance(progress.add_item("x", 1))
     assert capsys.readouterr().err == ""
+
+
+def test_file_items_from_several_servers() -> None:
+    item = Item(1, 1, "h", "H", "Load", "load", ValueType.FLOAT)
+    series = [
+        Series(
+            Server(name, ServerConfig(url=f"https://{name}.example.org")),
+            item,
+            Resolution.HOURLY,
+            {"time": [0.0]},
+        )
+        for name in ("demo", "lab")
+    ]
+    table = file_items_table(series, UTC)
+    assert [column.header for column in table.columns][:2] == ["Server", "Item ID"]
+    assert [str(cell) for cell in table.columns[6].cells] == ["hourly", "hourly"]

@@ -132,7 +132,8 @@ def plot_spec(
     if not numeric:
         if not text:
             raise ZabgrabError(
-                "Nothing to plot.", hint="Check --item, --from and --to."
+                "Nothing to plot.",
+                hint="Check --item, --match, --from and --to.",
             )
         if len(text) == 1:
             raise ZabgrabError(

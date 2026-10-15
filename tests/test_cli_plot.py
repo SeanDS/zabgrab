@@ -130,6 +130,7 @@ class TestPlot:
         result = run("plot", str(data), "-i", "nope")
         assert result.exit_code == EXIT_ERROR
         assert "Nothing to plot." in result.stderr
+        assert f"`zabgrab info {data}` shows what the file holds" in result.stderr
 
     def test_text_items(self, zabbix: FakeZabbix, tmp_path: Path) -> None:
         data = tmp_path / "data.h5"

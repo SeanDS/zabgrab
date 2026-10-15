@@ -9,11 +9,19 @@ import pytest
 
 from zabgrab.adapters.formats.hdf5 import FetchGroup
 from zabgrab.errors import ZabgrabError
+from zabgrab.model.choice import Choice
 from zabgrab.model.config import Resolution, ServerConfig
+from zabgrab.model.item import ItemSpec
 from zabgrab.model.series import Series
 from zabgrab.model.server import Server
 from zabgrab.model.zabbix import Item, ValueType
-from zabgrab.services.dataset import filter_dataset, matches, merge, select_groups
+from zabgrab.services.dataset import (
+    filter_dataset,
+    matches,
+    merge,
+    select_groups,
+    spec_matches,
+)
 
 from .fakes import RecordingUI
 
@@ -127,8 +135,15 @@ class TestFilter:
                 series([0], [1.0], it=item(2, name="Other")),
             )
         ]
-        dataset = filter_dataset(merge(groups, RecordingUI()), items=["oth*"])
-        assert [s.item.itemid for s in dataset.series] == [2]
+        merged = merge(groups, RecordingUI())
+        by_pattern = filter_dataset(merged, patterns=["oth*"])
+        assert [s.item.itemid for s in by_pattern.series] == [2]
+        by_spec = filter_dataset(merged, items=[ItemSpec(name="her")])
+        assert [s.item.itemid for s in by_spec.series] == [2]
+        # Either selects; nothing given keeps everything.
+        both = filter_dataset(merged, items=[ItemSpec(itemid=2)], patterns=["1"])
+        assert [s.item.itemid for s in both.series] == [1, 2]
+        assert len(filter_dataset(merged).series) == 2
 
     @pytest.mark.parametrize(
         ("pattern", "expected"),
@@ -144,3 +159,42 @@ class TestFilter:
     )
     def test_matches(self, pattern: str, expected: bool) -> None:
         assert matches(series([], []), pattern) is expected
+
+
+TAGGED = Item(
+    7,
+    1,
+    "pc2",
+    "Particle counter 2",
+    "0.3 µm particles",
+    "particles[0.3]",
+    ValueType.FLOAT,
+    tags=(("area", "lab"), ("component", "air"), ("component", "counter")),
+)
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        (ItemSpec(itemid=7), True),
+        (ItemSpec(itemid=8), False),
+        (ItemSpec(name="0.3"), True),
+        (ItemSpec(name="0.3*PARTICLES"), True),
+        (ItemSpec(name="0.5"), False),
+        (ItemSpec(host="pc"), True),
+        (ItemSpec(host="counter 2"), True),
+        (ItemSpec(host="counter 3"), False),
+        (ItemSpec(host=Choice(choices=["nope", "counter"])), True),
+        (ItemSpec(key="particles[*]"), True),
+        (ItemSpec(key="other"), False),
+        (ItemSpec(tag="component"), True),
+        (ItemSpec(tag="component:counter"), True),
+        (ItemSpec(tag="component:count"), False),
+        (ItemSpec(tag="missing"), False),
+        (ItemSpec(host="counter", name="0.3", tag="area:lab"), True),
+        (ItemSpec(host="counter", name="0.5", tag="area:lab"), False),
+        (ItemSpec(host="nope", name="0.3"), False),
+    ],
+)
+def test_spec_matches(spec: ItemSpec, expected: bool) -> None:
+    assert spec_matches(series([], [], it=TAGGED), spec) is expected

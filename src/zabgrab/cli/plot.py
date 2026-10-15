@@ -6,10 +6,12 @@ from pathlib import Path
 
 import click
 
+from ..errors import ZabgrabError
+from ..model.item import ItemSpec
 from ..services.plotting import plot_spec
 from ..ui import plot
 from .app import AppContext, global_options, pass_app
-from .reading import read_dataset, selection_options
+from .reading import nothing_selected, read_dataset, selection_options
 
 
 @click.command("plot")
@@ -28,7 +30,8 @@ from .reading import read_dataset, selection_options
 def plot_command(
     app: AppContext,
     file: Path,
-    items: tuple[str, ...],
+    items: tuple[ItemSpec, ...],
+    match: tuple[str, ...],
     from_: str | None,
     to: str | None,
     groups: tuple[str, ...],
@@ -49,10 +52,13 @@ def plot_command(
         file,
         verb=("plot", "plotted"),
         items=items,
+        match=match,
         from_=from_,
         to=to,
         groups=groups,
     )
+    if not dataset.series:
+        raise ZabgrabError("Nothing to plot.", hint=nothing_selected(file))
     spec = plot_spec(
         dataset.series, dataset.coverage, app.ui, title=file.name, log_y=log_y
     )

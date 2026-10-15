@@ -60,7 +60,7 @@ def test_filters(data: Path, tmp_path: Path) -> None:
             str(data),
             "-o",
             str(out),
-            "--item",
+            "--match",
             "*0.3um",
             "--from",
             "2025-10-09T08:00:30Z",
@@ -71,7 +71,24 @@ def test_filters(data: Path, tmp_path: Path) -> None:
     metadata, rows = read(out)
     assert [item["itemid"] for item in metadata["items"]] == [20001]
     assert rows[1:] == [["2025-10-09T09:01:00.250000+01:00", "2.5"]]
-    assert metadata["export"]["filters"]["items"] == ["*0.3um"]
+    assert metadata["export"]["filters"]["match"] == ["*0.3um"]
+    assert metadata["export"]["filters"]["items"] == []
+
+
+def test_item_specs(data: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out.tsv"
+    spec = "host=DEMO 1,name=0.3"
+    ok(run("export", str(data), "-o", str(out), "--item", spec))
+    metadata, _ = read(out)
+    assert [item["itemid"] for item in metadata["items"]] == [20001]
+    assert metadata["export"]["filters"]["items"] == ["host=DEMO 1,name=0.3"]
+
+
+def test_nothing_selected(data: Path, tmp_path: Path) -> None:
+    result = run("export", str(data), "-o", str(tmp_path / "x.h5"), "-i", "nope")
+    assert result.exit_code == EXIT_ERROR
+    assert "Nothing to export." in result.stderr
+    assert f"`zabgrab info {data}` shows what the file holds" in result.stderr
 
 
 def test_groups(data: Path, tmp_path: Path) -> None:

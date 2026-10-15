@@ -643,8 +643,9 @@ reading operation sees **one merged dataset** (`services/dataset.py`):
 
 ### Plotting (`pip install 'zabgrab[plot]'`)
 
-- `zabgrab plot FILE [--item PATTERN] [--from] [--to] [--group NAME]... [-o IMAGE]`
-  plots the merged dataset (the same selection options as `export`).
+- `zabgrab plot FILE [--item SPEC] [--match PATTERN] [--from] [--to] [--group NAME]...
+  [-o IMAGE]` plots the merged dataset (the same selection options as `export`
+  and `info`).
   `--from`/`--to` set the plotted window. `-o` saves an image instead of showing a
   window, which also works without a display.
 - `zabgrab fetch ... --plot` plots the fetched data without saving (or asking to),
@@ -670,9 +671,29 @@ reading operation sees **one merged dataset** (`services/dataset.py`):
 
 ### Export
 
-`zabgrab export FILE --output OUT[.csv|.tsv|.h5|.mat] [--item] [--from] [--to]` writes
-the merged dataset as a single group. Use it to flatten an often-updated file, or to
-convert it to CSV.
+`zabgrab export FILE --output OUT[.csv|.tsv|.h5|.mat] [--item] [--match] [--from]
+[--to] [--group]` writes the merged dataset as a single group. Use it to flatten an
+often-updated file, or to convert it to CSV.
+
+### Info
+
+`zabgrab info FILE` lists the merged items (ID, host, name, key, units, raw or
+hourly, points, time range); `--groups` lists the fetch groups instead (name,
+created, range, items and points selected). It takes the same selection options, so
+it shows what `plot` and `export` would use.
+
+### Selecting from files
+
+`plot`, `export` and `info` select items with:
+- `--item SPEC`: an item spec, as for `fetch`, matched like Zabbix's filters
+  (case-insensitive, anywhere in the text, `*` wildcards; host by technical or
+  visible name; every given field must match). `tag` matches the tags stored with
+  each item; items in files written before tags were stored have none.
+- `--match PATTERN`: a glob matched case-insensitively against the whole of each
+  item's ID, name, key or `host: name`.
+
+An item is used if any `--item` or `--match` selects it (or neither is given). When
+`plot` or `export` selects nothing, the hint suggests `zabgrab info FILE`.
 
 ### MATLAB helper
 
@@ -881,42 +902,17 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   changed the MATLAB-verified layout. Increase it for changes older readers would
   misread; additive changes don't need it.
 
+- `--item` means the same everywhere: an item spec (it used to be a whole-text glob
+  for `plot` and `export`, which silently matched nothing for specs like
+  `name=*0.3*`). That glob is now `--match`.
+- Items' Zabbix tags are stored in each item's metadata entry (`items[].tags`), so
+  `tag=` specs work on files. It's an addition older readers ignore, so
+  `FORMAT_VERSION` stays 1; tags are as of the fetch, and merged views use the
+  latest group's.
+
 ## Follow-up tasks
 
-Future additions, agreed but not started:
-
-- **`zabgrab info FILE`:** list what a `.mat`/`.h5` file holds, as a table like
-  `zabgrab items`: each item's ID, host, name, key, units, resolution, number of
-  points and time range (merged across groups). `--groups` shows the fetch groups
-  instead (name, created, time range, items). It takes the same selection options
-  as `plot` and `export` (`--item`, `--match`, `--from`, `--to`, `--group`), so it
-  doubles as a way to check what they select. Data to stdout, as for `items`.
-- **`--item` in `plot`/`export`/`info` works like `fetch`'s:** an item spec
-  (`12345`, `Particles *`, or `host=...,name=...,key=...,tag=...`), with the same
-  semantics as against Zabbix (case-insensitive, matching anywhere in the text,
-  `*` wildcards, host matching the technical or visible name, all given fields
-  matching), applied to the items stored in the file. `tag` matches the tags stored
-  with each item (see below); items in files written before tags were stored have
-  none, so a `tag` spec never matches them. Today `--item` there is a single glob
-  that must match an item's whole ID, name, key or `host: name`, so `--item
-  'name=*0.3*'` silently matches nothing.
-- **`--match PATTERN` in `plot`/`export`/`info`:** the current `--item` behaviour
-  under a new name: a glob matched case-insensitively against the whole of each
-  item's ID, name, key or `host: name` (repeatable; an item is kept if any
-  matches).
-- With both, when the selection matches nothing, say so and suggest `zabgrab info
-  FILE` to see what the file holds, rather than only "Nothing to plot."
-- **Store items' Zabbix tags in files**, so `tag=` specs work on them: fetch them
-  with `selectTags` in `item.get`, add `tags` to `Item`, and store them in each
-  item's metadata entry (`items[].tags`, a list of `{tag, value}`). That's an
-  addition older readers ignore, so `FORMAT_VERSION` stays 1, and the
-  MATLAB-verified datasets don't change. Tags are as of the fetch; merged views
-  use the latest group's. Delimited files carry them in their metadata too.
-- These change `--item`'s meaning for `plot` and `export`. Update
-  `docs/guide/analysing.rst` (the CLI reference comes from the help) and add a
-  CHANGELOG entry in the same change as the code, so the docs never describe
-  behaviour that isn't there yet; before 1.0.0 is released there's no
-  compatibility to keep.
+None at present.
 
 ## Open questions
 

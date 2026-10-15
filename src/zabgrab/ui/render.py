@@ -16,7 +16,7 @@ ITEM_SORT_KEYS : dict
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import datetime, timedelta, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
 
 import tomlkit
@@ -32,6 +32,7 @@ from ..model.config import Resolution
 from ..model.item import ItemSpec
 from ..model.itemspec import format_item_spec
 from ..model.query import CUSTOM, Query
+from ..model.series import Series
 from ..model.server import Server
 from ..model.zabbix import Host, Item
 from ..services.fetch import Job, skip_reason
@@ -620,3 +621,96 @@ def plan_table(jobs: Sequence[Job], resolution: Resolution) -> Table:
             else Text("fetch", style="green"),
         )
     return table
+
+
+def file_items_table(series: Sequence[Series], tz: tzinfo | None) -> Table:
+    """Make a table of the items in a file, for ``zabgrab info``.
+
+    Parameters
+    ----------
+    series : sequence of Series
+        The items' merged data.
+    tz : tzinfo or None
+        The time zone to show times in (``None`` for local time).
+
+    Returns
+    -------
+    rich.table.Table
+        The table, with a server column if there's more than one server.
+    """
+    multiple = len({one.server for one in series}) > 1
+    table = DataTable()
+    if multiple:
+        table.add_column("Server", style="magenta")
+    table.add_column("Item ID", style="cyan", justify="right")
+    table.add_column("Host")
+    table.add_column("Name", style="bold")
+    table.add_column("Key", overflow="fold")
+    table.add_column("Units")
+    table.add_column("Data")
+    table.add_column("Points", justify="right")
+    table.add_column("From")
+    table.add_column("To")
+    for one in series:
+        times = one.columns["time"]
+        start, end = (
+            (_file_time(min(times), tz), _file_time(max(times), tz))
+            if times
+            else ("", "")
+        )
+        table.add_row(
+            *([one.server.label] if multiple else []),
+            str(one.item.itemid),
+            one.item.host_name,
+            one.item.name,
+            one.item.key,
+            one.item.units,
+            "hourly" if one.resolution is Resolution.HOURLY else "raw",
+            f"{len(times):,}",
+            start,
+            end,
+        )
+    return table
+
+
+def file_groups_table(
+    groups: Sequence[tuple[str, str | None, float, float, int, int]],
+    tz: tzinfo | None,
+) -> Table:
+    """Make a table of the fetch groups in a file, for ``zabgrab info --groups``.
+
+    Parameters
+    ----------
+    groups : sequence of tuple
+        Each group's name, creation time (ISO 8601, if recorded), fetched range (in
+        POSIX seconds), and number of items and points.
+    tz : tzinfo or None
+        The time zone to show times in (``None`` for local time).
+
+    Returns
+    -------
+    rich.table.Table
+        The table.
+    """
+    table = DataTable()
+    table.add_column("Group", style="bold")
+    table.add_column("Created")
+    table.add_column("From")
+    table.add_column("To")
+    table.add_column("Items", justify="right")
+    table.add_column("Points", justify="right")
+    for name, created, t_from, t_to, items, points in groups:
+        table.add_row(
+            name,
+            "" if created is None else format_time(datetime.fromisoformat(created), tz),
+            _file_time(t_from, tz),
+            _file_time(t_to, tz),
+            str(items),
+            f"{points:,}",
+        )
+    return table
+
+
+def _file_time(time: float, tz: tzinfo | None) -> str:
+    """Format POSIX seconds for display."""
+    return format_time(datetime.fromtimestamp(time, UTC), tz)
