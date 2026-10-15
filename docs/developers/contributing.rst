@@ -46,7 +46,10 @@ Building the documentation
    .venv/bin/sphinx-build -b html docs docs/_build/html
 
 Then open ``docs/_build/html/index.html``. CI builds the documentation too, and fails
-on any warning (add ``--fail-on-warning`` to see the same).
+on any warning (add ``--fail-on-warning`` to see the same). Each CI run keeps the
+built documentation as an artifact named ``docs``, and once changes reach ``main``
+they're published as the `development documentation
+<https://seands.github.io/zabgrab/dev/>`_ (see :doc:`releasing`).
 
 Code layout
 -----------

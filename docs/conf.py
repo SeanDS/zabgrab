@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date
 
 from zabgrab import __version__
@@ -38,6 +39,10 @@ intersphinx_mapping = {
 }
 
 html_theme = "alabaster"
+templates_path = ["_templates"]
+# The development docs (published under /dev/) carry a banner pointing to the
+# released ones; see .github/workflows/docs.yml.
+html_context = {"development": os.environ.get("ZABGRAB_DOCS_DEVELOPMENT") == "1"}
 html_title = f"zabgrab {release}"
 html_theme_options = {
     "description": "Fetch data from Zabbix into MATLAB, HDF5 and CSV files.",
