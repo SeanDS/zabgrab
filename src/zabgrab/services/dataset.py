@@ -327,7 +327,8 @@ def matches(series: Series, pattern: str) -> bool:
     series : Series
         The series.
     pattern : str
-        A glob pattern (``*`` and ``?`` wildcards), matched case-insensitively.
+        A pattern in Python's :mod:`fnmatch` syntax (``*``, ``?``, ``[seq]`` and
+        ``[!seq]``), which must match the whole of one of them, ignoring case.
 
     Returns
     -------

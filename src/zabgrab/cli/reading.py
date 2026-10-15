@@ -56,7 +56,9 @@ def selection_options(function: F) -> F:
                 multiple=True,
                 metavar="PATTERN",
                 help="Only items whose whole ID, name, key or 'host: name' matches "
-                "this pattern ('*' wildcards, any case; repeat for several).",
+                "this pattern, in any case, with Python's fnmatch wildcards: '*' "
+                "(any text), '?' (any character), '[seq]' and '[!seq]' (repeat "
+                "for several).",
             ),
             click.option(
                 "--from",

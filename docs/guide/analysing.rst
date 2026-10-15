@@ -29,8 +29,12 @@ so ``info`` shows what ``plot`` or ``export`` would use:
    ignoring case, with ``*`` matching any text, and a tag must be one the item had
    when it was fetched. Repeat for several.
 ``--match PATTERN`` (``-m``)
-   Items whose whole ID, name, key or ``host: name`` matches a pattern (with ``*``
-   wildcards, ignoring case), e.g. ``--match "lab1: *0.3um"``. Repeat for several.
+   Items whose whole ID, name, key or ``host: name`` matches a pattern, ignoring
+   case, with Python's `fnmatch <https://docs.python.org/3/library/fnmatch.html>`_
+   wildcards: ``*`` matches any text, ``?`` any one character, ``[seq]`` any
+   character in *seq* (e.g. ``[0-9]``), and ``[!seq]`` any character not in it.
+   For example, ``--match "lab1: *0.3um"`` or ``--match "*[05].?um"``. Repeat for
+   several.
 ``--from TIME``, ``--to TIME``
    A time range.
 ``--group NAME``

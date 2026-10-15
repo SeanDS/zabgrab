@@ -692,7 +692,8 @@ it shows what `plot` and `export` would use.
   them), so `info FILE --item X` selects what `items --item X` found. `tag`
   matches the tags stored with each item; items in files written before tags were
   stored have none.
-- `--match PATTERN`: a glob matched case-insensitively against the whole of each
+- `--match PATTERN`: an `fnmatch` pattern (`*`, `?`, `[seq]`, `[!seq]`) matched
+  case-insensitively against the whole of each
   item's ID, name, key or `host: name`.
 
 An item is used if any `--item` or `--match` selects it (or neither is given). When

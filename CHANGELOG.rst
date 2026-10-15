@@ -50,8 +50,9 @@ configuration. See the documentation at https://seands.github.io/zabgrab/.
   its fetch groups), with the same selection options as ``plot`` and ``export``.
 - ``plot``, ``export`` and ``info`` select items with ``--item`` item specs, as
   ``fetch`` does, matching exactly as the Zabbix API would (e.g. ``--item
-  'host=lab1,name=*0.3*'``), and with ``--match``
-  patterns matched against each item's whole ID, name, key or ``host: name``.
+  'host=lab1,name=*0.3*'``), and with ``--match`` ``fnmatch`` patterns (``*``,
+  ``?``, ``[seq]``) matched against each item's whole ID, name, key or
+  ``host: name``.
   When nothing matches, they suggest ``zabgrab info``.
 - Fetched files store each item's Zabbix tags, so ``--item 'tag=...'`` works on
   them too.
