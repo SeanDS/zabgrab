@@ -25,14 +25,27 @@ RESET_SCAN = 256
 
 @dataclass(frozen=True)
 class _Entry:
+    """A keyring entry.
+
+    Attributes
+    ----------
+    number : int
+        The entry's number (``token<number>``).
+    url, token : str or None
+        The server URL and token, or ``None`` if the entry is unreadable (it still
+        occupies its number).
+    raw : str
+        The entry's stored text.
+    """
+
     number: int
     url: str | None
-    """``None`` if the entry is unreadable (it still occupies its number)."""
     token: str | None
     raw: str
 
 
 def _name(number: int) -> str:
+    """Get the keyring entry name for a number."""
     return f"{PREFIX}{number}"
 
 
@@ -41,15 +54,28 @@ class KeyringSecrets:
 
     A missing or broken keyring backend is treated as "no tokens stored" when
     reading, and as an error when changing anything.
+
+    Attributes
+    ----------
+    service : str
+        The keyring service the entries are stored under.
     """
 
     service = PROGRAM
 
     def get_token(self, url: str) -> str | None:
+        """Get the token stored for a server URL, if any."""
         entry = _find(url, self._entries())
         return entry.token if entry else None
 
     def set_token(self, url: str, token: str) -> None:
+        """Store a token for a server URL, replacing any stored before.
+
+        Raises
+        ------
+        ZabgrabError
+            If the keyring can't be written.
+        """
         entries = self._entries()
         existing = _find(url, entries)
         number = existing.number if existing else len(entries) + 1
@@ -57,6 +83,18 @@ class KeyringSecrets:
         self._change("save the token in", lambda: self._set(number, value))
 
     def delete_token(self, url: str) -> bool:
+        """Delete the token stored for a server URL.
+
+        Returns
+        -------
+        bool
+            Whether a token was stored.
+
+        Raises
+        ------
+        ZabgrabError
+            If the keyring can't be changed.
+        """
         entries = self._entries()
         entry = _find(url, entries)
         if entry is None:
@@ -73,9 +111,22 @@ class KeyringSecrets:
         return True
 
     def urls(self) -> list[str]:
+        """Get the server URLs with stored tokens, sorted."""
         return sorted(entry.url for entry in self._entries() if entry.url)
 
     def delete_all(self) -> int:
+        """Delete every zabgrab entry, including unreadable ones and any past a gap.
+
+        Returns
+        -------
+        int
+            How many tokens were stored.
+
+        Raises
+        ------
+        ZabgrabError
+            If the keyring can't be changed.
+        """
         count = len(self.urls())
 
         def delete() -> None:
@@ -93,6 +144,7 @@ class KeyringSecrets:
         return count
 
     def _entries(self) -> list[_Entry]:
+        """Read the entries in order, up to the first missing one."""
         entries = []
         number = 1
         while True:
@@ -107,9 +159,11 @@ class KeyringSecrets:
         return entries
 
     def _set(self, number: int, value: str) -> None:
+        """Write an entry."""
         keyring.set_password(self.service, _name(number), value)
 
     def _change(self, action: str, change: Callable[[], None]) -> None:
+        """Run a change to the keyring, explaining keyring errors (see ``action``)."""
         try:
             change()
         except KeyringError as exc:
@@ -121,6 +175,7 @@ class KeyringSecrets:
 
 
 def _find(url: str, entries: list[_Entry]) -> _Entry | None:
+    """Get the entry for a server URL, if any."""
     for entry in entries:
         if entry.url == url:
             return entry
@@ -128,6 +183,7 @@ def _find(url: str, entries: list[_Entry]) -> _Entry | None:
 
 
 def _parse(number: int, raw: str) -> _Entry:
+    """Read an entry's JSON, keeping unreadable entries (they hold a number)."""
     try:
         data = json.loads(raw)
     except ValueError:

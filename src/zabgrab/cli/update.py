@@ -16,18 +16,17 @@ from ..model.config import Format, Template
 from ..model.series import FetchResult
 from ..model.server import Server
 from ..services.collect import Plan, collect
-from ..services.fetch import fetch
 from ..services.metadata import build_metadata
-from ..services.output import SaveOptions, Target, guard_large_text
+from ..services.output import SaveOptions, Target
 from ..services.servers import resolve_server
 from ..services.update import (
     UpdatePlan,
     collect_previous_items,
     plan_update,
 )
-from ..ui.render import format_time, plan_table
+from ..ui.render import format_time
 from .app import AppContext, global_options, pass_app
-from .fetch import report_problems, save_target
+from .fetch import guard_text, report_problems, run_plan, save_target
 
 
 @click.command("update")
@@ -44,7 +43,7 @@ from .fetch import report_problems, save_target
 @click.option(
     "--rematch",
     is_flag=True,
-    help="Look the items up again from the original templates and patterns, "
+    help="Look the items up again from the original template and patterns, "
     "picking up new items, instead of reusing the item IDs fetched before.",
 )
 @click.option("--dry-run", is_flag=True, help="Show what would be fetched, then stop.")
@@ -73,7 +72,7 @@ def update_command(
     """Add the data since the last fetch to FILE (.mat or .h5).
 
     The fetch is repeated from where the file's last group ended, with the same
-    items, servers and settings, and appended as a new group.
+    items, server and settings, and appended as a new group.
     """
     if file.suffix.lower() in (".tsv", ".csv", ".txt"):
         raise ZabgrabError(
@@ -124,27 +123,22 @@ def update_command(
     if result is None:
         return
     report_problems(app, result)
-    if not result.series:
-        raise ZabgrabError("Nothing was fetched.")
     if not result.points:
         app.ui.success(f"No new data since the last fetch; {file} wasn't changed.")
         return
 
-    target, data = guard_large_text(
-        Target(file, file_format, append=True),
-        result,
-        app.ui,
-        threshold=query.mat_text_warn_entries,
-        allow=allow_large_text,
-        existing_entries=hdf5.text_entries,
-        accepted_before=hdf5.large_text_accepted,
+    target, data = guard_text(
+        app, Target(file, file_format, append=True), result, query, allow_large_text
     )
-    templates = {
-        name: Template.model_validate(template)
-        for name, template in groups[-1].metadata.get("templates", {}).items()
-    }
+    # Carry the template over, so later updates can still --rematch.
+    stored = groups[-1].metadata.get("templates", {})
+    template = (
+        Template.model_validate(stored[query.template])
+        if query.template in stored
+        else None
+    )
     metadata = build_metadata(
-        query, data, templates=templates, command=sys.argv, created=now
+        query, data, template=template, command=sys.argv, created=now
     )
     metadata["update_of"] = plan.last_group
     where = save_target(target, data, metadata, query, SaveOptions(in_place=in_place))
@@ -161,6 +155,7 @@ def update_command(
 async def _download(
     app: AppContext, plan: UpdatePlan, *, rematch: bool, dry_run: bool
 ) -> FetchResult | None:
+    """Find the items to update and fetch their data; ``None`` for a dry run."""
     query = plan.query
     if rematch:
         if len(plan.servers) > 1:
@@ -172,6 +167,7 @@ async def _download(
             )
 
         def select(ref: str | Choice[str] | None) -> Server:
+            """Choose the server to look the items up on again."""
             # The server the group was fetched from (unless it found no items).
             if plan.servers:
                 return next(iter(plan.servers.values()))
@@ -183,21 +179,10 @@ async def _download(
     else:
         collected = await collect_previous_items(plan, app.ui, connect=app.connect)
 
-    try:
-        if not collected.jobs:
-            raise ZabgrabError("No items to update.")
-        if dry_run:
-            app.ui.print_data(plan_table(collected.jobs, query.resolution))
-            return None
-        return await fetch(
-            collected.jobs,
-            collected.clients,
-            start=query.start,
-            end=query.end,
-            resolution=query.resolution,
-            agg=query.agg,
-            concurrency=query.jobs,
-            ui=app.ui,
-        )
-    finally:
-        await collected.close()
+    return await run_plan(
+        app,
+        collected,
+        query,
+        dry_run=dry_run,
+        empty=ZabgrabError("No items to update."),
+    )

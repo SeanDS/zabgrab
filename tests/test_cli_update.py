@@ -56,6 +56,15 @@ def test_appends_new_data(data: Path, zabbix: FakeZabbix, servers: Servers) -> N
     assert second.metadata["templates"] == first.metadata["templates"]
 
 
+def test_warns_beyond_history_retention(
+    data: Path, zabbix: FakeZabbix, servers: Servers
+) -> None:
+    zabbix.items[0].history = "10m"
+    later(servers)
+    result = ok(run("update", str(data)))
+    assert "Particles 0.3um) keeps raw values for 10m" in result.stderr
+
+
 def test_up_to_date(data: Path) -> None:
     result = ok(run("update", str(data)))
     assert "is already up to date" in result.stderr
@@ -261,6 +270,9 @@ def test_rematch_with_several_servers(
     assert "was fetched from several servers" in result.stderr
     result = ok(run("update", str(both), "--dry-run"))
     assert [row[0] for row in table_rows(result.stdout)] == ["demo", "lab"]
+    result = run("update", str(both), "--server", "demo", "--dry-run")
+    assert result.exit_code == EXIT_ERROR
+    assert "can't be updated from one other server" in result.stderr
 
 
 def test_server_chosen_when_fetched(

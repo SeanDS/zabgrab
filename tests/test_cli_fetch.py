@@ -99,6 +99,26 @@ class TestExplainAndDryRun:
         ]
         assert list(Path().glob("*.tsv")) == []
 
+    def test_warns_beyond_history_retention(self, configured: Servers) -> None:
+        result = ok(
+            run(
+                "fetch",
+                "-s",
+                "demo",
+                "-i",
+                "20001",
+                "--from",
+                "60 days ago",
+                "--to",
+                "now",
+                "--dry-run",
+            )
+        )
+        assert (
+            "Warning: Item 20001 (demo1: Particles 0.3um) keeps raw values for 31d, "
+            "but the requested range starts 60d ago" in result.stderr
+        )
+
 
 class TestSaving:
     def test_explicit_file(self, configured: Servers, tmp_path: Path) -> None:
@@ -124,6 +144,15 @@ class TestSaving:
         directory = tmp_path / "data"
         ok(run("fetch", "-t", "particles", "-o", f"{directory}/", "--format", "csv"))
         assert (directory / f"{NAME}.csv").exists()
+
+    def test_output_dir_in_home(
+        self, configured: Servers, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        args = ("-o", "--output-dir", "~/data", "--format", "csv")
+        ok(run("fetch", "-t", "particles", *args))
+        assert (tmp_path / "data" / f"{NAME}.csv").exists()
 
     def test_existing_directory(self, configured: Servers, tmp_path: Path) -> None:
         ok(run("fetch", "-t", "particles", "-o", str(tmp_path), "--format", "csv"))

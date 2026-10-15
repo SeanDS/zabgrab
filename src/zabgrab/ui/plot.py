@@ -105,6 +105,9 @@ def draw(spec: PlotSpec, tz: tzinfo | None, *, interactive: bool = False) -> Fig
                         linewidth=0,
                     )
         subplot.set_ylabel(axis.units)
+        if spec.log_y:
+            # Values of zero or less can't be shown; leave them out of the lines.
+            subplot.set_yscale("log", nonpositive="mask")
         subplot.grid(alpha=0.3)
         subplot.legend(loc="best", fontsize="small")
     subplots[-1][0].set_xlabel(f"Time ({_zone_name(tz)})")
@@ -148,7 +151,7 @@ def show_or_save(spec: PlotSpec, tz: tzinfo | None, output: Path | None = None) 
 
 
 def _wall_clock(time: float, tz: tzinfo | None) -> datetime:
-    """POSIX seconds as a naive wall-clock time in ``tz``.
+    """Convert POSIX seconds to a naive wall-clock time in ``tz``.
 
     matplotlib shows naive datetimes as they are, so converting each time
     separately keeps the axis right across daylight saving changes (a single fixed
@@ -158,4 +161,5 @@ def _wall_clock(time: float, tz: tzinfo | None) -> datetime:
 
 
 def _zone_name(tz: tzinfo | None) -> str:
+    """Name a timezone for the time axis's label."""
     return "local time" if tz is None else str(tz)

@@ -19,8 +19,21 @@ else:
 class ItemSpec(BaseModel):
     """Selects one item by ID, or any number of items by pattern.
 
-    Patterns (``host``, ``name``, ``key``, ``tag``) may contain ``*`` wildcards. All
-    given patterns must match. ``tag`` is ``"name"`` or ``"name:value"``.
+    Patterns may contain ``*`` wildcards and match like the filters in the Zabbix
+    web UI (case-insensitive, anywhere in the text). All given patterns must match.
+
+    Attributes
+    ----------
+    itemid : int or None
+        A single item's ID; can't be combined with patterns.
+    host : str or Choice of str or None
+        A pattern for the host's technical or visible name, or a choice of them.
+    name : str or None
+        A pattern for the item's name.
+    key : str or None
+        A pattern for the item's key.
+    tag : str or None
+        A tag the item must have: ``"name"`` or ``"name:value"``.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -33,6 +46,7 @@ class ItemSpec(BaseModel):
 
     @model_validator(mode="after")
     def _check_fields(self) -> ItemSpec:
+        """Require either an item ID or at least one pattern, but not both."""
         patterns = {
             field: value
             for field, value in (

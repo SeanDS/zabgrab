@@ -1,4 +1,12 @@
-"""Shared CLI state and central error handling."""
+"""Shared CLI state and central error handling.
+
+Attributes
+----------
+pass_app : callable
+    Decorator passing the :class:`AppContext` to a command.
+GLOBAL_OPTIONS : list
+    The options every command accepts (see :func:`global_options`).
+"""
 
 from __future__ import annotations
 
@@ -38,7 +46,18 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 def http_client(config: ServerConfig) -> ZabbixClient:
-    """Create a client that talks to a real server over HTTP(S)."""
+    """Create a client that talks to a real server over HTTP(S).
+
+    Parameters
+    ----------
+    config : ServerConfig
+        The server's URL and connection settings.
+
+    Returns
+    -------
+    ZabbixClient
+        The client, not yet logged in.
+    """
     return ZabbixAPI(
         HttpTransport(config.url, verify_ssl=config.verify_ssl, timeout=config.timeout)
     )
@@ -46,7 +65,23 @@ def http_client(config: ServerConfig) -> ZabbixClient:
 
 @dataclass
 class GlobalOptions:
-    """Options accepted by every command (see :func:`global_options`)."""
+    """Options accepted by every command (see :func:`global_options`).
+
+    Attributes
+    ----------
+    verbosity : int
+        The count of ``-v`` minus the count of ``-q``.
+    debug : bool
+        ``--debug``.
+    color : bool or None
+        ``--color`` or ``--no-color``, if given.
+    config_path : Path or None
+        ``--config``.
+    isolated : bool
+        ``--isolated``.
+    no_input : bool
+        ``--no-input``.
+    """
 
     verbosity: int = 0
     debug: bool = False
@@ -60,7 +95,23 @@ class AppContext:
     """State shared by all commands: the click context object.
 
     Global options update :attr:`options` while the command line is parsed, at
-    whichever level they appear; everything else is built on first use.
+    whichever level they appear; everything else is built on first use. Tests
+    replace the adapters (secrets, client factory, clock, ...) with fakes.
+
+    Attributes
+    ----------
+    options : GlobalOptions
+        The global options.
+    env : Environment
+        The environment variables and platform paths.
+    editor : Editor
+        Opens config files for editing.
+    secrets : SecretStore
+        Stores API tokens.
+    client_factory : ClientFactory
+        Creates Zabbix clients.
+    clock : Clock
+        The current time.
     """
 
     def __init__(self) -> None:
@@ -85,7 +136,13 @@ class AppContext:
         )
 
     def layers(self) -> list[ConfigLayer]:
-        """The config layers, including those without a file."""
+        """Find the config layers, including those without a file.
+
+        Returns
+        -------
+        list of ConfigLayer
+            The layers, lowest priority first.
+        """
         return discover_layers(
             self.env,
             explicit=self.options.config_path,
@@ -93,9 +150,19 @@ class AppContext:
         )
 
     def config(self) -> LoadedConfig:
-        """The merged config, loaded on first use.
+        """Get the merged config, loaded on first use.
 
         Interactive sessions are offered the chance to fix invalid files.
+
+        Returns
+        -------
+        LoadedConfig
+            The config and the layers it came from.
+
+        Raises
+        ------
+        ZabgrabError
+            If a config file is invalid and isn't fixed.
         """
         if self._loaded is None:
             self._loaded = load_with_repair(
@@ -104,9 +171,20 @@ class AppContext:
         return self._loaded
 
     def select_server(self, configured: str | Choice[str] | None) -> Server:
-        """The server to use (see :func:`zabgrab.services.servers.select_server`).
+        """Choose the server to use.
 
-        Custom servers entered at a prompt can be saved to the user config.
+        See :func:`zabgrab.services.servers.select_server`. Custom servers entered
+        at a prompt can be saved to the user config.
+
+        Parameters
+        ----------
+        configured : str or Choice of str or None
+            The configured server, choice of servers, or ``None`` to ask.
+
+        Returns
+        -------
+        Server
+            The server.
         """
         return servers.select_server(
             configured, self.config().config, self.ui, save=self.save_server
@@ -115,27 +193,73 @@ class AppContext:
     def select_servers(
         self, cli: Sequence[str], configured: str | Choice[str] | None
     ) -> list[Server]:
-        """The servers to search (see
-        :func:`zabgrab.services.servers.select_servers`)."""
+        """Choose the servers to search.
+
+        See :func:`zabgrab.services.servers.select_servers`.
+
+        Parameters
+        ----------
+        cli : sequence of str
+            The ``--server`` options given.
+        configured : str or Choice of str or None
+            The configured server, used if there are none.
+
+        Returns
+        -------
+        list of Server
+            The servers.
+        """
         return servers.select_servers(
             cli, configured, self.config().config, self.ui, save=self.save_server
         )
 
     def save_server(self, name: str, url: str) -> None:
-        """Add a server to the user config file."""
+        """Add a server to the user config file.
+
+        Parameters
+        ----------
+        name : str
+            The server's name.
+        url : str
+            Its URL.
+        """
         add_server(user_config_path(self.env), name, url)
         # Reload on next use, so the new server is known (e.g. to update its URL).
         self._loaded = None
 
     def update_server_url(self, name: str, url: str) -> None:
-        """Change a configured server's URL in the config file that defines it."""
+        """Change a configured server's URL in the config file that defines it.
+
+        Parameters
+        ----------
+        name : str
+            The server's name.
+        url : str
+            Its new URL.
+        """
         source = self.config().source_of("servers", name)
         if source is None or source == BUILTIN_SOURCE:  # pragma: no cover
             raise ZabgrabError(f"Server {name!r} isn't defined in a config file.")
         set_server_url(Path(source), name, url)
 
     async def connect(self, server: Server) -> ZabbixClient:
-        """A logged-in client for ``server``."""
+        """Connect and log in to a server.
+
+        Parameters
+        ----------
+        server : Server
+            The server.
+
+        Returns
+        -------
+        ZabbixClient
+            The logged-in client, to be closed after use.
+
+        Raises
+        ------
+        ZabgrabError
+            If the server can't be reached or logging in fails.
+        """
         return await session.connect(
             server,
             factory=self.client_factory,
@@ -152,14 +276,25 @@ pass_app = click.make_pass_decorator(AppContext, ensure=True)
 def _set(
     apply: Callable[[GlobalOptions, Any], None],
 ) -> Callable[[click.Context, click.Parameter, Any], None]:
-    """An option callback applying the option's value to the shared options.
+    """Make an option callback applying the option's value to the shared options.
 
     The context object is created on the first (root) command's context even when
     the option isn't given, so that every level shares it, including the error
     handler, which looks for it on the root context.
+
+    Parameters
+    ----------
+    apply : callable
+        Applies the value to the options.
+
+    Returns
+    -------
+    callable
+        The callback.
     """
 
     def callback(ctx: click.Context, param: click.Parameter, value: Any) -> None:
+        """Apply the option's value, if it was given."""
         options = ctx.ensure_object(AppContext).options
         if ctx.get_parameter_source(param.name or "") is not ParameterSource.DEFAULT:
             apply(options, value)
@@ -168,10 +303,12 @@ def _set(
 
 
 def _add_verbosity(options: GlobalOptions, count: int) -> None:
+    """Apply ``-v``."""
     options.verbosity += count
 
 
 def _subtract_verbosity(options: GlobalOptions, count: int) -> None:
+    """Apply ``-q``."""
     options.verbosity -= count
 
 
@@ -240,6 +377,16 @@ def global_options(function: F) -> F:
 
     Every command gets them, so they can be given at any level, e.g. both
     ``zabgrab -v hosts`` and ``zabgrab hosts -v``.
+
+    Parameters
+    ----------
+    function : callable
+        The command or group's function.
+
+    Returns
+    -------
+    callable
+        The function, with the options added.
     """
     for option in reversed(GLOBAL_OPTIONS):
         function = option(function)
@@ -250,6 +397,18 @@ class ZabgrabGroup(click.Group):
     """Command group that turns exceptions into user-friendly messages."""
 
     def invoke(self, ctx: click.Context) -> Any:
+        """Run the command, reporting errors and exiting with their exit codes.
+
+        Parameters
+        ----------
+        ctx : click.Context
+            The group's context.
+
+        Returns
+        -------
+        Any
+            What the command returns.
+        """
         try:
             return super().invoke(ctx)
         except (click.exceptions.Exit, click.ClickException, click.Abort):
@@ -279,5 +438,6 @@ class ZabgrabGroup(click.Group):
 
 
 def _ui(ctx: click.Context) -> RichUI:
+    """Get the UI to report errors with, even if the command never made one."""
     app = ctx.find_object(AppContext)
     return app.ui if app is not None else RichUI(interactive=False)

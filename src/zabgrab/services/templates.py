@@ -19,14 +19,29 @@ from .resolve import SETTINGS, CliRequest, flag
 
 
 def template_table(cli: CliRequest, query: Query, config: Config) -> dict[str, Any]:
-    """The template that repeats this fetch, as a config table.
+    """Build the template that repeats a fetch, as a config table.
 
     It's self-contained, since templates can't build on each other: the template
     used contributes its items and settings, overridden by the command line and by
     answers given at prompts. ``[defaults]`` and built-in values are left out, so
-    they still apply when the template is used.
+    they still apply when the template is used. Values are kept as given
+    (patterns, relative times).
+
+    Parameters
+    ----------
+    cli : CliRequest
+        What was given on the command line.
+    query : Query
+        The fetch, including the answers given at prompts.
+    config : Config
+        The config, for the template used.
+
+    Returns
+    -------
+    dict
+        The template's settings, as config values.
     """
-    templates = [] if query.template is None else [config.templates[query.template]]
+    template = None if query.template is None else config.templates[query.template]
     table: dict[str, Any] = {}
 
     server = _server(query)
@@ -39,7 +54,7 @@ def template_table(cli: CliRequest, query: Query, config: Config) -> dict[str, A
         ]
 
     for key in SETTINGS:
-        value = _setting(key, cli, query.answers, templates)
+        value = _setting(key, cli, query.answers, template)
         if value is not None:
             table[key] = config_value(value)
     if query.resolution is Resolution.RAW:
@@ -53,8 +68,9 @@ def template_table(cli: CliRequest, query: Query, config: Config) -> dict[str, A
 
 
 def _setting(
-    key: str, cli: CliRequest, answers: Answers, templates: Sequence[Template]
+    key: str, cli: CliRequest, answers: Answers, template: Template | None
 ) -> Any:
+    """Get a setting from the command line, else an answer, else the template."""
     if key in cli.values:
         return cli.values[key]
     if key in answers.settings:
@@ -63,16 +79,13 @@ def _setting(
             # Chosen at a prompt: a template takes one format, or all of several.
             return value[0] if len(value) == 1 else {"choices": value, "select": "all"}
         return value
-    attribute = "from_" if key == "from" else key
-    for template in templates:
-        value = getattr(template, attribute)
-        if value is not None:
-            return value
-    return None
+    if template is None:
+        return None
+    return getattr(template, "from_" if key == "from" else key)
 
 
 def _server(query: Query) -> Any:
-    """The server chosen, given or from the template; not [defaults]' server."""
+    """Get the server chosen, given or from the template; not [defaults]' server."""
     if query.answers.server is not None:
         return query.answers.server
     if query.sources.get("server", "").startswith("[defaults]"):
@@ -81,6 +94,7 @@ def _server(query: Query) -> Any:
 
 
 def _items(query: Query) -> list[ItemSpec]:
+    """Get every request's items (or the ones chosen instead), each once."""
     specs: list[ItemSpec] = []
     for request in query.requests:
         for spec in query.answers.items.get(request.label, request.items):
@@ -91,14 +105,22 @@ def _items(query: Query) -> list[ItemSpec]:
 
 @dataclass
 class Equivalent:
-    """The command that repeats a fetch without its prompts."""
+    """The command that repeats a fetch without its prompts.
+
+    Attributes
+    ----------
+    args : list of str
+        The command line arguments (after the program name).
+    notes : list of str
+        Answers the command can't include, as sentences.
+    """
 
     args: list[str]
     notes: list[str] = field(default_factory=list)
-    """Answers the command can't include."""
 
     @property
     def command(self) -> str:
+        """Get the command, quoted for a shell."""
         return shlex.join(["zabgrab", *self.args])
 
 
@@ -111,8 +133,23 @@ _OPTIONS = {
 
 
 def equivalent_command(args: Sequence[str], answers: Answers) -> Equivalent:
-    """The command line ``args`` (after the program name) with the answers given at
-    prompts added, so it can be run again without them."""
+    """Build the command that repeats a fetch without its prompts.
+
+    Answers become options, replacing any given for the same setting.
+
+    Parameters
+    ----------
+    args : sequence of str
+        The command line as given (after the program name).
+    answers : Answers
+        The answers given at prompts.
+
+    Returns
+    -------
+    Equivalent
+        The command, and notes on answers it can't include (items chosen from a
+        template, several formats).
+    """
     result = Equivalent(list(args))
     if answers.template is not None:
         result.args = _replace(result.args, _OPTIONS["template"], [answers.template])
@@ -147,7 +184,10 @@ def equivalent_command(args: Sequence[str], answers: Answers) -> Equivalent:
 
 
 def _replace(args: list[str], names: Sequence[str], values: list[str]) -> list[str]:
-    """``args`` without the options ``names``, then with one per value."""
+    """Remove an option from ``args``, then add it once per value.
+
+    Handles ``--opt value``, ``--opt=value`` and ``-ovalue`` forms.
+    """
     result = []
     skip = False
     for arg in args:

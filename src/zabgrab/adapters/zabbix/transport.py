@@ -14,10 +14,18 @@ API_PATH = "api_jsonrpc.php"
 
 
 def api_endpoint(url: str) -> str:
-    """The JSON-RPC endpoint for a server URL.
+    """Get the JSON-RPC endpoint for a server URL.
 
-    The URL may be the frontend's base URL (``https://example.org/zabbix``) or the
-    endpoint itself (``.../api_jsonrpc.php``).
+    Parameters
+    ----------
+    url : str
+        The frontend's base URL (``https://example.org/zabbix``) or the endpoint
+        itself (``.../api_jsonrpc.php``).
+
+    Returns
+    -------
+    str
+        The endpoint URL.
     """
     if urlsplit(url).path.endswith(".php"):
         return url
@@ -27,15 +35,41 @@ def api_endpoint(url: str) -> str:
 class Transport(Protocol):
     """Sends JSON-RPC request bodies and returns decoded responses."""
 
-    async def post(self, body: dict[str, Any], headers: dict[str, str]) -> Any: ...
+    async def post(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
+        """Send a request body and return the decoded response.
 
-    async def close(self) -> None: ...
+        Parameters
+        ----------
+        body : dict
+            The JSON-RPC request.
+        headers : dict of str to str
+            Extra HTTP headers (e.g. ``Authorization``).
+
+        Returns
+        -------
+        Any
+            The decoded JSON response.
+        """
+        ...
+
+    async def close(self) -> None:
+        """Release the connection, if any."""
+        ...
 
 
 class HttpTransport:
     """Transport over HTTP(S) using aiohttp.
 
     Network problems are raised as :class:`ConnectionFailed` with a hint.
+
+    Parameters
+    ----------
+    url : str
+        The server's frontend or API URL.
+    verify_ssl : bool, optional
+        Whether to check the server's TLS certificate.
+    timeout : float, optional
+        Seconds to wait for each request.
     """
 
     def __init__(self, url: str, *, verify_ssl: bool = True, timeout: float = 30.0):
@@ -45,6 +79,7 @@ class HttpTransport:
         self._session: aiohttp.ClientSession | None = None
 
     def _client(self) -> aiohttp.ClientSession:
+        """Get the HTTP session, created on first use (it needs a running loop)."""
         if self._session is None:
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout),
@@ -53,6 +88,27 @@ class HttpTransport:
         return self._session
 
     async def post(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
+        """Send a request body and return the decoded response.
+
+        Parameters
+        ----------
+        body : dict
+            The JSON-RPC request.
+        headers : dict of str to str
+            Extra HTTP headers (e.g. ``Authorization``).
+
+        Returns
+        -------
+        Any
+            The decoded JSON response.
+
+        Raises
+        ------
+        Redirected
+            If the endpoint redirects elsewhere.
+        ConnectionFailed
+            If the server can't be reached or doesn't respond like Zabbix.
+        """
         try:
             try:
                 return await self._send(body, headers)
@@ -81,6 +137,7 @@ class HttpTransport:
             ) from exc
 
     async def _send(self, body: dict[str, Any], headers: dict[str, str]) -> Any:
+        """Send one request, turning HTTP problems into ConnectionFailed."""
         async with self._client().post(
             self.endpoint, json=body, headers=headers, allow_redirects=False
         ) as response:
@@ -112,6 +169,7 @@ class HttpTransport:
                 ) from None
 
     async def close(self) -> None:
+        """Close the HTTP session, if one was opened."""
         if self._session is not None:
             await self._session.close()
             self._session = None

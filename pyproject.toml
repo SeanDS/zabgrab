@@ -37,6 +37,10 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 plot = ["matplotlib >=3.8"]
+docs = [
+  "sphinx >=8",
+  "sphinx-click >=6",
+]
 dev = [
   "pytest >=8",
   "pytest-cov >=5",
@@ -49,7 +53,10 @@ dev = [
 zabgrab = "zabgrab.cli:main"
 
 [project.urls]
+Documentation = "https://seands.github.io/zabgrab/"
 "Source Code" = "https://github.com/SeanDS/zabgrab"
+Changelog = "https://github.com/SeanDS/zabgrab/blob/main/CHANGELOG.rst"
+Issues = "https://github.com/SeanDS/zabgrab/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -77,7 +84,17 @@ select = [
   "PT",      # pytest style
   "C4",      # comprehensions
   "DTZ",     # naive datetimes
+  "D",       # docstrings
 ]
+# __init__ parameters are documented in the class docstring.
+ignore = ["D105", "D107"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests are named for what they check, so docstrings are optional there.
+"tests/**" = ["D"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -100,8 +117,8 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = ["--strict-markers", "--strict-config", "-ra"]
+testpaths = ["tests", "src"]
+addopts = ["--strict-markers", "--strict-config", "-ra", "--doctest-modules"]
 xfail_strict = true
 filterwarnings = ["error"]
 

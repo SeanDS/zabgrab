@@ -28,7 +28,7 @@ from ..model.names import NAME_RULE, is_valid_name
 from ..model.query import Query
 from ..model.series import FetchResult
 from ..model.server import Server
-from ..services.collect import collect
+from ..services.collect import Plan, collect
 from ..services.fetch import fetch, stored_end
 from ..services.metadata import build_metadata
 from ..services.output import (
@@ -41,6 +41,7 @@ from ..services.output import (
 )
 from ..services.plotting import plot_spec
 from ..services.resolve import CliRequest, resolve_query
+from ..services.retention import warn_beyond_retention
 from ..services.templates import equivalent_command, template_table
 from ..ui import plot
 from ..ui.render import explain_table, format_time, plan_table, requests_table
@@ -65,7 +66,7 @@ from .discovery import ItemSpecType
     type=ItemSpecType(),
     multiple=True,
     help="Item to fetch as well (repeat for several), e.g. '12345' or "
-    "'host=myhost,name=CPU *'.",
+    "'host=myhost,name=CPU*'.",
 )
 @click.option(
     "-s",
@@ -141,6 +142,9 @@ from .discovery import ItemSpecType
     help="Plot the data (without saving it, unless --output is given). Needs "
     "matplotlib: pip install 'zabgrab[plot]'.",
 )
+@click.option(
+    "--log-y", is_flag=True, help="With --plot: use log scales for the vertical axes."
+)
 @click.option("-y", "--yes", is_flag=True, help="Fetch however many items match.")
 @click.option("--dry-run", is_flag=True, help="Show what would be fetched, then stop.")
 @click.option(
@@ -183,6 +187,7 @@ def fetch_command(
     in_place: bool,
     allow_large_text: bool,
     plot_: bool,
+    log_y: bool,
     yes: bool,
     dry_run: bool,
     explain: bool,
@@ -190,9 +195,9 @@ def fetch_command(
     save_to: str | None,
     force: bool,
 ) -> None:
-    """Fetch data from Zabbix, from templates and/or items.
+    """Fetch data from Zabbix: a template's items and/or items given with --item.
 
-    Settings come from the command line, then the templates, then [defaults] in
+    Settings come from the command line, then the template, then [defaults] in
     your config. Anything missing is asked for.
     """
     given = {
@@ -222,6 +227,8 @@ def fetch_command(
         allow_large_text=allow_large_text,
         plot=plot_,
     )
+    if log_y and not plot_:
+        raise click.UsageError("--log-y only applies with --plot.")
     if not explain:
         save.check(output)
 
@@ -232,6 +239,7 @@ def fetch_command(
     now = app.clock.now()
 
     def parse(text: str, tz: tzinfo | None) -> datetime:
+        """Parse a time relative to the start of the command."""
         return parse_time(text, now=now, tz=tz)
 
     cli = CliRequest(
@@ -264,6 +272,7 @@ def fetch_command(
             yes=yes,
             dry_run=dry_run,
             now=now,
+            log_y=log_y,
         )
 
     if template_target is not None:
@@ -275,6 +284,7 @@ def fetch_command(
 
 
 def _one(values: tuple[str, ...], option: str, reason: str) -> str | None:
+    """Get an option that can only be given once, failing if it's repeated."""
     if len(values) > 1:
         raise click.UsageError(f"{option} can only be given once: {reason}")
     return values[0] if values else None
@@ -282,6 +292,8 @@ def _one(values: tuple[str, ...], option: str, reason: str) -> str | None:
 
 @dataclass(frozen=True)
 class _TemplateTarget:
+    """Where ``--save-template`` saves, and whether it replaces a template."""
+
     name: str
     path: Path
     replace: bool
@@ -333,6 +345,7 @@ def _save_template(
     query: Query,
     config: Config,
 ) -> None:
+    """Save the fetch as a template (``--save-template``)."""
     table = template_table(cli, query, config)
     written = add_template(target.path, target.name, table, replace=target.replace)
     app.ui.success(f"Saved template {target.name!r} to {target.path}:")
@@ -359,6 +372,7 @@ def _fetch_and_save(
     yes: bool,
     dry_run: bool,
     now: datetime,
+    log_y: bool = False,
 ) -> bool:
     """Download and save the data; return whether some items failed."""
     result = asyncio.run(_download(app, query, yes=yes, dry_run=dry_run))
@@ -366,40 +380,26 @@ def _fetch_and_save(
         return False
 
     report_problems(app, result)
-    if not result.series:
-        raise ZabgrabError("Nothing was fetched.")
-
-    servers_used = list(dict.fromkeys(series.server for series in result.series))
+    server = result.series[0].server
     name = auto_name(
         query,
         hosts=[series.item.host for series in result.series],
-        servers=[_short(server) for server in servers_used],
+        server=_short(server),
     )
     chosen = targets(output, query, app.ui, name=name, options=options)
+    template = config.templates.get(query.template) if query.template else None
     saved = []
     for target in chosen:
-        target, data = guard_large_text(
-            target,
-            result,
-            app.ui,
-            threshold=query.mat_text_warn_entries,
-            allow=options.allow_large_text,
-            existing_entries=hdf5.text_entries,
-            accepted_before=hdf5.large_text_accepted,
-        )
+        target, data = guard_text(app, target, result, query, options.allow_large_text)
         metadata = build_metadata(
-            query,
-            data,
-            templates=config.templates,
-            command=sys.argv,
-            created=now,
+            query, data, template=template, command=sys.argv, created=now
         )
         saved.append(save_target(target, data, metadata, query, options))
 
     count = len(result.series)
     summary = (
         f"Fetched {count} item{'' if count == 1 else 's'} ({result.points:,} points) "
-        f"from {', '.join(server.display for server in servers_used)}, "
+        f"from {server.display}, "
         f"{format_time(query.start, query.tz)} to {format_time(query.end, query.tz)}"
     )
     if saved:
@@ -408,13 +408,15 @@ def _fetch_and_save(
     if options.plot:
         # The whole requested range was fetched, so lines join up across it.
         coverage = [(query.start.timestamp(), stored_end(query))]
-        plot.show_or_save(plot_spec(result.series, coverage, app.ui), query.tz)
+        spec = plot_spec(result.series, coverage, app.ui, log_y=log_y)
+        plot.show_or_save(spec, query.tz)
     return bool(result.failed)
 
 
 async def _download(
     app: AppContext, query: Query, *, yes: bool, dry_run: bool
 ) -> FetchResult | None:
+    """Find the items and fetch their data; return ``None`` for a dry run."""
     plan = await collect(
         query,
         app.ui,
@@ -422,12 +424,50 @@ async def _download(
         connect=app.connect,
         yes=yes,
     )
+    return await run_plan(
+        app,
+        plan,
+        query,
+        dry_run=dry_run,
+        empty=ZabgrabError(
+            "No items to fetch.", hint="Check the item patterns with `zabgrab items`."
+        ),
+    )
+
+
+async def run_plan(
+    app: AppContext, plan: Plan, query: Query, *, dry_run: bool, empty: ZabgrabError
+) -> FetchResult | None:
+    """Download the data for a plan's jobs, then close its connections.
+
+    Parameters
+    ----------
+    app : AppContext
+        For the UI and the clock.
+    plan : Plan
+        The items to download, and the connections to their servers.
+    query : Query
+        The time range and settings.
+    dry_run : bool
+        Show the items that would be downloaded instead.
+    empty : ZabgrabError
+        The error to raise if there are no items.
+
+    Returns
+    -------
+    FetchResult or None
+        The data, or ``None`` for a dry run.
+    """
     try:
         if not plan.jobs:
-            raise ZabgrabError(
-                "No items to fetch.",
-                hint="Check the item patterns with `zabgrab items`.",
-            )
+            raise empty
+        warn_beyond_retention(
+            plan.jobs,
+            start=query.start,
+            now=app.clock.now(),
+            resolution=query.resolution,
+            ui=app.ui,
+        )
         if dry_run:
             app.ui.print_data(plan_table(plan.jobs, query.resolution))
             return None
@@ -445,6 +485,42 @@ async def _download(
         await plan.close()
 
 
+def guard_text(
+    app: AppContext, target: Target, result: FetchResult, query: Query, allow: bool
+) -> tuple[Target, FetchResult]:
+    """Check before writing a lot of text to a .mat file.
+
+    See :func:`zabgrab.services.output.guard_large_text`.
+
+    Parameters
+    ----------
+    app : AppContext
+        For the UI.
+    target : Target
+        Where the data is to be saved.
+    result : FetchResult
+        The data.
+    query : Query
+        For the ``mat_text_warn_entries`` setting.
+    allow : bool
+        ``--allow-large-text``.
+
+    Returns
+    -------
+    tuple of Target and FetchResult
+        Where to save, and what.
+    """
+    return guard_large_text(
+        target,
+        result,
+        app.ui,
+        threshold=query.mat_text_warn_entries,
+        allow=allow,
+        existing_entries=hdf5.text_entries,
+        accepted_before=hdf5.large_text_accepted,
+    )
+
+
 def save_target(
     target: Target,
     result: FetchResult,
@@ -452,7 +528,26 @@ def save_target(
     query: Query,
     options: SaveOptions,
 ) -> str:
-    """Write the data; return a description of where it went."""
+    """Write fetched data to a file.
+
+    Parameters
+    ----------
+    target : Target
+        Where and how to save.
+    result : FetchResult
+        The data.
+    metadata : dict
+        The metadata to save with it.
+    query : Query
+        The query, for its time range and timezone.
+    options : SaveOptions
+        ``--group`` and ``--in-place``, for appending.
+
+    Returns
+    -------
+    str
+        A description of where the data went, for the summary.
+    """
     if target.format not in STRUCTURED:
         delimiter = "\t" if target.format is Format.TSV else ","
         write_delimited(target.path, result, metadata, delimiter=delimiter, tz=query.tz)
@@ -473,6 +568,20 @@ def save_target(
 
 
 def report_problems(app: AppContext, result: FetchResult) -> None:
+    """Warn about skipped items and report failed ones.
+
+    Parameters
+    ----------
+    app : AppContext
+        For the UI.
+    result : FetchResult
+        The fetched data.
+
+    Raises
+    ------
+    ZabgrabError
+        If nothing was fetched.
+    """
     for skipped in result.skipped:
         app.ui.warning(
             f"Skipped {skipped.item.host}: {skipped.item.name} "
@@ -484,7 +593,10 @@ def report_problems(app: AppContext, result: FetchResult) -> None:
             f"({failed.item.itemid}).",
             details=[failed.reason],
         )
+    if not result.series:
+        raise ZabgrabError("Nothing was fetched.")
 
 
 def _short(server: Server) -> str:
+    """Name a server briefly, for automatic file names."""
     return server.name or urlsplit(server.url).hostname or server.url

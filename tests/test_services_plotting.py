@@ -154,3 +154,28 @@ class TestSegments:
     ) -> None:
         (segment,) = self.segments(trend([0], **columns), EVERYTHING)
         assert (segment.values, segment.low, segment.high) == (line, None, None)
+
+
+class TestLogScale:
+    def test_flagged_in_the_spec(self) -> None:
+        assert plot_spec([raw([1], [1])], EVERYTHING, RecordingUI(), log_y=True).log_y
+        assert not plot_spec([raw([1], [1])], EVERYTHING, RecordingUI()).log_y
+
+    @pytest.mark.parametrize(
+        "one",
+        [raw([1, 2], [1, 0]), trend([0], min=[-1], avg=[1], max=[2])],
+        ids=["value", "band"],
+    )
+    def test_values_of_zero_or_less_are_warned_about(self, one: Series) -> None:
+        ui = RecordingUI()
+        spec = plot_spec([one], EVERYTHING, ui, log_y=True)
+        assert ui.levels("warning") == [
+            f"{spec.axes[0].lines[0].label} has values of zero or less, which a log "
+            "scale can't show; they're left out."
+        ]
+
+    def test_positive_values_and_linear_scales_arent(self) -> None:
+        ui = RecordingUI()
+        plot_spec([raw([1], [0.5])], EVERYTHING, ui, log_y=True)
+        plot_spec([raw([1], [0])], EVERYTHING, ui)
+        assert ui.levels("warning") == []

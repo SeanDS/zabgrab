@@ -1,4 +1,4 @@
-"""Managing stored API tokens."""
+"""Managing stored API tokens (``zabgrab token``)."""
 
 from __future__ import annotations
 
@@ -21,16 +21,41 @@ from .session import (
 
 @dataclass(frozen=True)
 class TokenStatus:
-    """Whether a server has a token, and where from."""
+    """Whether a server has a token, and where from.
+
+    Attributes
+    ----------
+    server : Server
+        The server.
+    stored : bool
+        Whether a token is stored in the keyring.
+    env_var : str or None
+        The server's ``token_env`` variable, if it has one.
+    env_set : bool
+        Whether that variable is set.
+    """
 
     server: Server
     stored: bool
-    """A token is stored in the keyring."""
     env_var: str | None
     env_set: bool
 
 
 class CheckState(StrEnum):
+    """The outcome of checking a token against its server.
+
+    Attributes
+    ----------
+    VALID
+        The server accepted it.
+    REJECTED
+        The server rejected it.
+    MISSING
+        There's no token for the server.
+    ERROR
+        The server couldn't be asked (e.g. it's unreachable).
+    """
+
     VALID = "valid"
     REJECTED = "rejected"
     MISSING = "missing"
@@ -39,6 +64,16 @@ class CheckState(StrEnum):
 
 @dataclass(frozen=True)
 class CheckResult:
+    """The result of checking a token.
+
+    Attributes
+    ----------
+    state : CheckState
+        The outcome.
+    detail : str
+        Where the token came from, or the error.
+    """
+
     state: CheckState
     detail: str = ""
 
@@ -46,7 +81,22 @@ class CheckResult:
 def token_statuses(
     config: Config, secrets: SecretStore, env: Mapping[str, str]
 ) -> list[TokenStatus]:
-    """Every configured server, then any other server with a stored token."""
+    """List where each server's token comes from.
+
+    Parameters
+    ----------
+    config : Config
+        The configured servers.
+    secrets : SecretStore
+        The stored tokens.
+    env : mapping of str to str
+        Environment variables.
+
+    Returns
+    -------
+    list of TokenStatus
+        Every configured server, then any other server with a stored token.
+    """
     statuses = []
     for name, server_config in config.servers.items():
         variable = server_config.token_env
@@ -75,7 +125,24 @@ async def check_token(
     secrets: SecretStore,
     env: Mapping[str, str],
 ) -> CheckResult:
-    """Check the token zabgrab would use for ``server`` against the server."""
+    """Check the token zabgrab would use for a server against the server.
+
+    Parameters
+    ----------
+    server : Server
+        The server.
+    factory : ClientFactory
+        Creates the client.
+    secrets : SecretStore
+        The stored tokens.
+    env : mapping of str to str
+        Environment variables (for ``token_env``).
+
+    Returns
+    -------
+    CheckResult
+        Whether the token is valid, rejected, missing or couldn't be checked.
+    """
     lookup = find_token(server, secrets, env)
     if not lookup.token:
         return CheckResult(CheckState.MISSING)
@@ -104,10 +171,36 @@ async def add_token(
     check: bool = True,
     update_url: UpdateServerUrl | None = None,
 ) -> None:
-    """Store a token for ``server`` in the keyring, asking for it if ``token`` is
-    ``None``. With ``check``, the server must accept the token first; if it
-    redirects, the token is stored for the URL it redirects to (see
-    :func:`zabgrab.services.session.open_client`)."""
+    """Store a token for a server in the keyring.
+
+    Parameters
+    ----------
+    server : Server
+        The server.
+    token : str or None
+        The token, or ``None`` to ask for it.
+    factory : ClientFactory
+        Creates the client, to check the token.
+    ui : UI
+        Asks for the token, and reports the outcome.
+    secrets : SecretStore
+        Where to store it.
+    env : mapping of str to str
+        Environment variables (to warn if ``token_env`` overrides the keyring).
+    check : bool, optional
+        Make sure the server accepts the token first. If the server redirects, the
+        token is stored for the URL it redirects to (see
+        :func:`zabgrab.services.session.open_client`).
+    update_url : callable, optional
+        Offered to update a configured server's URL after a redirect.
+
+    Raises
+    ------
+    AuthenticationFailed
+        If checking and the server rejects the token.
+    InputRequired
+        If the token is needed and the session isn't interactive.
+    """
     fix = (
         "Pass the token on standard input with '-', e.g. "
         f"`printenv MY_TOKEN | zabgrab token add {server.name or server.url} -`, or "
@@ -149,7 +242,13 @@ async def add_token(
 
 
 def choose_stored(statuses: list[TokenStatus], ui: UI) -> Server:
-    """Ask which server's stored token to act on."""
+    """Ask which server's stored token to act on.
+
+    Raises
+    ------
+    ZabgrabError
+        If no tokens are stored.
+    """
     stored = [status.server for status in statuses if status.stored]
     if not stored:
         raise ZabgrabError("No tokens are stored in your keyring.")
@@ -164,7 +263,15 @@ def choose_stored(statuses: list[TokenStatus], ui: UI) -> Server:
 
 
 def delete_token(server: Server, *, ui: UI, secrets: SecretStore, yes: bool) -> None:
-    """Delete the stored token for ``server``, confirming first unless ``yes``."""
+    """Delete the stored token for a server, confirming first unless ``yes``.
+
+    Raises
+    ------
+    ZabgrabError
+        If no token is stored for it.
+    Cancelled
+        If the user says no.
+    """
     if secrets.get_token(server.url) is None:
         raise ZabgrabError(f"No token is stored for {server.display}.")
     if not yes and not ui.confirm(
@@ -178,7 +285,13 @@ def delete_token(server: Server, *, ui: UI, secrets: SecretStore, yes: bool) -> 
 
 
 def reset_tokens(*, ui: UI, secrets: SecretStore, yes: bool) -> None:
-    """Delete every stored token, confirming first unless ``yes``."""
+    """Delete every stored token, confirming first unless ``yes``.
+
+    Raises
+    ------
+    Cancelled
+        If the user says no.
+    """
     count = len(secrets.urls())
     if count and not yes:
         noun = "token" if count == 1 else f"all {count} tokens"

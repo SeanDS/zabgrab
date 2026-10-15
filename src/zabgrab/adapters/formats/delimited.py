@@ -11,14 +11,17 @@ Layout:
 
 Text values containing the separator, quotes or newlines are quoted, so multi-line
 log entries need a CSV-aware reader such as pandas.
+
+Attributes
+----------
+TIME_COLUMNS : frozenset of str
+    Columns holding times, written as ISO 8601.
 """
 
 from __future__ import annotations
 
 import csv
 import json
-import os
-import tempfile
 from collections import Counter
 from collections.abc import Mapping
 from datetime import UTC, datetime, tzinfo
@@ -28,7 +31,7 @@ from typing import Any
 
 from ...errors import ZabgrabError
 from ...model.series import FetchResult, Series
-from ..files import match_permissions
+from ..files import replacing
 
 TIME_COLUMNS = frozenset({"time", "log_time"})
 
@@ -41,18 +44,32 @@ def write_delimited(
     delimiter: str,
     tz: tzinfo | None,
 ) -> None:
-    """Write ``result`` to ``path``, atomically."""
+    """Write fetched data to a delimited file, atomically.
+
+    Parameters
+    ----------
+    path : Path
+        The file to write (replaced if it exists).
+    result : FetchResult
+        The data.
+    metadata : mapping
+        The metadata, written as ``#`` comment lines.
+    delimiter : str
+        A tab or a comma.
+    tz : tzinfo or None
+        The time zone for times (``None`` for local time).
+
+    Raises
+    ------
+    ZabgrabError
+        If the file can't be written.
+    """
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as file:
-                _write(file, result, metadata, delimiter=delimiter, tz=tz)
-            match_permissions(Path(temporary), path)
-            os.replace(temporary, path)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
+        with (
+            replacing(path) as temporary,
+            temporary.open("w", encoding="utf-8", newline="") as file,
+        ):
+            _write(file, result, metadata, delimiter=delimiter, tz=tz)
     except OSError as exc:
         raise ZabgrabError(f"Can't write {path}: {exc.strerror or exc}") from exc
 
@@ -65,6 +82,7 @@ def _write(
     delimiter: str,
     tz: tzinfo | None,
 ) -> None:
+    """Write the metadata, header and rows to an open file (see write_delimited)."""
     file.write("# zabgrab data. The metadata below is JSON; data starts after it.\n")
     for line in json.dumps(metadata, indent=2, ensure_ascii=False).splitlines():
         file.write(f"# {line}\n")
@@ -88,6 +106,7 @@ def _write(
 
 
 def _labels(all_series: list[Series]) -> list[str]:
+    """Get unique column labels: ``host: name``, with the server and ID if needed."""
     several_servers = len({series.server.url for series in all_series}) > 1
     labels = [
         (f"{series.server.label}/" if several_servers else "")
@@ -102,6 +121,7 @@ def _labels(all_series: list[Series]) -> list[str]:
 
 
 def _rows(series: Series, tz: tzinfo | None) -> Any:
+    """Get a series' rows of formatted cells."""
     columns = [
         [_cell(name, value, tz) for value in values]
         for name, values in series.columns.items()
@@ -110,6 +130,7 @@ def _rows(series: Series, tz: tzinfo | None) -> Any:
 
 
 def _cell(column: str, value: Any, tz: tzinfo | None) -> str:
+    """Format a value: times as ISO 8601 in ``tz``, missing values as empty."""
     if value is None:
         return ""
     if column in TIME_COLUMNS:

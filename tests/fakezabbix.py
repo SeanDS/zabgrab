@@ -60,6 +60,8 @@ class FakeItem:
     status: int = 0
     lastvalue: str = ""
     lastclock: int = 0
+    history: str = "31d"
+    trends: str = "365d"
     tags: dict[str, str] = field(default_factory=dict)
 
 
@@ -252,6 +254,8 @@ class FakeZabbix:
                 "status": str(item.status),
                 "lastvalue": item.lastvalue,
                 "lastclock": str(item.lastclock),
+                "history": item.history,
+                "trends": item.trends,
             }
             if "itemids" in params and row["itemid"] not in params["itemids"]:
                 continue

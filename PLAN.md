@@ -7,8 +7,8 @@ phased delivery plan, and the remaining open questions.
 ## Goals
 
 - Find Zabbix items without digging IDs out of the web UI; wildcard item selection.
-- Multi-server configs; templates that can run against one, several or a user-chosen
-  server.
+- Multi-server configs; templates that run against one server, or one the user
+  chooses when asked.
 - Templates that can set every fetch argument. One template and one server per fetch.
 - Fast parallel downloads with clear progress, colour and helpful errors.
 - MATLAB-friendly HDF5 output that can be incrementally updated.
@@ -153,7 +153,7 @@ opens a file in `$EDITOR`.
 timezone = "local"                 # or e.g. "UTC", "Europe/London"
 format = "mat"                     # mat | h5 | tsv | csv
 output_dir = "."
-output_pattern = "{hosts}_{templates}_{from}--{to}"
+output_pattern = "{hosts}_{template}_{from}--{to}"
 jobs = 6                           # parallel downloads
 max_items = 50                     # confirm before wildcard expansions larger than this
 
@@ -201,7 +201,7 @@ Keys that support it accept either a plain value or
 
 | `select` | Behaviour |
 |---|---|
-| `all` | Use every choice, stacking the results into one output. |
+| `all` | Use every choice: every host (for `host`), or write every format (for `format`). |
 | `prompt` (default) | Interactive: the user picks. Non-interactive: an error unless the CLI sets the value. |
 | `first` | Use the first choice that works. |
 
@@ -217,11 +217,10 @@ See "Missing and invalid input".
 
 `zabgrab fetch ... --save-template NAME [--save-to user|project|system|PATH] [--force]`
 
-- Saves the settings given on the command line, by the templates used, and as
+- Saves the settings given on the command line, by the template used, and as
   answers at prompts. `[defaults]` and built-in values are not frozen into the
   template. Templates can't build on each other, so the new one is self-contained:
-  it combines the templates' items and settings (the command line winning). If the
-  templates used different servers, saving fails and says so.
+  it copies the template's items and settings (the command line winning).
 - Saves values as the user typed them: wildcard patterns rather than resolved item
   IDs, and relative times such as `"24 hours ago"`. Items picked at a prompt are
   saved as the search pattern if all its matches were picked, otherwise as IDs.
@@ -369,9 +368,11 @@ default.
 - **`resolution = "raw"`:** `history.get`.
 - **`resolution = "1h"`:** `trend.get`. Hourly min/avg/max/count is the only trend
   data Zabbix keeps, so zabgrab does no resampling of its own.
-  - If raw data is requested outside an item's history retention, warn and suggest
-    `--resolution 1h`.
-  - The README documents the Zabbix-side way to get other averages: a calculated item
+  - If data is requested from before an item's storage period (history for raw,
+    trends for `1h`), warn that it may have been deleted, suggesting
+    `--resolution 1h` for raw data when trends are kept longer. Items sharing a
+    period share a warning; periods set by macros aren't known, so aren't checked.
+  - The documentation describes the Zabbix-side way to get other averages: a calculated item
     such as `avg(//key,5m)`.
 - **Progress:** rich, written to stderr. One bar per active item plus an overall bar
   (chunks done / total). Hidden when stderr is not a terminal.
@@ -423,13 +424,13 @@ default.
 | `--output DIR/` | Automatic filename in `DIR`. |
 | `--output PATH` | Exactly that path. The extension sets the format unless `--format` is given. |
 
-Default pattern: `{hosts}_{templates}_{from}--{to}`.
-Example: `demo1+demo2_particles+temps_20261013T101500Z--20261014T101500Z.mat`
+Default pattern: `{hosts}_{template}_{from}--{to}`.
+Example: `demo1+demo2_particles_20261013T101500Z--20261014T101500Z.mat`
 
 - `{hosts}`: the matched hosts, sorted and joined with `+`. More than 3 become
   `a+b+5more`.
-- `{templates}`: template names in CLI order, joined with `+`.
-  - No templates: `__custom`.
+- `{template}`: the template's name.
+  - No template: `__custom`.
   - If CLI flags changed data-affecting template values (items, server outside the
     template's choices, from/to, resolution, agg) or added items, append `+__custom`.
   - Changes to output, format or verbosity don't count.
@@ -455,7 +456,7 @@ Both formats share one layout, written with h5py:
             value_type  int
             time    double  N×1, POSIX seconds UTC
             value   N×1: double (type 0), uint64 (type 3), text (types 1, 2, 4)
-            log_time, source, severity, logeventid  (log items only)
+            log_time, source, severity, event_id    (log items only)
             min, avg, max, count                    (1h trends; the ones selected by agg)
         item_67890/ ...
 /fetch_0002 ...
@@ -552,7 +553,8 @@ The JSON contains:
 - the zabgrab version and output format version
 - the run time (UTC) and the full command line
 - the server name and URL (never credentials)
-- the templates used, both as written and as resolved, and the item specs as written
+- the template used (in a list and a table, from when fetches could use several),
+  as written and as resolved, and the item specs as written
 - the matched items: itemid, host, name, key, units, value_type
 - the resolved from/to, the timezone, the resolution and agg
 - the provenance of each resolved value
@@ -580,7 +582,7 @@ Extends an existing `.h5`/`.mat` file with new data:
 
 Options: `--to`, `--server`, `--rematch`, `--dry-run`, `--in-place`.
 
-README example to include:
+Documentation example:
 
 ```bash
 # Initial fetch of the last week into a MATLAB file
@@ -647,6 +649,9 @@ reading operation sees **one merged dataset** (`services/dataset.py`):
   window, which also works without a display.
 - `zabgrab fetch ... --plot` plots the fetched data without saving (or asking to),
   unless `--output` is given too.
+- `--log-y` (on `plot`, and on `fetch` with `--plot`) uses log scales for the
+  vertical axes. Lines with values of zero or less, which can't be shown, get a
+  warning.
 - One axis per unit, lines labelled `host: name [units]`, plus `(hourly)` for
   trends and the server when the plot has several.
 - Trends are drawn as the avg line (else whichever statistic was fetched) with a
@@ -671,7 +676,7 @@ convert it to CSV.
 
 ### MATLAB helper
 
-`matlab/zabgrab_load.m` is shipped in the repo and documented in the README.
+`matlab/zabgrab_load.m` is shipped in the repo and documented in the user guide.
 `S = zabgrab_load('particles.mat')` returns the merged series per item, with `datetime`
 times. This makes groups invisible to MATLAB users too. It is tested manually
 alongside the MATLAB check files.
@@ -736,17 +741,20 @@ alongside the MATLAB check files.
 
 ## Documentation
 
-- **README:**
-  - install, including `[plot]`
-  - quick start, `zabgrab token add`, finding items (`hosts`/`items`)
-  - a **complete commented config example** (servers, defaults, templates with
-    choices and wildcards)
-  - templates, output naming, formats and MATLAB/Python loading snippets
-  - the `update` example, trends vs raw, and the calculated-item note for other
-    averages
-- A test parses the README's TOML example so it cannot go stale. Ship the same
-  example as `config.example.toml`.
-- **CHANGELOG:** the rewrite is released as **1.0.0** and is a breaking change.
+- **User documentation** is a Sphinx site (Alabaster theme) in `docs/`, focused on
+  using zabgrab rather than on configuration: installation, a quickstart, guides
+  to finding items, fetching, templates, updating files, analysing the data
+  (plotting, MATLAB and Python loading, file layouts) and running unattended, a
+  light configuration page, and a command reference generated from the click
+  commands (sphinx-click). It's published to GitHub Pages for each release.
+- **Developer documentation** in the same site: contributing (setup, checks, code
+  layout, conventions), making a release (tagging, GitHub release, PyPI), and an
+  API reference generated from the docstrings.
+- **README:** installation, running zabgrab, and where to find or how to build the
+  documentation; nothing about configuration or advanced use.
+- `config.example.toml` is a complete commented config example, included in the
+  documentation; a test checks it's valid.
+- **CHANGELOG** (`CHANGELOG.rst`, included in the documentation): the rewrite is released as **1.0.0** and is a breaking change.
 - **Docstrings:** all public functions have docstrings and type hints.
 
 ## Phases
@@ -759,7 +767,7 @@ alongside the MATLAB check files.
 | 4 ✅ | HDF5 + MAT v7.3 readers/writers (text included, with the cell-array benchmark), `--append`, `services/update.py` + `update` command, `services/dataset.py` + `export`, MATLAB check files + `zabgrab_load.m` | Sean confirms the files and the helper in MATLAB |
 | 5 ✅ | `--save-template` (tomlkit), "Next time" hint | Round-trip tests pass |
 | 6 ✅ | `plot` extra (merged view, coverage gaps, text-item errors) | Plots from live fetch and from multi-group files |
-| 7 | Full README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
+| 7 | Sphinx documentation (published to GitHub Pages on release), short README, `config.example.toml`, CHANGELOG, release **1.0.0** | Docs reviewed; release tagged |
 
 Each phase includes its tests and docstrings. The old code is deleted in phase 1.
 
@@ -797,7 +805,7 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   that defines the server. Non-interactive runs fail with the URL to use.
 - A token stored under a URL that redirects is still used after following the
   redirect; interactive users are offered to move it to the new URL (non-interactive
-  runs would warn and continue, though they currently stop at the redirect itself).
+  runs stop at the redirect itself, so never get this far).
   `token add` follows redirects the same way when checking a token, so it's stored
   under the final URL.
 - Search patterns use Zabbix's own semantics (substring match, `*` wildcard), so
@@ -812,13 +820,13 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Raw downloads are chunked by day and trends by 30 days; network errors are retried
   three times with backoff; each item downloads its chunks in order, `jobs` items at
   a time.
-- `--save-template` saves a self-contained template (the templates used, the command
+- `--save-template` saves a self-contained template (the template used, the command
   line and prompt answers; never `[defaults]` or built-in values), rather than only
   the command line's values, which would leave a template built on another one
   without its items.
 - The "Next time" command is the command line as typed, with answered prompts added
   as options (replacing any given). Answers it can't express (items narrowed from a
-  template, several formats, different servers per template) are noted instead.
+  template, several formats) are noted instead.
 
 - `.mat`/`.h5` files are written with HDF5's earliest file format so that MATLAB's
   older HDF5 library can read them. The layout passed `tests/matlab/check_files.m`
@@ -831,7 +839,10 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   later), since raw values have sub-second times.
 - Items in a group are named `item_<id>`, with `_2`, `_3`, ... when items on
   different servers share an ID; readers use the stored server and ID, not the names.
-- CI moved from GitLab to GitHub Actions, with no release or deployment jobs yet.
+- CI moved from GitLab to GitHub Actions. It also builds the documentation; a
+  separate workflow publishes it to GitHub Pages when a release is published.
+  Releases are tagged by hand (setuptools_scm takes the version from the tag) and
+  aren't uploaded to PyPI automatically.
 - Tests run in UK time, which their expected local times are written in. Windows
   can't change a running process's time zone, so there the system time zone must
   be UK time (CI sets it with `tzutil`), and the tests stop with an error otherwise.
@@ -840,16 +851,24 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 
 - Code is commented wherever it isn't trivial, and every module, class, function and
   method has a NumPy-style docstring (Sphinx/napoleon sections such as `Parameters`,
-  `Returns`, `Raises`). New and changed code follows this from phase 5 on.
+  `Returns`, `Raises`), enforced by ruff's `D` rules; docstring examples run as
+  doctests.
+
+- Storage periods come from the item settings (`history`, `trends`); a server-wide
+  housekeeping override isn't visible through the API, so retention warnings say
+  data *may* have been deleted, and fetches and updates still go ahead.
+
+- With one template per fetch, the `output_pattern` placeholder `{templates}` became
+  `{template}` (before 1.0.0, so with no compatibility alias). The metadata keeps
+  `query.templates` as a list and `templates` as a table, so the file layout is
+  unchanged.
+- `update --server` refuses groups fetched from several servers, as `--rematch`
+  does: item IDs only mean something on the server they came from.
+- `~` in `output_dir` means the home directory.
 
 ## Follow-up tasks
 
-- Retrofit comments and NumPy-style docstrings to the existing code in
-  `src/zabgrab/` (module by module, behaviour unchanged, coverage kept at 100%).
-  Then consider enforcing it with ruff's pydocstyle rules (`D`, `convention =
-  "numpy"`).
-- A warning when raw data is requested beyond an item's history retention (deferred
-  from phase 3).
+None at present.
 
 ## Open questions
 

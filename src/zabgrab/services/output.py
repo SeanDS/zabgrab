@@ -1,4 +1,17 @@
-"""Deciding where and how to save fetched data."""
+"""Deciding where and how to save fetched data.
+
+Attributes
+----------
+STRUCTURED : tuple of Format
+    Formats that hold several fetches (as groups), so can be appended to.
+MAT_TEXT_BYTES : int
+    The measured size of a text entry in a .mat file (see
+    ``benchmarks/mat_text.py``).
+MAT_TEXT_WRITE_SECONDS : float
+    The measured time to write a text entry to a .mat file.
+FORMAT_FIX : str
+    How to choose the format without being asked.
+"""
 
 from __future__ import annotations
 
@@ -14,10 +27,8 @@ from ..model.series import FetchResult, Skipped
 from .naming import EXTENSIONS, format_for, output_name, unique_path
 from .ports import UI, Option
 
-#: Formats that hold several fetches (as groups), so can be appended to.
 STRUCTURED = (Format.MAT, Format.H5)
 
-#: Measured costs of a text entry in a .mat file (see benchmarks/mat_text.py).
 MAT_TEXT_BYTES = 480
 MAT_TEXT_WRITE_SECONDS = 60e-6
 
@@ -29,16 +40,49 @@ FORMAT_FIX = (
 
 @dataclass(frozen=True)
 class Target:
+    """A file to save data to.
+
+    Attributes
+    ----------
+    path : Path
+        The file.
+    format : Format
+        Its format.
+    append : bool
+        Add a group to the file (which may not exist yet), rather than replace it.
+    large_text_accepted : bool
+        The user accepted writing a lot of text to a .mat file, which is recorded in
+        it so later appends don't ask again.
+    """
+
     path: Path
     format: Format
     append: bool = False
-    """Add a group to the file (which may not exist yet), rather than replace it."""
     large_text_accepted: bool = False
 
 
 @dataclass(frozen=True)
 class SaveOptions:
-    """Command line options about saving."""
+    """Command line options about saving.
+
+    Attributes
+    ----------
+    format : Format or None
+        ``--format``.
+    overwrite : bool
+        ``--overwrite``.
+    append : bool
+        ``--append``.
+    group : str or None
+        ``--group``: the name of the group to append.
+    in_place : bool
+        ``--in-place``: append without copying the file first.
+    allow_large_text : bool
+        ``--allow-large-text``.
+    plot : bool
+        ``--plot``: the data will be plotted, so without ``--output`` it's neither
+        saved nor asked about.
+    """
 
     format: Format | None = None
     overwrite: bool = False
@@ -47,11 +91,20 @@ class SaveOptions:
     in_place: bool = False
     allow_large_text: bool = False
     plot: bool = False
-    """The data will be plotted, so without --output it's neither saved nor asked
-    about."""
 
     def check(self, output: str | None) -> None:
-        """Reject options that don't make sense together."""
+        """Reject options that don't make sense together.
+
+        Parameters
+        ----------
+        output : str or None
+            ``--output``, if given.
+
+        Raises
+        ------
+        ZabgrabError
+            If the options conflict.
+        """
         if self.append and self.overwrite:
             raise ZabgrabError("--append and --overwrite can't be used together.")
         if (self.append or self.group or self.in_place) and not output:
@@ -71,16 +124,31 @@ class SaveOptions:
                 )
 
 
-def auto_name(query: Query, *, hosts: Sequence[str], servers: Sequence[str]) -> str:
-    """The automatic file name (without extension) for a query's data."""
+def auto_name(query: Query, *, hosts: Sequence[str], server: str) -> str:
+    """Make the automatic file name (without extension) for a query's data.
+
+    Parameters
+    ----------
+    query : Query
+        The query, whose ``output_pattern`` is filled in.
+    hosts : sequence of str
+        The names of the hosts the data comes from.
+    server : str
+        A short name for the server the data comes from.
+
+    Returns
+    -------
+    str
+        The name.
+    """
     return output_name(
         query.output_pattern,
         hosts=hosts,
-        templates=[query.template] if query.template else [],
+        template=query.template,
         custom=query.custom,
         start=query.start,
         end=query.end,
-        servers=servers,
+        server=server,
         resolution=str(query.resolution),
     )
 
@@ -93,11 +161,34 @@ def targets(
     name: str,
     options: SaveOptions,
 ) -> list[Target]:
-    """Where to save the data.
+    """Decide where to save the data.
 
-    ``output`` is the ``--output`` value: ``None`` (not given: ask, or don't save
-    non-interactively), ``""`` (automatic name in ``output_dir``), a directory
-    (automatic name there) or a file.
+    Parameters
+    ----------
+    output : str or None
+        ``--output``: ``None`` if not given (ask, or don't save if the session isn't
+        interactive or the data is plotted), ``""`` for an automatic name in
+        ``output_dir``, a directory for an automatic name there, or a file.
+    query : Query
+        The query, for its configured formats and output directory.
+    ui : UI
+        For questions and messages.
+    name : str
+        The automatic file name (see :func:`auto_name`).
+    options : SaveOptions
+        The other command line options about saving.
+
+    Returns
+    -------
+    list of Target
+        One file per format; empty if the data isn't to be saved.
+
+    Raises
+    ------
+    ZabgrabError
+        If the options conflict.
+    Cancelled
+        If the user cancels.
     """
     options.check(output)
     if output is None:
@@ -110,9 +201,9 @@ def targets(
         shown = ", ".join(f"{name}{EXTENSIONS[f]}" for f in formats)
         if not ui.confirm(f"Save the data to {shown}?", fix="", default=True):
             return []
-        directory, file = Path(query.output_dir), None
+        directory, file = Path(query.output_dir).expanduser(), None
     elif output == "" or output.endswith(("/", "\\")) or Path(output).is_dir():
-        directory, file = Path(output or query.output_dir), None
+        directory, file = Path(output or query.output_dir).expanduser(), None
         formats = choose_formats(query.formats, options.format, None, ui, query.answers)
     else:
         file = Path(output)
@@ -146,8 +237,31 @@ def choose_formats(
     ui: UI,
     answers: Answers | None = None,
 ) -> tuple[Format, ...]:
-    """The output format(s): ``--format``, else the file's extension, else the
-    configured ones, else asked (the answer is recorded in ``answers``)."""
+    """Choose the output format(s).
+
+    Parameters
+    ----------
+    configured : sequence of Format
+        The formats from the template or ``[defaults]``.
+    cli_format : Format or None
+        ``--format``, which wins if given.
+    file : Path or None
+        The output file, whose extension is used next.
+    ui : UI
+        For asking, when nothing else decides.
+    answers : Answers, optional
+        Where to record the answer, if asked.
+
+    Returns
+    -------
+    tuple of Format
+        The formats.
+
+    Raises
+    ------
+    InputRequired
+        If nothing decides and the session isn't interactive.
+    """
     if cli_format is not None:
         if file is not None and format_for(file) not in (None, cli_format):
             ui.warning(f"Saving {cli_format} data to {file}, despite its extension.")
@@ -173,7 +287,29 @@ def choose_formats(
 
 
 def existing_target(path: Path, format: Format, ui: UI, options: SaveOptions) -> Target:
-    """Where to save to ``path``, asking what to do if it exists."""
+    """Decide how to save to a file, asking what to do if it exists.
+
+    Parameters
+    ----------
+    path : Path
+        The file.
+    format : Format
+        Its format.
+    ui : UI
+        For asking; non-interactive sessions save next to it instead.
+    options : SaveOptions
+        ``--overwrite`` and ``--append`` decide without asking.
+
+    Returns
+    -------
+    Target
+        Where to save.
+
+    Raises
+    ------
+    Cancelled
+        If the user cancels.
+    """
     if options.overwrite or options.append or not path.exists():
         return Target(path, format, append=options.append)
     alternative = unique_path(path)
@@ -206,7 +342,18 @@ def existing_target(path: Path, format: Format, ui: UI, options: SaveOptions) ->
 
 
 def text_entries(result: FetchResult) -> int:
-    """How many text values a fetch has (each is a cell entry in a .mat file)."""
+    """Count a fetch's text values (each is a cell entry in a .mat file).
+
+    Parameters
+    ----------
+    result : FetchResult
+        The fetched data.
+
+    Returns
+    -------
+    int
+        The number of text values, including log sources.
+    """
     count = 0
     for series in result.series:
         if not series.item.value_type.numeric and "value" in series.columns:
@@ -225,12 +372,40 @@ def guard_large_text(
     existing_entries: Callable[[Path], int],
     accepted_before: Callable[[Path], bool],
 ) -> tuple[Target, FetchResult]:
-    """Warn before writing a lot of text to a .mat file, which makes it big and
-    slow to load in MATLAB.
+    """Warn before writing a lot of text to a .mat file.
 
-    Interactive users can continue, save as .h5 instead, skip the text items or
-    cancel. Others get a warning. Accepting (or ``allow``) is remembered in the
-    file, so later appends don't ask again. A ``threshold`` of 0 never warns.
+    Text makes .mat files big and slow to load in MATLAB. Interactive users can
+    continue, save as .h5 instead, skip the text items or cancel; others get a
+    warning. Accepting (or ``allow``) is remembered in the file, so later appends
+    don't ask again.
+
+    Parameters
+    ----------
+    target : Target
+        Where the data is to be saved.
+    result : FetchResult
+        The data.
+    ui : UI
+        For warnings and questions.
+    threshold : int
+        How many text values (including those already in the file) to allow
+        without warning; 0 never warns.
+    allow : bool
+        ``--allow-large-text``.
+    existing_entries : callable
+        Counts the text values already in a file.
+    accepted_before : callable
+        Whether a file records that large text was accepted before.
+
+    Returns
+    -------
+    tuple of Target and FetchResult
+        Where to save, and what (without the text items if they're left out).
+
+    Raises
+    ------
+    Cancelled
+        If the user cancels.
     """
     new = text_entries(result)
     if target.format is not Format.MAT or not new or threshold == 0:

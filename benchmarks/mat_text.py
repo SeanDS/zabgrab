@@ -24,6 +24,7 @@ SERVER = Server("bench", ServerConfig(url="https://bench.example.org"))
 
 
 def log_series(entries: int) -> FetchResult:
+    """Make a fetch of one log item with ``entries`` lines."""
     item = Item(1, 1, "host", "Host", "Syslog", "log[/var/log/syslog]", ValueType.TEXT)
     columns = {
         "time": [float(n) for n in range(entries)],
@@ -36,6 +37,7 @@ def log_series(entries: int) -> FetchResult:
 
 
 def main(sizes: list[int]) -> None:
+    """Time writing and reading each number of entries, as .mat and .h5."""
     columns = ("entries", "format", "write s", "read s", "MB", "bytes/entry")
     print(" ".join(f"{column:>11}" for column in columns))
     for entries in sizes:

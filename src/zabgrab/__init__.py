@@ -1,4 +1,12 @@
-"""Zabbix data retrieval."""
+"""Zabbix data retrieval.
+
+Attributes
+----------
+PROGRAM : str
+    The program's name, used for the command, config directories and keyring.
+__version__ : str
+    The installed version (from the package metadata, set by setuptools_scm).
+"""
 
 from importlib.metadata import PackageNotFoundError, version
 

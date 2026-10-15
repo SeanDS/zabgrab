@@ -1,4 +1,13 @@
-"""Connecting and logging in to a Zabbix server."""
+"""Connecting and logging in to a Zabbix server.
+
+Attributes
+----------
+UpdateServerUrl : type
+    Changes a configured server's URL (name, new URL) in the config file that
+    defines it.
+MAX_REDIRECTS : int
+    The most redirects followed in a row.
+"""
 
 from __future__ import annotations
 
@@ -17,18 +26,39 @@ _PASSWORD = "password"
 
 @dataclass(frozen=True)
 class TokenLookup:
-    """Where a server's token comes from."""
+    """A server's token, and where it comes from.
+
+    Attributes
+    ----------
+    token : str or None
+        The token, if there is one.
+    source : str
+        Where from, for messages: ``$VARIABLE`` or ``your keyring``.
+    """
 
     token: str | None
     source: str
-    """``$VARIABLE`` or ``your keyring``."""
 
 
 def find_token(
     server: Server, secrets: SecretStore, env: Mapping[str, str]
 ) -> TokenLookup:
-    """The token to use for ``server``: its ``token_env`` variable if set, otherwise
-    the keyring."""
+    """Find the token to use for a server.
+
+    Parameters
+    ----------
+    server : Server
+        The server.
+    secrets : SecretStore
+        The stored tokens.
+    env : mapping of str to str
+        Environment variables.
+
+    Returns
+    -------
+    TokenLookup
+        Its ``token_env`` variable's value if set, otherwise the keyring's token.
+    """
     variable = server.config.token_env
     if variable and env.get(variable):
         return TokenLookup(env[variable], f"${variable}")
@@ -36,7 +66,7 @@ def find_token(
 
 
 def token_fix(server: Server) -> str:
-    """How to give zabgrab a token for ``server`` without being prompted."""
+    """Explain how to give zabgrab a token for a server without being asked."""
     name = server.name or "myserver"
     variable = (
         server.config.token_env or f"ZABGRAB_{name.upper().replace('-', '_')}_TOKEN"
@@ -49,7 +79,27 @@ def token_fix(server: Server) -> str:
 
 
 async def ask_for_token(client: ZabbixClient, ui: UI, *, fix: str = "") -> str:
-    """Ask for a token until the server accepts one, and return it."""
+    """Ask for a token until the server accepts one.
+
+    Parameters
+    ----------
+    client : ZabbixClient
+        The server's client; it's logged in when this returns.
+    ui : UI
+        Asks for the token.
+    fix : str, optional
+        How to give the token without being asked.
+
+    Returns
+    -------
+    str
+        The accepted token.
+
+    Raises
+    ------
+    InputRequired
+        If the session isn't interactive.
+    """
     while True:
         token = ui.prompt("API token", fix=fix, parse=non_empty, secret=True)
         try:
@@ -60,13 +110,13 @@ async def ask_for_token(client: ZabbixClient, ui: UI, *, fix: str = "") -> str:
 
 
 def non_empty(text: str) -> str:
+    """Parse an answer that can't be empty, stripping spaces."""
     if not text.strip():
         raise ValueError("Please enter a value.")
     return text.strip()
 
 
 UpdateServerUrl = Callable[[str, str], None]
-"""Changes a configured server's URL (name, new URL) in the config file defining it."""
 
 MAX_REDIRECTS = 5
 
@@ -80,7 +130,7 @@ async def connect(
     env: Mapping[str, str],
     update_url: UpdateServerUrl | None = None,
 ) -> ZabbixClient:
-    """Return a logged-in client for ``server``.
+    """Connect to a server and log in.
 
     If the server redirects (e.g. from HTTP to HTTPS), interactive users are asked
     whether to follow, and whether to update the server's URL in their config via
@@ -89,6 +139,35 @@ async def connect(
     Tokens come from the server's ``token_env`` variable, then the keyring. If there
     is none (or it's rejected), interactive users can paste a token or log in with a
     password; otherwise an error explains how to provide one.
+
+    Parameters
+    ----------
+    server : Server
+        The server.
+    factory : ClientFactory
+        Creates the client.
+    ui : UI
+        Asks about redirects and logging in.
+    secrets : SecretStore
+        The stored tokens.
+    env : mapping of str to str
+        Environment variables (for ``token_env``).
+    update_url : callable, optional
+        Offered to update a configured server's URL after a redirect.
+
+    Returns
+    -------
+    ZabbixClient
+        The logged-in client (close it when done).
+
+    Raises
+    ------
+    ConnectionFailed
+        If the server can't be reached, or redirects non-interactively.
+    AuthenticationFailed
+        If the login is rejected non-interactively.
+    InputRequired
+        If credentials are needed and the session isn't interactive.
     """
     original_url = server.url
     client, server, version = await open_client(
@@ -120,10 +199,37 @@ async def open_client(
     ui: UI,
     update_url: UpdateServerUrl | None = None,
 ) -> tuple[ZabbixClient, Server, str]:
-    """Connect to ``server`` (not logged in) and check its version.
+    """Connect to a server (without logging in) and check its version.
 
-    Redirects are handled as described for :func:`connect`. Returns the client,
-    the server (with its new URL, if redirected) and the server's version.
+    Redirects are handled as described for :func:`connect`.
+
+    Parameters
+    ----------
+    server : Server
+        The server.
+    factory : ClientFactory
+        Creates the client.
+    ui : UI
+        Asks about redirects.
+    update_url : callable, optional
+        Offered to update a configured server's URL after a redirect.
+
+    Returns
+    -------
+    ZabbixClient
+        The client, not logged in.
+    Server
+        The server, with its new URL if redirected.
+    str
+        The server's Zabbix version.
+
+    Raises
+    ------
+    ConnectionFailed
+        If the server can't be reached, redirects too often, or redirects
+        non-interactively.
+    UnsupportedServer
+        If its Zabbix version is too old.
     """
     if not server.config.verify_ssl:
         ui.warning(f"SSL certificate verification is disabled for {server.display}.")
@@ -154,7 +260,13 @@ def _follow_redirect(
     ui: UI,
     update_url: UpdateServerUrl | None,
 ) -> Server:
-    """Ask whether to follow a redirect; return the server at its target."""
+    """Ask whether to follow a redirect; return the server at its target.
+
+    Raises
+    ------
+    Redirected
+        If the session isn't interactive or the user says no.
+    """
     if not ui.interactive:
         raise redirect
 
@@ -183,7 +295,7 @@ def _follow_redirect(
         try:
             update_url(server.name, redirect.target)
         except ZabgrabError as err:
-            ui.warning(f"{err.message} {err.hint or ''}".strip())
+            _warn(err, ui)
         else:
             ui.success(f"Updated server {server.name!r} in your config.")
     return followed
@@ -198,6 +310,11 @@ async def _token_login(
     *,
     previous_url: str | None = None,
 ) -> None:
+    """Log in with the server's token, else ask how to log in.
+
+    ``previous_url`` is the URL the server redirected from, whose stored token is
+    tried (and offered to move) if the new URL has none.
+    """
     variable = server.config.token_env
     lookup = find_token(server, secrets, env)
     token, source = lookup.token, lookup.source
@@ -241,7 +358,7 @@ async def _token_login(
         try:
             secrets.set_token(server.url, token)
         except ZabgrabError as err:
-            ui.warning(f"{err.message} {err.hint or ''}".strip())
+            _warn(err, ui)
         else:
             ui.success("Token saved.")
 
@@ -250,13 +367,7 @@ def _move_token(
     token: str, old_url: str, server: Server, ui: UI, secrets: SecretStore
 ) -> None:
     """Offer to move a token stored under a server's old (redirected) URL."""
-    if not ui.interactive:
-        ui.warning(
-            f"The token for {server.display} is stored for {old_url}, which "
-            f"redirects to {server.url}. Run zabgrab interactively to move it, or "
-            f"store it again with `zabgrab token add {server.name or server.url}`."
-        )
-        return
+    # Only reached interactively: redirects stop non-interactive runs before this.
     if not ui.confirm(
         f"The token in your keyring is stored for {old_url}. Move it to {server.url}?",
         fix="",
@@ -267,12 +378,13 @@ def _move_token(
         secrets.set_token(server.url, token)
         secrets.delete_token(old_url)
     except ZabgrabError as err:
-        ui.warning(f"{err.message} {err.hint or ''}".strip())
+        _warn(err, ui)
     else:
         ui.success(f"Moved the token to {server.url}.")
 
 
 async def _password_login(client: ZabbixClient, server: Server, ui: UI) -> None:
+    """Ask for a username (unless configured) and password until they're accepted."""
     fix = (
         "Password login needs an interactive terminal. Use an API token instead: "
         + token_fix(server)
@@ -293,3 +405,8 @@ async def _password_login(client: ZabbixClient, server: Server, ui: UI) -> None:
             return
         except AuthenticationFailed:
             ui.error("Incorrect username or password; try again.")
+
+
+def _warn(err: ZabgrabError, ui: UI) -> None:
+    """Show an error that doesn't stop the login as a warning, with its hint."""
+    ui.warning(f"{err.message} {err.hint or ''}".strip())

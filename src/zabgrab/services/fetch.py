@@ -1,4 +1,10 @@
-"""Downloading item data: chunking, concurrency, retries and progress."""
+"""Downloading item data: chunking, concurrency, retries and progress.
+
+Attributes
+----------
+Sleep : type
+    Waits for a number of seconds (replaced in tests).
+"""
 
 from __future__ import annotations
 
@@ -32,32 +38,65 @@ Sleep = Callable[[float], Awaitable[None]]
 
 @dataclass(frozen=True)
 class Job:
-    """One item to download from one server."""
+    """One item to download from one server.
+
+    Attributes
+    ----------
+    server : Server
+        The server.
+    item : Item
+        The item.
+    requests : tuple of str
+        Labels of the requests (the template, or ``__custom``) that matched it.
+    """
 
     server: Server
     item: Item
     requests: tuple[str, ...]
-    """Labels of the requests (templates or ``__custom``) that matched the item."""
 
     @property
     def label(self) -> str:
+        """Get the item's name for progress bars, as ``host: name``."""
         return f"{self.item.host}: {self.item.name}"
 
 
 def chunks(
     start: datetime, end: datetime, resolution: Resolution
 ) -> list[tuple[int, int]]:
-    """Split a time range into inclusive ``(start, end)`` windows of whole seconds."""
+    """Split a time range into windows of whole seconds, one request each.
+
+    Parameters
+    ----------
+    start, end : datetime
+        The time range.
+    resolution : Resolution
+        Sets the window length (see :data:`CHUNK_SECONDS`).
+
+    Returns
+    -------
+    list of (int, int)
+        Inclusive ``(start, end)`` windows in POSIX seconds, covering the range.
+    """
     first, last = math.floor(start.timestamp()), math.floor(end.timestamp())
     size = CHUNK_SECONDS[resolution]
     return [(t, min(t + size - 1, last)) for t in range(first, last + 1, size)]
 
 
 def stored_end(query: Query) -> float:
-    """The end of a fetch's range as recorded in files, in POSIX seconds.
+    """Get the end of a fetch's range as recorded in files, in POSIX seconds.
 
     For hourly trends, this is the end of the last completed hour: Zabbix only
     writes an hour's trend once it's over, so a later update must ask for it again.
+
+    Parameters
+    ----------
+    query : Query
+        The fetch.
+
+    Returns
+    -------
+    float
+        The end of the range that's complete.
     """
     end = query.end.timestamp()
     if query.resolution is Resolution.HOURLY:
@@ -66,7 +105,20 @@ def stored_end(query: Query) -> float:
 
 
 def skip_reason(item: Item, resolution: Resolution) -> str | None:
-    """Why ``item`` can't be fetched at ``resolution``, if it can't."""
+    """Explain why an item can't be fetched at a resolution, if it can't.
+
+    Parameters
+    ----------
+    item : Item
+        The item.
+    resolution : Resolution
+        Raw history or hourly trends.
+
+    Returns
+    -------
+    str or None
+        The reason, as a sentence fragment, or ``None`` if it can be fetched.
+    """
     if item.value_type is ValueType.BINARY:
         return "binary items aren't supported"
     if resolution is Resolution.HOURLY and not item.value_type.numeric:
@@ -91,6 +143,35 @@ async def fetch(
     Items that can't be fetched at this resolution are skipped; items whose
     download fails (after retrying network errors) are reported as failed, and the
     others still downloaded. A rejected login stops everything.
+
+    Parameters
+    ----------
+    jobs : sequence of Job
+        The items to download.
+    clients : mapping of Server to ZabbixClient
+        Logged-in connections to the jobs' servers.
+    start, end : datetime
+        The time range.
+    resolution : Resolution
+        Raw history or hourly trends.
+    agg : sequence of Agg
+        The trend statistics to keep (hourly trends only).
+    concurrency : int
+        How many items to download at once (each item's windows go in order).
+    ui : UI
+        Shows progress.
+    sleep : callable, optional
+        Waits between retries.
+
+    Returns
+    -------
+    FetchResult
+        The series (in job order), and items skipped or failed.
+
+    Raises
+    ------
+    AuthenticationFailed
+        If the server rejects the login partway through.
     """
     result = FetchResult()
     runnable = []
@@ -109,6 +190,7 @@ async def fetch(
     with ui.progress("Downloading", len(runnable) * len(windows)) as progress:
 
         async def run(index: int, job: Job) -> None:
+            """Download one item, window by window, recording the outcome."""
             async with semaphore:
                 bar = progress.add_item(job.label, len(windows))
                 try:
@@ -150,12 +232,14 @@ async def fetch(
 async def _download(
     client: ZabbixClient, job: Job, window: tuple[int, int], resolution: Resolution
 ) -> list[Any]:
+    """Download one window of an item's history or trends."""
     if resolution is Resolution.HOURLY:
         return list(await client.trends(job.item, *window))
     return list(await client.history(job.item, *window))
 
 
 async def _with_retries(call: Callable[[], Awaitable[T]], sleep: Sleep) -> T:
+    """Call ``call``, retrying network errors after each of :data:`RETRY_DELAYS`."""
     for delay in RETRY_DELAYS:
         try:
             return await call()
@@ -167,6 +251,7 @@ async def _with_retries(call: Callable[[], Awaitable[T]], sleep: Sleep) -> T:
 def _columns(
     item: Item, rows: list[Any], resolution: Resolution, agg: Sequence[Agg]
 ) -> dict[str, list[Any]]:
+    """Turn downloaded rows into a series' columns (see :class:`Series`)."""
     if resolution is Resolution.HOURLY:
         trends: list[TrendRow] = rows
         columns: dict[str, list[Any]] = {"time": [row.time for row in trends]}
