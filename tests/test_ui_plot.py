@@ -150,7 +150,13 @@ def test_histogram_log_scale_and_no_title() -> None:
     figure = plot.draw_histogram(spec)
     assert figure.get_suptitle() == ""
     # The counts, up the side.
-    assert figure.axes[0].get_yscale() == "log"
+    (subplot,) = figure.axes
+    assert subplot.get_yscale() == "log"
+    # The bars, which start at zero, are drawn, down to below a count of 1.
+    assert subplot.get_ylim()[0] == 0.5
+    figure.canvas.draw()
+    heights = [bar.get_window_extent().height for bar in subplot.patches]
+    assert [height > 0 for height in heights] == [True, False, False]
 
 
 def _xdata(line: Any) -> list[Any]:
