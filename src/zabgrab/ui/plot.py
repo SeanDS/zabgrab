@@ -171,8 +171,12 @@ def draw_histogram(spec: HistogramSpec, *, interactive: bool = False) -> Figure:
             )
         subplot.set_ylabel("Count")
         if spec.log_y:
-            # The log scale is for the counts; empty bins can't be shown on it.
-            subplot.set_yscale("log", nonpositive="mask")
+            # The log scale is for the counts. Bars start at zero, which a log
+            # scale can't show, so clip their bottoms rather than masking them
+            # (which hides every bar), and start the axis below a count of 1 so
+            # that one-value bins show. Empty bins have nothing to show.
+            subplot.set_yscale("log", nonpositive="clip")
+            subplot.set_ylim(bottom=0.5)
         subplot.grid(alpha=0.3, axis="y")
         subplot.set_xticks(list(positions), spec.bins)
         subplot.set_xlabel(f"Value [{axis.units}]" if axis.units else "Value")
