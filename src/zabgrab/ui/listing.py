@@ -32,6 +32,8 @@ class _Column:
     heading: str
     cell: Callable[[Row], Any]
     right: bool = False
+    # Left out when empty (or zero) in every row shown.
+    optional: bool = False
 
 
 def label(series: Series) -> str:
@@ -105,6 +107,14 @@ def _table(
 ) -> list[Line]:
     """Lay out a section's points as aligned columns, under a heading line."""
     columns = _columns(section.series, tz, items=items)
+    columns = [
+        column
+        for column in columns
+        if not column.optional
+        or any(
+            _text(column.cell(row), wrap=False) not in ("", "0") for row in section.rows
+        )
+    ]
     last = len(columns) - 1
     cells = [
         [
@@ -145,11 +155,18 @@ def _columns(
     if items and len(series) > 1:
         columns.append(_Column("Item", lambda row: label(row.series)))
     if "log_time" in has:
+        # Zabbix only fills these in for some logs (e.g. Windows event logs).
         columns += [
-            _Column("Log time", lambda row: _time(row.get("log_time"), tz)),
-            _Column("Severity", lambda row: row.get("severity"), right=True),
-            _Column("Source", lambda row: row.get("source")),
-            _Column("Event ID", lambda row: row.get("event_id"), right=True),
+            _Column(
+                "Log time", lambda row: _time(row.get("log_time"), tz), optional=True
+            ),
+            _Column(
+                "Severity", lambda row: row.get("severity"), right=True, optional=True
+            ),
+            _Column("Source", lambda row: row.get("source"), optional=True),
+            _Column(
+                "Event ID", lambda row: row.get("event_id"), right=True, optional=True
+            ),
         ]
     for name in STATISTICS:
         if name in has:

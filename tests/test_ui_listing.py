@@ -131,6 +131,25 @@ class TestText:
             "        12  one line",
         ]
 
+    def test_empty_log_columns_are_left_out(self) -> None:
+        plain = make(
+            9,
+            {
+                "time": [0],
+                "value": ["started"],
+                "log_time": [None],
+                "source": [""],
+                "severity": [0],
+                "event_id": [0],
+            },
+            value_type=ValueType.LOG,
+        )
+        lines = listing_lines(listing([plain], ListingOptions()), UTC, headings=False)
+        assert text(lines) == [
+            "Time                     Value",
+            "1970-01-01 00:00:00 UTC  started",
+        ]
+
     def test_wrapped_values_continue_under_their_column(self) -> None:
         text_item = make(
             6, {"time": [0], "value": ["a\r\nb"]}, value_type=ValueType.TEXT
