@@ -86,6 +86,31 @@ Choose what to plot with ``--item``, ``--match``, ``--from``, ``--to`` and
 ``zabgrab fetch --plot`` plots data as it's fetched (see :doc:`fetching`). Text
 items can't be plotted, but ``zabgrab show`` lists them (see :doc:`showing`).
 
+.. _histograms:
+
+Histograms
+~~~~~~~~~~
+
+``--bin`` draws a histogram instead: how many of each item's values fall in each
+bin, for edges you choose (in increasing order):
+
+.. code-block:: bash
+
+   zabgrab plot particles.h5 --bin 10,100,1000
+   zabgrab plot particles.h5 --bin 10,100,1000 --log-y      # log scale counts
+   zabgrab plot particles.h5 --bin 10,100,1000 -o bins.png
+
+.. image:: histogram.png
+   :alt: Bars showing how many values of two particle counts and a temperature
+         fall in the bins below 10, 10 to 100, 100 to 1000 and 1000 and above.
+
+N edges make N + 1 bins, the first and last open-ended, and each bin includes its
+lower edge but not its upper one, as numpy's do (see :ref:`bins` for the details).
+The bins are drawn the same width and labelled with their ranges, since the open
+bins have no width and the others can differ by orders of magnitude. Each item's
+bars sit side by side in each bin, items with different units get a plot each,
+hourly trends' averages are counted, and text items are left out.
+
 MATLAB
 ------
 

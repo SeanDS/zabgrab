@@ -10,6 +10,9 @@ Changelog
   expression), ``--above`` and ``--below``, and paged in a terminal. Useful for
   text and log items, which can't be plotted, and for finding the highest values.
 - New ``fetch --show`` option to list the fetched data.
+- New ``--bin`` option for ``show`` and ``plot``, counting each item's values in
+  bins with the given edges (e.g. ``--bin 10,100,1000``): ``show`` lists each
+  bin's count and share, and ``plot`` draws a histogram.
 
 1.0.0 (2026-10-15)
 ------------------

@@ -727,6 +727,25 @@ be plotted, and for finding extreme values.
 - `fetch --show` lists the fetched data in time order, without saving it unless
   `--output` is given (like `--plot`); sorting and filtering are `show`'s only.
 
+### Bins (`show --bin`, `plot --bin`)
+
+- `--bin 10,100,1000` (or repeated `--bin`) gives edges, strictly increasing and
+  finite (`services/binning.py`). N edges make N+1 bins: `< first`, `a to b`,
+  `≥ last`. Bins are half-open `[a, b)` like numpy's (`bisect_right`), so the last
+  bin includes its edge.
+- Numeric items only (text is left out: a note in `show`, a warning in `plot`,
+  an error if nothing numeric is left). Hourly trends count the average (else the
+  first statistic fetched), as `plot` draws them.
+- `show --bin`: per item, a heading with the number of values and a
+  Bin/Count/Share table. `--grep`/`--above`/`--below` apply first; `--sort`,
+  `--desc`, `--limit`, `--offset` and `--wrap` are usage errors with it.
+- `plot --bin`: a `HistogramSpec` (`services/plotting.py`) drawn by
+  `ui/plot.draw_histogram`: equal-width bins labelled with their ranges (open bins
+  have no width, and real widths can differ by orders of magnitude), items' bars
+  side by side, one subplot per unit, `--log-y` on the counts.
+- Counts are numbers of points, proportional to time only for evenly sampled
+  items; weighting by time could come later.
+
 ### Selecting from files
 
 `plot`, `export` and `info` select items with:
@@ -887,6 +906,9 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Without `--output`, interactive runs ask whether to save under the automatic name:
   `y`, `n`, or `o` to type another path, then handled as if given with `--output`
   (keeping any format just asked for).
+- `--bin` is shared by `show` and `plot` rather than being a command of its own,
+  so it combines with their selection options; equal-width labelled bars beat
+  proportional ones for open-ended and logarithmic edges.
 - `show` is one command for files and fetched data, rather than adding sorting and
   filtering to `fetch`; `fetch --show` only lists. Sorting by value is per item, in
   sections, rather than one ranking across items in different units. `--grep` is a
