@@ -16,7 +16,8 @@ interface or scripting its API. zabgrab does that for you:
   recording exactly what was fetched, from where and when.
 - **Repeat fetches easily:** save them as templates, and keep files up to date by
   adding only the data that's new.
-- **Look at it:** plot files straight away, or merge and convert them.
+- **Look at it:** plot files straight away, list their values (sorted, filtered
+  and paged), or merge and convert them.
 
 .. code-block:: bash
 
@@ -24,6 +25,7 @@ interface or scripting its API. zabgrab does that for you:
    zabgrab fetch -t particles --from "7 days ago" --to now -o particles.h5
    zabgrab update particles.h5
    zabgrab plot particles.h5
+   zabgrab show particles.h5 --sort value --desc --limit 10
 
 New to zabgrab? Start with :doc:`installation` and the :doc:`quickstart`.
 
@@ -37,6 +39,7 @@ New to zabgrab? Start with :doc:`installation` and the :doc:`quickstart`.
    guide/fetching
    guide/templates
    guide/updating
+   guide/showing
    guide/analysing
    guide/automation
    configuration

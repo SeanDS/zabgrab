@@ -696,6 +696,37 @@ range overlaps the new fetch's for any of the same items at the same resolution,
 pointing to `info --overlaps`. Ranges that only touch don't count, so `update`
 (which starts where the last fetch ended) never triggers it, and it doesn't check.
 
+### Listing values (`show`)
+
+`zabgrab show [FILE]` lists data points, mainly for text and log items, which can't
+be plotted, and for finding extreme values.
+
+- **Source:** FILE (`.h5`/`.mat`), merged and selected as for `plot` and `export`
+  (`--item`, `--match`, `--from`, `--to`, `--group`); without FILE, fetched as by
+  `fetch` (`--template`, `--item`, `--server`, `--from`, `--to`, `--resolution`,
+  `--agg`, `--yes`) but not saved. Options of the other mode are usage errors.
+- **Order:** `--sort time` (default) interleaves every item's points in one table,
+  with an *Item* column when there are several. `--sort value` (or `min`, `avg`,
+  `max`, `count` for trends; `value` means the average) gives one section per item,
+  since values of different items, often in different units, can't be ranked
+  together. `--desc` reverses. Text sorts alphabetically.
+- **Slicing:** `--limit`/`--offset` apply to the whole list in time order (with a
+  "Showed values a-b of n" message on stderr) and to each section by value. With a
+  limit, `heapq` picks the top N without sorting everything.
+- **Filters:** `--grep` is a Python regular expression searched anywhere in the
+  value as text (like `grep -E`; `(?i)` ignores case). `--above`/`--below` are
+  exclusive, compare the sorted column (the average for trends), and leave out
+  text. Filters apply before slicing.
+- **Layout** (`ui/listing.py`): plain aligned columns, not rich tables, so long
+  lists are quick and work in pagers and pipes. The value is the last column, so
+  `--wrap` can continue multi-line text under it; otherwise line breaks show as
+  `⏎`. Log columns that are empty or zero in every row shown are left out.
+- **Paging** (`RichUI.page`): in a terminal, through `$PAGER` (empty means none)
+  or `less` with `LESS=FRSX` unless set; cut to the terminal's width without one;
+  plain whole lines when piped. `--no-pager` turns it off.
+- `fetch --show` lists the fetched data in time order, without saving it unless
+  `--output` is given (like `--plot`); sorting and filtering are `show`'s only.
+
 ### Selecting from files
 
 `plot`, `export` and `info` select items with:
@@ -856,6 +887,12 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Without `--output`, interactive runs ask whether to save under the automatic name:
   `y`, `n`, or `o` to type another path, then handled as if given with `--output`
   (keeping any format just asked for).
+- `show` is one command for files and fetched data, rather than adding sorting and
+  filtering to `fetch`; `fetch --show` only lists. Sorting by value is per item, in
+  sections, rather than one ranking across items in different units. `--grep` is a
+  regular expression (Python's, close to `grep -E`), since log searches need
+  alternatives and anchors; a pager rather than an interactive viewer avoids a
+  heavy dependency.
 - Overlapping groups aren't warned about when reading: overlap is often deliberate,
   is merged away, and a warning on every `plot`/`export` couldn't be dealt with short
   of flattening the file. Instead `fetch --append` notes it once, when it's added,
