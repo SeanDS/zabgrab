@@ -1,7 +1,7 @@
 Changelog
 =========
 
-1.1.0 (unreleased)
+1.1.0 (2026-10-20)
 ------------------
 
 - New ``zabgrab show`` command listing data points, from a file or fetched from
