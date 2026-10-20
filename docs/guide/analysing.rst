@@ -72,7 +72,7 @@ shows a file's data in a window, or saves the figure:
    zabgrab plot particles.h5 -o particles.png        # or .pdf, .svg, ...
    zabgrab plot particles.h5 -o plot.png -o plot.pdf # several formats
    zabgrab plot particles.h5 --item "*0.3um" --from "2 days ago"
-   zabgrab plot particles.h5 --log-y                 # log scales
+   zabgrab plot particles.h5 --log                   # log scales
 
 All of a file's groups are plotted as one dataset. Items with the same units share an
 axis, and times are shown in your local time (or the ``timezone`` setting). Hourly
@@ -97,19 +97,73 @@ bin, for edges you choose (in increasing order):
 .. code-block:: bash
 
    zabgrab plot particles.h5 --bin 10,100,1000
-   zabgrab plot particles.h5 --bin 10,100,1000 --log-y      # log scale counts
+   zabgrab plot particles.h5 --bin 10,100,1000 --log        # log scale counts
    zabgrab plot particles.h5 --bin 10,100,1000 -o bins.png
 
 .. image:: histogram.png
-   :alt: Bars showing how many values of two particle counts and a temperature
-         fall in the bins below 10, 10 to 100, 100 to 1000 and 1000 and above.
+   :alt: Sideways bars showing how many values of two particle counts and a
+         temperature fall in the bins below 10, 10 to 100, 100 to 1000 and 1000
+         and above, with a dashed alarm line at 800.
 
 N edges make N + 1 bins, the first and last open-ended, and each bin includes its
 lower edge but not its upper one, as numpy's do (see :ref:`bins` for the details).
-The bins are drawn the same width and labelled with their ranges, since the open
-bins have no width and the others can differ by orders of magnitude. Each item's
-bars sit side by side in each bin, items with different units get a plot each,
-hourly trends' averages are counted, and text items are left out.
+
+Histograms are drawn sideways: the bins go up the side, lowest at the bottom, and
+the counts along the bottom, so values are on the vertical axis as in plots over
+time, and ``--hline`` draws horizontal lines on both (see :ref:`hlines`).
+``--log`` puts the counts on a log scale. The bins are drawn the same height and
+labelled with their ranges, since the open bins have no height and the others can
+differ by orders of magnitude. Each item's bars sit side by side in each bin, items
+with different units get a plot each, hourly trends' averages are counted, and text
+items are left out.
+
+.. _hlines:
+
+Reference lines
+~~~~~~~~~~~~~~~
+
+``--hline`` draws a horizontal line at a value, such as a limit, alarm level or
+target, with a label in the legend. Repeat it for as many lines as you like:
+
+.. code-block:: bash
+
+   zabgrab plot particles.h5 --hline 1000
+   zabgrab plot particles.h5 --hline "ISO 5 limit=1000" --hline "Alarm=800"
+   zabgrab plot particles.h5 --hline "Alarm=800 #/m3" --hline "Max temp=23 °C"
+
+Each line is written ``[LABEL=]VALUE [UNITS]``:
+
+``LABEL=``
+   The name in the legend: everything before the last ``=``, so a label can
+   contain ``=`` itself. Without a label, the line is labelled with its value, as
+   written (e.g. ``1000``).
+``VALUE``
+   Where the line goes, in the data's units, e.g. ``800``, ``-2.5`` or ``1e3``.
+``UNITS``
+   After the value and a space: draw the line only on the plot of items with
+   exactly these units, as shown in their labels (e.g. ``#/m3`` or ``°C``).
+   Without units, the line is drawn on every plot. A line whose units no plotted
+   item has isn't drawn, with a warning.
+
+Quote each ``--hline`` that has spaces, so the shell keeps it together.
+
+.. image:: hlines.png
+   :alt: Particle counts with dashed lines at the ISO 5 limit (1000) and alarm
+         level (800), and a temperature with a dashed line at its maximum (23).
+
+The lines are dark grey and dashed, each in a different dash pattern, so they're
+told apart from the data and from each other. A line beyond the data stretches
+the axis to include it, showing how far the data is from it. With ``--log``,
+lines at zero or below can't be drawn, and are left out with a warning.
+
+On histograms (``--bin``), a line goes across the bins at its value:
+
+- at an edge, exactly between the two bins it separates;
+- inside a bin between two edges, in proportion between them: with ``--bin
+  10,100,1000``, ``--hline 550`` goes halfway up the ``100 to 1000`` bin;
+- inside the first or last bin, which are open-ended and have no height to
+  measure against, across the bin's middle, with a warning. Add the value to
+  ``--bin`` to put the line on an edge instead.
 
 MATLAB
 ------

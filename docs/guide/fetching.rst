@@ -194,7 +194,7 @@ Plotting or listing straight away
 ---------------------------------
 
 ``--plot`` plots the data when it's fetched (with the ``plot`` extra installed);
-``--log-y`` uses log scales. ``--show`` lists it, in time order (see
+``--log`` uses log scales. ``--show`` lists it, in time order (see
 :doc:`showing`). Either way, the data is then only saved if ``--output`` is given
 too.
 

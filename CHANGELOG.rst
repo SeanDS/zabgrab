@@ -13,6 +13,12 @@ Changelog
 - New ``--bin`` option for ``show`` and ``plot``, counting each item's values in
   bins with the given edges (e.g. ``--bin 10,100,1000``): ``show`` lists each
   bin's count and share, and ``plot`` draws a histogram.
+- New ``plot --hline`` option to draw horizontal reference lines, such as limits:
+  ``--hline 'Max value=500'``, optionally on the plots of items with given units
+  (``--hline 'Max=26 °C'``). Repeat it for several.
+- ``plot --log-y`` and ``fetch --log-y`` are now ``--log``, since with ``--bin``
+  they apply to the counts, along the horizontal axis. ``--log-y`` still works,
+  with a warning, until 2.0.
 
 1.0.0 (2026-10-15)
 ------------------
