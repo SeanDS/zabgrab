@@ -17,6 +17,10 @@ __all__ = ["data"]  # the fixture, used by name
 
 DEMO = "https://demo.example.org"
 
+# A time as listed: its width (with the system's name for UK summer time) sets the
+# columns'.
+TIME = f"2025-10-09 09:00:00 {BST}"
+
 
 def rows(output: str) -> list[list[str]]:
     """Split listing lines into cells (separated by two or more spaces)."""
@@ -58,22 +62,26 @@ class TestFile:
     def test_top_value_per_item(self, data: Path) -> None:
         args = ("--sort", "value", "--desc", "-n", "1", "-i", "name=Particles *")
         result = ok(run("show", str(data), *args))
+        heading = "Time".ljust(len(TIME)) + "  Value [#/m3]"
         assert result.stdout.splitlines() == [
             "demo1: Particles 0.3um [#/m3]: 1 of 3 values",
-            "Time                     Value [#/m3]",
+            heading,
             f"2025-10-09 09:02:00 {BST}  3.5",
             "",
             "demo1: Particles 0.5um [#/m3]: 1 value",
-            "Time                     Value [#/m3]",
+            heading,
             f"2025-10-09 09:00:30 {BST}  10.0",
         ]
 
     def test_wrap(self, data: Path) -> None:
         result = ok(run("show", str(data), "-i", "20005", "--wrap"))
+        # Time and log time, then severity, source and event ID (widths 8, 6 and 8,
+        # the headings'), each followed by a gap of 2.
+        width = len(TIME)
         assert result.stdout.splitlines()[-2:] == [
-            f"2025-10-09 09:00:01 {BST}{' ' * 34}0{' ' * 17}0  "
+            f"2025-10-09 09:00:01 {BST}{' ' * (width + 11)}0{' ' * 17}0  "
             'tab here, comma, "quote"',
-            f"{' ' * 78}newline ✓ 𝄞",
+            f"{' ' * (2 * width + 32)}newline ✓ 𝄞",
         ]
 
     def test_grep(self, data: Path) -> None:

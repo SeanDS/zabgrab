@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC as dt_utc
+from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -62,11 +64,14 @@ def test_several_items_get_an_item_column() -> None:
 
 
 def test_local_time() -> None:
-    # The tests run in UK time.
-    (_, first, _) = listing_lines(
-        listing([LOAD], ListingOptions()), None, headings=False
+    # The tests run in UK time (a recent summer, since Windows doesn't know the UK
+    # was on UTC+1 all year round in 1970).
+    noon = datetime(2025, 7, 1, 12, tzinfo=dt_utc).timestamp()
+    summer = make(1, {"time": [noon], "value": [1.0]})
+    (_, first) = listing_lines(
+        listing([summer], ListingOptions()), None, headings=False
     )
-    assert first[0].startswith("1970-01-01 01:00:00 ")
+    assert first[0].startswith("2025-07-01 13:00:00 ")
 
 
 def test_sections_per_item_with_counts() -> None:
