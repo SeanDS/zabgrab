@@ -6,10 +6,14 @@ Diagnostics and prompts go to stderr; data (tables, TOML, ...) goes to stdout vi
 
 from __future__ import annotations
 
+import os
+import shlex
+import shutil
+import subprocess
 import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
-from typing import Any, TextIO, TypeVar
+from contextlib import contextmanager, suppress
+from typing import IO, Any, TextIO, TypeVar
 
 from rich.console import Console, RenderableType
 from rich.highlighter import RegexHighlighter
@@ -57,6 +61,74 @@ THEME = Theme(
         "toml.comment": "dim",
     }
 )
+
+
+#: ANSI escape codes for :meth:`RichUI.page`'s line styles.
+STYLES = {"bold": "\x1b[1m", "dim": "\x1b[2m"}
+
+
+def pager_command(
+    environ: Mapping[str, str] | None = None,
+) -> str | list[str] | None:
+    """Find the pager to show long output with.
+
+    Parameters
+    ----------
+    environ : mapping, optional
+        The environment variables (by default, the process's).
+
+    Returns
+    -------
+    str or list of str or None
+        ``$PAGER`` if it's set (``None`` if it's empty, meaning no pager), else
+        ``less`` if it's installed, else ``None``. On Windows a command line is
+        returned whole, since Windows programs parse their own command lines.
+    """
+    variables = os.environ if environ is None else environ
+    if "PAGER" in variables:
+        command = variables["PAGER"].strip()
+        if not command:
+            return None
+        return command if os.name == "nt" else shlex.split(command)
+    return ["less"] if shutil.which("less") else None
+
+
+def _run_pager(command: str | list[str], lines: Sequence[str]) -> bool:
+    """Show lines in a pager, returning whether it could be started."""
+    environ = dict(os.environ)
+    # less: quit if it fits on one screen, show colours, scroll long lines
+    # sideways rather than wrapping them, and leave the output on the screen.
+    environ.setdefault("LESS", "FRSX")
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            env=environ,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError:
+        return False
+    assert process.stdin is not None
+    try:
+        for line in lines:
+            process.stdin.write(line + "\n")
+    except OSError:
+        # The pager was closed before reading everything (a broken pipe; Windows
+        # reports it as another error).
+        pass
+    finally:
+        with suppress(OSError):
+            process.stdin.close()
+        process.wait()
+    return True
+
+
+def _isatty(file: IO[str]) -> bool:
+    """Tell whether a file is a terminal."""
+    isatty = getattr(file, "isatty", None)
+    return bool(isatty and isatty())
 
 
 class MessageHighlighter(RegexHighlighter):
@@ -284,6 +356,38 @@ class RichUI:
             self.out.print(data, highlight=False, soft_wrap=True)
         else:
             self.out.print(data)
+
+    def page(self, lines: Sequence[tuple[str, str]], *, pager: bool = True) -> None:
+        """Print lines of command output, through a pager in a terminal.
+
+        In a terminal, long lines are cut to its width, unless a pager shows them
+        (``less`` scrolls sideways instead). Elsewhere (a pipe, a file), lines are
+        written as they are, so ``grep`` and ``head`` see whole lines.
+
+        Parameters
+        ----------
+        lines : sequence of (str, str)
+            Each line, without its line break, and its style: ``""``, ``"bold"`` or
+            ``"dim"``.
+        pager : bool, optional
+            Whether to use a pager (``$PAGER``, else ``less``) in a terminal.
+        """
+        colour = self.out.color_system is not None
+        styled = [
+            f"{STYLES[style]}{text}\x1b[0m" if colour and style and text else text
+            for text, style in lines
+        ]
+        terminal = _isatty(self.out.file)
+        command = pager_command() if pager and terminal else None
+        if command is not None and _run_pager(command, styled):
+            return
+        width = self.out.width if terminal else None
+        for (text, _), line in zip(lines, styled, strict=True):
+            if width is not None and len(text) > width:
+                # Cut the plain text, so no colour codes are cut in half.
+                line = text[: width - 1] + "…"
+            self.out.file.write(line + "\n")
+        self.out.file.flush()
 
     # Prompts.
 

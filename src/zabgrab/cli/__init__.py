@@ -12,6 +12,7 @@ from .export import export_command
 from .fetch import fetch_command
 from .info import info_command
 from .plot import plot_command
+from .show import show_command
 from .tokens import token_group
 from .update import update_command
 
@@ -37,6 +38,7 @@ cli.add_command(hosts_command)
 cli.add_command(info_command)
 cli.add_command(items_command)
 cli.add_command(plot_command)
+cli.add_command(show_command)
 cli.add_command(token_group)
 cli.add_command(update_command)
 
