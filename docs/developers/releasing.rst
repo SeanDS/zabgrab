@@ -10,6 +10,8 @@ Publishing a release on GitHub uploads it to PyPI (the ``Publish to PyPI``
 workflow) and publishes its documentation to GitHub Pages (the ``Publish
 documentation`` workflow).
 
+.. _version-numbers:
+
 Version numbers
 ---------------
 
