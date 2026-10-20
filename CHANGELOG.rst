@@ -1,7 +1,7 @@
 Changelog
 =========
 
-1.1.1 (unreleased)
+1.1.1 (2026-10-20)
 ------------------
 
 - Fixed ``plot --bin --log`` drawing no bars, only the axes and any reference
