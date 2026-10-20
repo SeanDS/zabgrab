@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import tzinfo
 from pathlib import Path
 
 import click
 
+from ..adapters.dates import parse_time
 from ..errors import ZabgrabError
 from ..model.item import ItemSpec
 from ..services.binning import Bins
-from ..services.plotting import HLine, histogram_spec, plot_spec
+from ..services.plotting import RefLine, histogram_spec, plot_spec
 from ..ui import plot
 from .app import AppContext, global_options, pass_app
 from .reading import (
@@ -24,12 +26,33 @@ from .reading import (
 
 def _hlines(
     ctx: click.Context, param: click.Parameter, value: tuple[str, ...]
-) -> tuple[HLine, ...]:
+) -> tuple[RefLine, ...]:
     """Read the ``--hline`` options."""
     try:
-        return tuple(HLine.parse(text) for text in value)
+        return tuple(RefLine.parse(text) for text in value)
     except ValueError as exc:
         raise click.BadParameter(f"{exc}.") from None
+
+
+def _vlines(
+    app: AppContext, texts: tuple[str, ...], tz: tzinfo | None, *, values: bool
+) -> list[RefLine]:
+    """Read the ``--vline`` options: values for histograms, else times.
+
+    A time can contain spaces, so it takes no units, and goes on every plot.
+    """
+    lines = []
+    for text in texts:
+        try:
+            if values:
+                lines.append(RefLine.parse(text))
+                continue
+            label, _, when = text.rpartition("=")
+            moment = parse_time(when.strip(), now=app.clock.now(), tz=tz)
+            lines.append(RefLine(label.strip() or when.strip(), moment.timestamp()))
+        except ValueError as exc:
+            raise click.BadParameter(f"{exc}.", param_hint="'--vline'") from None
+    return lines
 
 
 @click.command("plot")
@@ -55,8 +78,17 @@ def _hlines(
     help="Draw a horizontal reference line at VALUE, e.g. 'Max=500' or '500' "
     "(repeat for several). LABEL names it in the legend (by default, the value). "
     "With UNITS, e.g. 'Max=26 °C', it's drawn only on plots of items with those "
-    "units; otherwise on every plot. With --bin, it's drawn across the bins at "
-    "VALUE.",
+    "units; otherwise on every plot. With --bin, VALUE is a count, drawn through "
+    "the bars.",
+)
+@click.option(
+    "--vline",
+    "vlines",
+    multiple=True,
+    metavar="[LABEL=]TIME|VALUE",
+    help="Draw a vertical reference line (repeat for several): at a TIME, as for "
+    "--from, e.g. 'Maintenance=2026-10-14 09:00'; or with --bin, at a VALUE among "
+    "the bins, with optional UNITS as for --hline, e.g. 'Limit=1000 #/m3'.",
 )
 @global_options
 @pass_app
@@ -72,7 +104,8 @@ def plot_command(
     log: bool,
     log_y: bool,
     bins: Bins | None,
-    hlines: tuple[HLine, ...],
+    hlines: tuple[RefLine, ...],
+    vlines: tuple[str, ...],
 ) -> None:
     """Plot the data in FILE (.mat or .h5).
 
@@ -85,7 +118,8 @@ def plot_command(
     each bin, with the bins up the side and items side by side. --log then puts
     the counts on a log scale.
 
-    --hline draws reference lines, such as limits, at given values.
+    --hline and --vline draw reference lines, such as limits: horizontal ones at
+    values (with --bin, counts) and vertical ones at times (with --bin, values).
 
     Needs matplotlib: pip install 'zabgrab[plot]'.
     """
@@ -102,6 +136,7 @@ def plot_command(
     )
     if not dataset.series:
         raise ZabgrabError("Nothing to plot.", hint=nothing_selected(file))
+    vertical = _vlines(app, vlines, tz, values=bins is not None)
     spec = (
         histogram_spec(
             dataset.series,
@@ -110,6 +145,7 @@ def plot_command(
             title=file.name,
             log_y=log,
             hlines=hlines,
+            vlines=vertical,
         )
         if bins is not None
         else plot_spec(
@@ -119,6 +155,7 @@ def plot_command(
             title=file.name,
             log_y=log,
             hlines=hlines,
+            vlines=vertical,
         )
     )
     plot.show_or_save(spec, tz, outputs)

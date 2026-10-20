@@ -58,17 +58,20 @@ class Line:
 
 
 @dataclass(frozen=True)
-class HLine:
-    """A horizontal reference line asked for with ``--hline``.
+class RefLine:
+    """A reference line asked for with ``--hline`` or ``--vline``.
 
     Attributes
     ----------
     label : str
-        The legend entry: the label given, else the value as given.
+        The legend entry: the label given, else the position as given.
     value : float
-        Where the line goes, in the data's units.
+        Where the line goes along its axis: a value (``--hline`` on plots over
+        time, ``--vline`` on histograms), a count (``--hline`` on histograms) or
+        POSIX seconds (``--vline`` on plots over time).
     units : str or None
-        Draw it only on the axes with these units (``None`` for every axis).
+        Draw it only on the axes of items with these units (``None`` for every
+        axis).
     """
 
     label: str
@@ -76,8 +79,8 @@ class HLine:
     units: str | None = None
 
     @classmethod
-    def parse(cls, text: str) -> HLine:
-        """Read an ``--hline``: ``[LABEL=]VALUE [UNITS]``.
+    def parse(cls, text: str) -> RefLine:
+        """Read a line at a number: ``[LABEL=]VALUE [UNITS]``.
 
         The label is everything before the last ``=``, so it can contain ``=``
         itself. Without one, the value (and units) as given label the line.
@@ -89,7 +92,7 @@ class HLine:
 
         Returns
         -------
-        HLine
+        RefLine
             The line.
 
         Raises
@@ -99,12 +102,12 @@ class HLine:
 
         Examples
         --------
-        >>> HLine.parse("Max value=500")
-        HLine(label='Max value', value=500.0, units=None)
-        >>> HLine.parse("Max temp=26.5 °C")
-        HLine(label='Max temp', value=26.5, units='°C')
-        >>> HLine.parse("1e3")
-        HLine(label='1e3', value=1000.0, units=None)
+        >>> RefLine.parse("Max value=500")
+        RefLine(label='Max value', value=500.0, units=None)
+        >>> RefLine.parse("Max temp=26.5 °C")
+        RefLine(label='Max temp', value=26.5, units='°C')
+        >>> RefLine.parse("1e3")
+        RefLine(label='1e3', value=1000.0, units=None)
         """
         label, separator, rest = text.rpartition("=")
         if not separator:
@@ -150,11 +153,16 @@ class Axis:
         The units of every line on the axis (empty for none).
     lines : list of Line
         The series drawn on this axis.
+    hlines : list of Reference
+        Horizontal reference lines, at values.
+    vlines : list of Reference
+        Vertical reference lines, at times (POSIX seconds).
     """
 
     units: str
     lines: list[Line] = field(default_factory=list)
-    references: list[Reference] = field(default_factory=list)
+    hlines: list[Reference] = field(default_factory=list)
+    vlines: list[Reference] = field(default_factory=list)
 
 
 @dataclass
@@ -183,7 +191,8 @@ def plot_spec(
     *,
     title: str = "",
     log_y: bool = False,
-    hlines: Sequence[HLine] = (),
+    hlines: Sequence[RefLine] = (),
+    vlines: Sequence[RefLine] = (),
 ) -> PlotSpec:
     """Work out what to plot.
 
@@ -203,8 +212,12 @@ def plot_spec(
     log_y : bool, optional
         Use log scales for the vertical axes. Lines with values of zero or less,
         which can't be shown on them, are warned about.
-    hlines : sequence of HLine, optional
-        Reference lines, drawn on every axis or those with their units.
+    hlines : sequence of RefLine, optional
+        Horizontal reference lines at values, drawn on every axis or those with
+        their units.
+    vlines : sequence of RefLine, optional
+        Vertical reference lines at times (POSIX seconds), drawn on every axis or
+        those with their units.
 
     Returns
     -------
@@ -233,15 +246,12 @@ def plot_spec(
                 f"{line.label} has values of zero or less, which a log scale can't "
                 "show; they're left out."
             )
-    for hline, targets in _assign(hlines, list(axes), ui):
-        if log_y and hline.value <= 0:
-            ui.warning(
-                f"--hline {hline.label!r} is at {hline.value:g}, which a log scale "
-                "can't show; it isn't drawn."
-            )
-            continue
+    for hline, targets in _assign("--hline", hlines, list(axes), ui, log_y=log_y):
         for target in targets:
-            axes[target].references.append(Reference(hline.label, hline.value))
+            axes[target].hlines.append(Reference(hline.label, hline.value))
+    for vline, targets in _assign("--vline", vlines, list(axes), ui):
+        for target in targets:
+            axes[target].vlines.append(Reference(vline.label, vline.value))
     return PlotSpec(list(axes.values()), title, log_y)
 
 
@@ -271,11 +281,17 @@ class BarAxis:
         The units of the values counted (empty for none).
     bars : list of Bars
         Each series' counts, drawn side by side in each bin.
+    hlines : list of Reference
+        Horizontal reference lines, at counts.
+    vlines : list of Reference
+        Vertical reference lines, at positions along the bins (see
+        :meth:`zabgrab.services.binning.Bins.position`).
     """
 
     units: str
     bars: list[Bars] = field(default_factory=list)
-    references: list[Reference] = field(default_factory=list)
+    hlines: list[Reference] = field(default_factory=list)
+    vlines: list[Reference] = field(default_factory=list)
 
 
 @dataclass
@@ -307,7 +323,8 @@ def histogram_spec(
     *,
     title: str = "",
     log_y: bool = False,
-    hlines: Sequence[HLine] = (),
+    hlines: Sequence[RefLine] = (),
+    vlines: Sequence[RefLine] = (),
 ) -> HistogramSpec:
     """Work out a histogram of each numeric series' values.
 
@@ -323,9 +340,12 @@ def histogram_spec(
         The figure title.
     log_y : bool, optional
         Use log scales for the counts.
-    hlines : sequence of HLine, optional
-        Reference lines at values, drawn across the bins (see
-        :meth:`~zabgrab.services.binning.Bins.position`) on every axis or those
+    hlines : sequence of RefLine, optional
+        Horizontal reference lines at counts, e.g. to see which bins exceed a
+        limit, drawn on every axis or those with their units.
+    vlines : sequence of RefLine, optional
+        Vertical reference lines at values, placed along the bins (see
+        :meth:`~zabgrab.services.binning.Bins.position`), on every axis or those
         with their units. Lines inside an open-ended bin are warned about.
 
     Returns
@@ -346,33 +366,51 @@ def histogram_spec(
         axis = axes.setdefault(one.item.units, BarAxis(one.item.units))
         label = _label(one, one.server if servers else None)
         axis.bars.append(Bars(label, histogram.counts))
-    for line, units in _assign(hlines, list(axes), ui):
-        at, exact = bins.position(line.value)
+    for hline, targets in _assign("--hline", hlines, list(axes), ui, log_y=log_y):
+        for target in targets:
+            axes[target].hlines.append(Reference(hline.label, hline.value))
+    for vline, targets in _assign("--vline", vlines, list(axes), ui):
+        at, exact = bins.position(vline.value)
         if not exact:
             ui.warning(
-                f"--hline {line.label!r} ({line.value:g}) is inside the open-ended "
-                f"bin {bins.labels[bins.index(line.value)]!r}, so it's drawn across "
-                f"the bin's middle; add {line.value:g} to --bin to put it on an edge."
+                f"--vline {vline.label!r} ({vline.value:g}) is inside the "
+                f"open-ended bin {bins.labels[bins.index(vline.value)]!r}, so it's "
+                f"drawn across the bin's middle; add {vline.value:g} to --bin to "
+                "put it on an edge."
             )
-        for unit in units:
-            axes[unit].references.append(Reference(line.label, at))
+        for target in targets:
+            axes[target].vlines.append(Reference(vline.label, at))
     return HistogramSpec(bins.labels, list(axes.values()), title, log_y)
 
 
 def _assign(
-    hlines: Sequence[HLine], units: list[str], ui: UI
-) -> list[tuple[HLine, list[str]]]:
-    """Work out which axes (by units) each reference line goes on."""
+    option: str,
+    lines: Sequence[RefLine],
+    units: list[str],
+    ui: UI,
+    *,
+    log_y: bool = False,
+) -> list[tuple[RefLine, list[str]]]:
+    """Work out which axes (by units) each reference line goes on.
+
+    Lines whose units no axis has, and (for lines along a log scale) lines at zero
+    or below, are left out with a warning naming ``option``.
+    """
     assigned = []
-    for line in hlines:
+    for line in lines:
         targets = units if line.units is None else [u for u in units if u == line.units]
         if not targets:
             ui.warning(
-                f"Nothing plotted has units {line.units!r}, so --hline {line.label!r} "
-                "isn't drawn."
+                f"Nothing plotted has units {line.units!r}, so {option} "
+                f"{line.label!r} isn't drawn."
             )
-            continue
-        assigned.append((line, targets))
+        elif log_y and line.value <= 0:
+            ui.warning(
+                f"{option} {line.label!r} is at {line.value:g}, which a log scale "
+                "can't show; it isn't drawn."
+            )
+        else:
+            assigned.append((line, targets))
     return assigned
 
 

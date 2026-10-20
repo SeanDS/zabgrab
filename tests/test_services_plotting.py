@@ -16,8 +16,8 @@ from zabgrab.model.zabbix import Item, ValueType
 from zabgrab.services.binning import Bins
 from zabgrab.services.plotting import (
     Bars,
-    HLine,
     Reference,
+    RefLine,
     Segment,
     histogram_spec,
     plot_spec,
@@ -232,15 +232,15 @@ class TestHLines:
     @pytest.mark.parametrize(
         ("text", "expected"),
         [
-            ("500", HLine("500", 500.0)),
-            (" 500 #/m3 ", HLine("500 #/m3", 500.0, "#/m3")),
-            ("Max value=500", HLine("Max value", 500.0)),
-            ("a=b limit = -2.5 °C", HLine("a=b limit", -2.5, "°C")),
-            ("=7", HLine("7", 7.0)),
+            ("500", RefLine("500", 500.0)),
+            (" 500 #/m3 ", RefLine("500 #/m3", 500.0, "#/m3")),
+            ("Max value=500", RefLine("Max value", 500.0)),
+            ("a=b limit = -2.5 °C", RefLine("a=b limit", -2.5, "°C")),
+            ("=7", RefLine("7", 7.0)),
         ],
     )
-    def test_parse(self, text: str, expected: HLine) -> None:
-        assert HLine.parse(text) == expected
+    def test_parse(self, text: str, expected: RefLine) -> None:
+        assert RefLine.parse(text) == expected
 
     @pytest.mark.parametrize(
         ("text", "message"),
@@ -252,7 +252,7 @@ class TestHLines:
     )
     def test_invalid(self, text: str, message: str) -> None:
         with pytest.raises(ValueError, match=re.escape(message)):
-            HLine.parse(text)
+            RefLine.parse(text)
 
     SERIES: ClassVar[list[Series]] = [
         raw([1, 2], [5.0, 50.0], item(1, name="a")),
@@ -262,27 +262,34 @@ class TestHLines:
     def test_every_axis_or_those_with_the_units(self) -> None:
         ui = RecordingUI()
         hlines = [
-            HLine("All", 10.0),
-            HLine("Hot", 26.0, "°C"),
-            HLine("Nowhere", 1.0, "V"),
+            RefLine("All", 10.0),
+            RefLine("Hot", 26.0, "°C"),
+            RefLine("Nowhere", 1.0, "V"),
         ]
-        spec = plot_spec(self.SERIES, EVERYTHING, ui, hlines=hlines)
-        assert [axis.references for axis in spec.axes] == [
+        vlines = [RefLine("Maintenance", 1.5), RefLine("Off", 2.0, "V")]
+        spec = plot_spec(self.SERIES, EVERYTHING, ui, hlines=hlines, vlines=vlines)
+        assert [axis.hlines for axis in spec.axes] == [
             [Reference("All", 10.0)],
             [Reference("All", 10.0), Reference("Hot", 26.0)],
+        ]
+        # Times, on every axis (unless given units).
+        assert [axis.vlines for axis in spec.axes] == [
+            [Reference("Maintenance", 1.5)],
+            [Reference("Maintenance", 1.5)],
         ]
         assert ui.messages == [
             (
                 "warning",
                 "Nothing plotted has units 'V', so --hline 'Nowhere' isn't drawn.",
-            )
+            ),
+            ("warning", "Nothing plotted has units 'V', so --vline 'Off' isn't drawn."),
         ]
 
     def test_log_scale(self) -> None:
         ui = RecordingUI()
-        hlines = [HLine("Zero", 0.0), HLine("Ten", 10.0)]
+        hlines = [RefLine("Zero", 0.0), RefLine("Ten", 10.0)]
         spec = plot_spec(self.SERIES[:1], EVERYTHING, ui, log_y=True, hlines=hlines)
-        assert spec.axes[0].references == [Reference("Ten", 10.0)]
+        assert spec.axes[0].hlines == [Reference("Ten", 10.0)]
         assert ui.messages == [
             (
                 "warning",
@@ -290,22 +297,31 @@ class TestHLines:
             )
         ]
 
-    def test_histogram_positions(self) -> None:
+    def test_histograms(self) -> None:
         ui = RecordingUI()
-        hlines = [
-            HLine("Edge", 100.0),
-            HLine("Inside", 55.0),
-            HLine("Low", 5.0, "°C"),
+        # Horizontal lines at counts; vertical ones at values, placed among bins.
+        hlines = [RefLine("Most", 1.0), RefLine("None", 0.0)]
+        vlines = [
+            RefLine("Edge", 100.0),
+            RefLine("Inside", 55.0),
+            RefLine("Low", 5.0, "°C"),
         ]
-        spec = histogram_spec(self.SERIES, Bins((10, 100)), ui, hlines=hlines)
-        assert [axis.references for axis in spec.axes] == [
+        spec = histogram_spec(
+            self.SERIES, Bins((10, 100)), ui, log_y=True, hlines=hlines, vlines=vlines
+        )
+        assert [axis.hlines for axis in spec.axes] == [[Reference("Most", 1.0)]] * 2
+        assert [axis.vlines for axis in spec.axes] == [
             [Reference("Edge", 1.5), Reference("Inside", 1.0)],
             [Reference("Edge", 1.5), Reference("Inside", 1.0), Reference("Low", 0)],
         ]
         assert ui.messages == [
             (
                 "warning",
-                "--hline 'Low' (5) is inside the open-ended bin '< 10', so it's drawn "
+                "--hline 'None' is at 0, which a log scale can't show; it isn't drawn.",
+            ),
+            (
+                "warning",
+                "--vline 'Low' (5) is inside the open-ended bin '< 10', so it's drawn "
                 "across the bin's middle; add 5 to --bin to put it on an edge.",
-            )
+            ),
         ]

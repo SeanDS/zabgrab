@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import tzinfo
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 
 import pytest
@@ -124,19 +124,57 @@ class TestPlot:
         ok(run("fetch", "-t", "particles", "-o", str(data)))
         args = ("--hline", "Max value=5", "--hline", "2.5 #/m3", "--hline", "Hot=26 °C")
         result = ok(run("plot", str(data), *args))
-        assert shown.spec.axes[0].references == [
+        assert shown.spec.axes[0].hlines == [
             Reference("Max value", 5.0),
             Reference("2.5 #/m3", 2.5),
         ]
         assert "Nothing plotted has units '°C', so --hline 'Hot'" in result.stderr
+
+    def test_vertical_lines_at_times(
+        self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown
+    ) -> None:
+        data = tmp_path / "data.h5"
+        ok(run("fetch", "-t", "particles", "-o", str(data)))
+        # Times as for --from: here local (UK summer) time, or with a zone.
+        args = (
+            "--vline",
+            "Maintenance=2025-10-09 09:00",
+            "--vline",
+            "2025-10-09T08:01Z",
+        )
+        ok(run("plot", str(data), *args))
+
+        def at(hour: int, minute: int) -> float:
+            return datetime(2025, 10, 9, hour, minute, tzinfo=UTC).timestamp()
+
+        assert shown.spec.axes[0].vlines == [
+            Reference("Maintenance", at(8, 0)),
+            Reference("2025-10-09T08:01Z", at(8, 1)),
+        ]
+
+    def test_invalid_vertical_lines(self, zabbix: FakeZabbix, tmp_path: Path) -> None:
+        data = tmp_path / "data.h5"
+        ok(run("fetch", "-t", "particles", "-o", str(data)))
+        result = run("plot", str(data), "--vline", "Maintenance=whenever")
+        assert result.exit_code == 2
+        assert "Invalid value for '--vline'" in result.stderr
+        result = run("plot", str(data), "--bin", "2", "--vline", "Limit=lots")
+        assert result.exit_code == 2
+        assert "'lots' isn't a number." in result.stderr
 
     def test_reference_lines_on_histograms(
         self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown
     ) -> None:
         data = tmp_path / "data.h5"
         ok(run("fetch", "-t", "particles", "-o", str(data)))
-        ok(run("plot", str(data), "--bin", "2,4", "--hline", "Limit=3"))
-        assert shown.histogram.axes[0].references == [Reference("Limit", 1.0)]
+        args = ("--bin", "2,4", "--hline", "Most=2", "--vline", "Limit=3 #/m3")
+        ok(run("plot", str(data), *args))
+        # A count through the bars, and a value among the bins.
+        (axis,) = shown.histogram.axes
+        assert (axis.hlines, axis.vlines) == (
+            [Reference("Most", 2.0)],
+            [Reference("Limit", 1.0)],
+        )
 
     def test_invalid_reference_line(self, zabbix: FakeZabbix, tmp_path: Path) -> None:
         result = run("plot", str(tmp_path), "--hline", "Max=lots")
