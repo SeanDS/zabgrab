@@ -661,12 +661,19 @@ reading operation sees **one merged dataset** (`services/dataset.py`):
   values (for histograms, the counts). Lines with values of zero or less, which
   can't be shown, get a warning. It was `--log-y` in 1.0, which still works,
   hidden and with a warning, until 2.0.
-- `--hline [LABEL=]VALUE [UNITS]` (`plot` only, repeatable) draws horizontal
-  reference lines: the label is everything before the last `=` (else the value
-  as given), and UNITS, if given, limit it to the subplots with exactly those
-  units (a warning if none match; otherwise every subplot). Drawn dark grey with
-  cycling dash patterns, in the legend. On a log scale, lines at zero or less are
-  warned about and left out.
+- `--hline` and `--vline` (`plot` only, repeatable) draw reference lines, each
+  marking a position on its axis in that axis's terms: on time plots `--hline` is
+  a value and `--vline` a time; on histograms `--hline` is a count (to see which
+  bins exceed it) and `--vline` a value among the bins.
+  - Numbers are `[LABEL=]VALUE [UNITS]` (`RefLine.parse`): the label is
+    everything before the last `=` (else the value as given), and UNITS, if
+    given, limit the line to the subplots with exactly those units (a warning if
+    none match; otherwise every subplot).
+  - Times are `[LABEL=]TIME`, parsed as for `--from` in the CLI (they can contain
+    spaces, so no units; every subplot), drawn at wall-clock times like the data.
+  - Drawn dark grey, each label with its own dash pattern across the figure, in
+    the legend. Lines at zero or less on a log scale are warned about and left
+    out.
 - One axis per unit, lines labelled `host: name [units]`, plus `(hourly)` for
   trends and the server when the plot has several.
 - Trends are drawn as the avg line (else whichever statistic was fetched) with a
@@ -747,12 +754,11 @@ be plotted, and for finding extreme values.
   Bin/Count/Share table. `--grep`/`--above`/`--below` apply first; `--sort`,
   `--desc`, `--limit`, `--offset` and `--wrap` are usage errors with it.
 - `plot --bin`: a `HistogramSpec` (`services/plotting.py`) drawn by
-  `ui/plot.draw_histogram`, sideways: bins up the vertical axis (lowest at the
-  bottom), counts along, so the value is vertical as in time plots and `--hline`
-  is horizontal in both. Equal-height bins labelled with their ranges (open bins
-  have no width, and real widths can differ by orders of magnitude), items' bars
-  side by side, one subplot per unit, `--log` on the counts. An `--hline` goes on
-  the boundary for an edge value, in proportion between a closed bin's edges, and
+  `ui/plot.draw_histogram`: bins along the bottom (lowest on the left), counts
+  up the side. Equal-width bins labelled with their ranges (open bins have no
+  width, and real widths can differ by orders of magnitude), items' bars side by
+  side, one subplot per unit, `--log` on the counts. A `--vline` value goes on
+  the boundary for an edge, in proportion between a closed bin's edges, and
   across the middle of an open-ended bin (with a warning suggesting the value as
   an extra edge).
 - Counts are numbers of points, proportional to time only for evenly sampled
@@ -918,10 +924,13 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
 - Without `--output`, interactive runs ask whether to save under the automatic name:
   `y`, `n`, or `o` to type another path, then handled as if given with `--output`
   (keeping any format just asked for).
-- `--hline` rather than `--trendline`, which suggests a fitted line; it stays on
-  `plot`, keeping `fetch --plot` a quick look. Histograms are sideways so the
-  value axis is vertical everywhere; `--log-y` became `--log`, since with `--bin`
-  it applies to the horizontal axis.
+- `--hline`/`--vline` rather than `--trendline`, which suggests a fitted line;
+  they stay on `plot`, keeping `fetch --plot` a quick look. Each marks its own
+  axis in that axis's terms, so on histograms `--hline` is a count, showing which
+  bins exceed a limit, and `--vline` a value. (Sideways histograms, keeping
+  values vertical everywhere, were tried and dropped: bins read best along the
+  bottom.) `--log-y` became `--log`, since plots aren't only of values over
+  time.
 - `--bin` is shared by `show` and `plot` rather than being a command of its own,
   so it combines with their selection options; equal-width labelled bars beat
   proportional ones for open-ended and logarithmic edges.
