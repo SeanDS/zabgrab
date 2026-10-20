@@ -175,4 +175,6 @@ def histograms(
 
 def _number(value: float) -> str:
     """Write an edge as given: ``10`` rather than ``10.0``."""
+    # float() too, since an int has no is_integer() before Python 3.12.
+    value = float(value)
     return str(int(value)) if value.is_integer() else repr(value)
