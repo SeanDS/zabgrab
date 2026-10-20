@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from ..errors import ZabgrabError
-from ..services.plotting import HistogramSpec, PlotSpec
+from ..services.plotting import HistogramSpec, PlotSpec, Reference
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -110,6 +110,7 @@ def draw(spec: PlotSpec, tz: tzinfo | None, *, interactive: bool = False) -> Fig
             # Values of zero or less can't be shown; leave them out of the lines.
             subplot.set_yscale("log", nonpositive="mask")
         subplot.grid(alpha=0.3)
+        _references(subplot, axis.references)
         subplot.legend(loc="best", fontsize="small")
     subplots[-1][0].set_xlabel(f"Time ({_zone_name(tz)})")
     if spec.title:
@@ -118,11 +119,13 @@ def draw(spec: PlotSpec, tz: tzinfo | None, *, interactive: bool = False) -> Fig
 
 
 def draw_histogram(spec: HistogramSpec, *, interactive: bool = False) -> Figure:
-    """Draw a histogram.
+    """Draw a histogram, sideways: bins up the vertical axis, counts along.
 
-    The bins are drawn the same width, labelled with their ranges: the first and
-    last are open-ended, and the others' real widths can differ by orders of
-    magnitude. Each series' bars sit side by side in each bin.
+    The value is on the vertical axis, as in plots over time, so reference lines
+    are horizontal in both. The bins are drawn the same height, labelled with
+    their ranges, lowest at the bottom: the first and last are open-ended, and the
+    others' real widths can differ by orders of magnitude. Each series' bars sit
+    side by side in each bin.
 
     Parameters
     ----------
@@ -134,13 +137,12 @@ def draw_histogram(spec: HistogramSpec, *, interactive: bool = False) -> Figure:
     Returns
     -------
     matplotlib.figure.Figure
-        One subplot per axis in ``spec``, sharing the bins.
+        One subplot per axis in ``spec``.
     """
     plt = _pyplot(interactive=interactive)
     figure, subplots = plt.subplots(
         len(spec.axes),
         1,
-        sharex=True,
         squeeze=False,
         figsize=(10, 2.5 + 2.5 * len(spec.axes)),
         layout="constrained",
@@ -148,29 +150,45 @@ def draw_histogram(spec: HistogramSpec, *, interactive: bool = False) -> Figure:
     colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     positions = range(len(spec.bins))
     for axis, (subplot,) in zip(spec.axes, subplots, strict=True):
-        # The bars of a bin share 80% of its width, leaving a gap between bins.
-        width = 0.8 / len(axis.bars)
+        # The bars of a bin share 80% of its height, leaving a gap between bins.
+        height = 0.8 / len(axis.bars)
         for number, bars in enumerate(axis.bars):
-            offset = (number - (len(axis.bars) - 1) / 2) * width
-            subplot.bar(
+            offset = (number - (len(axis.bars) - 1) / 2) * height
+            subplot.barh(
                 [position + offset for position in positions],
                 bars.counts,
-                width,
+                height,
                 label=bars.label,
                 color=colours[number % len(colours)],
             )
-        subplot.set_ylabel("Count")
+        subplot.set_xlabel("Count")
         if spec.log_y:
-            # Empty bins can't be shown on a log scale; leave them out.
-            subplot.set_yscale("log", nonpositive="mask")
-        subplot.grid(alpha=0.3, axis="y")
+            # The log scale is for the counts; empty bins can't be shown on it.
+            subplot.set_xscale("log", nonpositive="mask")
+        subplot.grid(alpha=0.3, axis="x")
+        subplot.set_yticks(list(positions), spec.bins)
+        subplot.set_ylabel(f"Value [{axis.units}]" if axis.units else "Value")
+        _references(subplot, axis.references)
         subplot.legend(loc="best", fontsize="small")
-        subplot.set_xticks(list(positions), spec.bins)
-        subplot.tick_params(axis="x", labelbottom=True)
-        subplot.set_xlabel(f"Value [{axis.units}]" if axis.units else "Value")
     if spec.title:
         figure.suptitle(spec.title)
     return cast("Figure", figure)
+
+
+#: Dash patterns for reference lines, so several are told apart in the legend.
+REFERENCE_STYLES = ["--", ":", "-.", (0, (8, 3, 2, 3, 2, 3))]
+
+
+def _references(subplot: Any, references: Sequence[Reference]) -> None:
+    """Draw reference lines across a subplot, in a grey that data lines don't use."""
+    for number, reference in enumerate(references):
+        subplot.axhline(
+            reference.at,
+            color="0.25",
+            linewidth=1.2,
+            linestyle=REFERENCE_STYLES[number % len(REFERENCE_STYLES)],
+            label=reference.label,
+        )
 
 
 def show_or_save(

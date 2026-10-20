@@ -8,6 +8,7 @@ lines break) are tested without matplotlib.
 from __future__ import annotations
 
 import bisect
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -56,6 +57,89 @@ class Line:
     segments: list[Segment] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class HLine:
+    """A horizontal reference line asked for with ``--hline``.
+
+    Attributes
+    ----------
+    label : str
+        The legend entry: the label given, else the value as given.
+    value : float
+        Where the line goes, in the data's units.
+    units : str or None
+        Draw it only on the axes with these units (``None`` for every axis).
+    """
+
+    label: str
+    value: float
+    units: str | None = None
+
+    @classmethod
+    def parse(cls, text: str) -> HLine:
+        """Read an ``--hline``: ``[LABEL=]VALUE [UNITS]``.
+
+        The label is everything before the last ``=``, so it can contain ``=``
+        itself. Without one, the value (and units) as given label the line.
+
+        Parameters
+        ----------
+        text : str
+            The option's value, e.g. ``Max=500``, ``Max=500 #/m3`` or ``500``.
+
+        Returns
+        -------
+        HLine
+            The line.
+
+        Raises
+        ------
+        ValueError
+            If there's no value, or it isn't a finite number.
+
+        Examples
+        --------
+        >>> HLine.parse("Max value=500")
+        HLine(label='Max value', value=500.0, units=None)
+        >>> HLine.parse("Max temp=26.5 °C")
+        HLine(label='Max temp', value=26.5, units='°C')
+        >>> HLine.parse("1e3")
+        HLine(label='1e3', value=1000.0, units=None)
+        """
+        label, separator, rest = text.rpartition("=")
+        if not separator:
+            label, rest = "", text
+        number, _, units = rest.strip().partition(" ")
+        if not number:
+            raise ValueError(
+                f"{text!r} has no value; give e.g. 'Max=500', 'Max=500 #/m3' or '500'"
+            )
+        try:
+            value = float(number)
+        except ValueError:
+            raise ValueError(f"{number!r} isn't a number") from None
+        if not math.isfinite(value):
+            raise ValueError(f"{number!r} isn't a finite number")
+        return cls(label.strip() or rest.strip(), value, units.strip() or None)
+
+
+@dataclass(frozen=True)
+class Reference:
+    """A reference line to draw on an axis.
+
+    Attributes
+    ----------
+    label : str
+        The legend entry.
+    at : float
+        Where it goes: a value for lines over time, or a position along the bins
+        for histograms (see :meth:`zabgrab.services.binning.Bins.position`).
+    """
+
+    label: str
+    at: float
+
+
 @dataclass
 class Axis:
     """A vertical axis, shared by the series with the same units.
@@ -70,6 +154,7 @@ class Axis:
 
     units: str
     lines: list[Line] = field(default_factory=list)
+    references: list[Reference] = field(default_factory=list)
 
 
 @dataclass
@@ -98,6 +183,7 @@ def plot_spec(
     *,
     title: str = "",
     log_y: bool = False,
+    hlines: Sequence[HLine] = (),
 ) -> PlotSpec:
     """Work out what to plot.
 
@@ -117,6 +203,8 @@ def plot_spec(
     log_y : bool, optional
         Use log scales for the vertical axes. Lines with values of zero or less,
         which can't be shown on them, are warned about.
+    hlines : sequence of HLine, optional
+        Reference lines, drawn on every axis or those with their units.
 
     Returns
     -------
@@ -145,6 +233,15 @@ def plot_spec(
                 f"{line.label} has values of zero or less, which a log scale can't "
                 "show; they're left out."
             )
+    for hline, targets in _assign(hlines, list(axes), ui):
+        if log_y and hline.value <= 0:
+            ui.warning(
+                f"--hline {hline.label!r} is at {hline.value:g}, which a log scale "
+                "can't show; it isn't drawn."
+            )
+            continue
+        for target in targets:
+            axes[target].references.append(Reference(hline.label, hline.value))
     return PlotSpec(list(axes.values()), title, log_y)
 
 
@@ -178,6 +275,7 @@ class BarAxis:
 
     units: str
     bars: list[Bars] = field(default_factory=list)
+    references: list[Reference] = field(default_factory=list)
 
 
 @dataclass
@@ -209,6 +307,7 @@ def histogram_spec(
     *,
     title: str = "",
     log_y: bool = False,
+    hlines: Sequence[HLine] = (),
 ) -> HistogramSpec:
     """Work out a histogram of each numeric series' values.
 
@@ -224,6 +323,10 @@ def histogram_spec(
         The figure title.
     log_y : bool, optional
         Use log scales for the counts.
+    hlines : sequence of HLine, optional
+        Reference lines at values, drawn across the bins (see
+        :meth:`~zabgrab.services.binning.Bins.position`) on every axis or those
+        with their units. Lines inside an open-ended bin are warned about.
 
     Returns
     -------
@@ -243,7 +346,34 @@ def histogram_spec(
         axis = axes.setdefault(one.item.units, BarAxis(one.item.units))
         label = _label(one, one.server if servers else None)
         axis.bars.append(Bars(label, histogram.counts))
+    for line, units in _assign(hlines, list(axes), ui):
+        at, exact = bins.position(line.value)
+        if not exact:
+            ui.warning(
+                f"--hline {line.label!r} ({line.value:g}) is inside the open-ended "
+                f"bin {bins.labels[bins.index(line.value)]!r}, so it's drawn across "
+                f"the bin's middle; add {line.value:g} to --bin to put it on an edge."
+            )
+        for unit in units:
+            axes[unit].references.append(Reference(line.label, at))
     return HistogramSpec(bins.labels, list(axes.values()), title, log_y)
+
+
+def _assign(
+    hlines: Sequence[HLine], units: list[str], ui: UI
+) -> list[tuple[HLine, list[str]]]:
+    """Work out which axes (by units) each reference line goes on."""
+    assigned = []
+    for line in hlines:
+        targets = units if line.units is None else [u for u in units if u == line.units]
+        if not targets:
+            ui.warning(
+                f"Nothing plotted has units {line.units!r}, so --hline {line.label!r} "
+                "isn't drawn."
+            )
+            continue
+        assigned.append((line, targets))
+    return assigned
 
 
 def _numeric(series: Sequence[Series], ui: UI) -> list[Series]:

@@ -121,6 +121,52 @@ def bin_option(function: F) -> F:
     )(function)
 
 
+def log_option(help: str) -> Callable[[F], F]:
+    """Make the ``--log`` option, with its old name ``--log-y`` hidden.
+
+    ``--log-y`` was renamed ``--log`` in 1.1.0, since with ``--bin`` it applies to
+    the counts, along the horizontal axis. The old name still works, with a
+    warning, until 2.0.
+
+    Parameters
+    ----------
+    help : str
+        The option's help.
+
+    Returns
+    -------
+    callable
+        A decorator adding the options, which the command takes as ``log`` and
+        ``log_y`` arguments; pass them to :func:`use_log`.
+    """
+
+    def decorate(function: F) -> F:
+        function = click.option("--log-y", "log_y", is_flag=True, hidden=True)(function)
+        return click.option("--log", "log", is_flag=True, help=help)(function)
+
+    return decorate
+
+
+def use_log(app: AppContext, log: bool, log_y: bool) -> bool:
+    """Combine ``--log`` and its old name, warning about the old one.
+
+    Parameters
+    ----------
+    app : AppContext
+        For the UI.
+    log, log_y : bool
+        Whether ``--log`` and ``--log-y`` were given.
+
+    Returns
+    -------
+    bool
+        Whether to use log scales.
+    """
+    if log_y:
+        app.ui.warning("--log-y is now --log; --log-y will stop working in 2.0.")
+    return log or log_y
+
+
 def read_dataset(
     app: AppContext,
     file: Path,

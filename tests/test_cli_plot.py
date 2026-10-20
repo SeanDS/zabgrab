@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from zabgrab.errors import EXIT_ERROR
-from zabgrab.services.plotting import HistogramSpec, PlotSpec
+from zabgrab.services.plotting import HistogramSpec, PlotSpec, Reference
 
 from .cli_support import CONFIG, Servers, run
 from .fakezabbix import FakeZabbix, seeded
@@ -108,7 +108,7 @@ class TestPlot:
     def test_histogram(self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown) -> None:
         data = tmp_path / "data.h5"
         ok(run("fetch", "-t", "particles", "-o", str(data)))
-        ok(run("plot", str(data), "--bin", "2,3", "--log-y"))
+        ok(run("plot", str(data), "--bin", "2,3", "--log"))
         spec = shown.histogram
         assert (spec.bins, spec.title, spec.log_y) == (
             ["< 2", "2 to 3", "≥ 3"],
@@ -116,6 +116,32 @@ class TestPlot:
             True,
         )
         assert [bars.counts for bars in spec.axes[0].bars] == [[1, 1, 1], [0, 0, 1]]
+
+    def test_reference_lines(
+        self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown
+    ) -> None:
+        data = tmp_path / "data.h5"
+        ok(run("fetch", "-t", "particles", "-o", str(data)))
+        args = ("--hline", "Max value=5", "--hline", "2.5 #/m3", "--hline", "Hot=26 °C")
+        result = ok(run("plot", str(data), *args))
+        assert shown.spec.axes[0].references == [
+            Reference("Max value", 5.0),
+            Reference("2.5 #/m3", 2.5),
+        ]
+        assert "Nothing plotted has units '°C', so --hline 'Hot'" in result.stderr
+
+    def test_reference_lines_on_histograms(
+        self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown
+    ) -> None:
+        data = tmp_path / "data.h5"
+        ok(run("fetch", "-t", "particles", "-o", str(data)))
+        ok(run("plot", str(data), "--bin", "2,4", "--hline", "Limit=3"))
+        assert shown.histogram.axes[0].references == [Reference("Limit", 1.0)]
+
+    def test_invalid_reference_line(self, zabbix: FakeZabbix, tmp_path: Path) -> None:
+        result = run("plot", str(tmp_path), "--hline", "Max=lots")
+        assert result.exit_code == 2
+        assert "'lots' isn't a number." in result.stderr
 
     def test_saves_a_histogram(self, zabbix: FakeZabbix, tmp_path: Path) -> None:
         data, image = tmp_path / "data.h5", tmp_path / "bins.png"
@@ -126,8 +152,21 @@ class TestPlot:
     def test_log_scale(self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown) -> None:
         data = tmp_path / "data.h5"
         ok(run("fetch", "-t", "particles", "-o", str(data)))
-        ok(run("plot", str(data), "--log-y"))
+        result = ok(run("plot", str(data), "--log"))
         assert shown.spec.log_y
+        assert "--log-y" not in result.stderr
+
+    def test_old_log_scale_option(
+        self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown
+    ) -> None:
+        data = tmp_path / "data.h5"
+        ok(run("fetch", "-t", "particles", "-o", str(data)))
+        result = ok(run("plot", str(data), "--log-y"))
+        assert shown.spec.log_y
+        assert "--log-y is now --log; --log-y will stop working in 2.0." in (
+            result.stderr
+        )
+        assert "--log-y" not in ok(run("plot", "--help")).stdout
 
     def test_appended_groups_join_and_gaps_break(
         self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown
@@ -220,13 +259,13 @@ class TestFetchPlot:
         assert len(shown.calls) == 1
 
     def test_log_scale(self, zabbix: FakeZabbix, shown: Shown) -> None:
-        ok(run("fetch", "-t", "particles", "--plot", "--log-y"))
+        ok(run("fetch", "-t", "particles", "--plot", "--log"))
         assert shown.spec.log_y
 
     def test_log_scale_needs_plot(self, zabbix: FakeZabbix) -> None:
         result = run("fetch", "-t", "particles", "--log-y")
         assert result.exit_code == 2
-        assert "--log-y only applies with --plot." in result.stderr
+        assert "--log only applies with --plot." in result.stderr
 
     def test_not_with_dry_run(self, zabbix: FakeZabbix, shown: Shown) -> None:
         ok(run("fetch", "-t", "particles", "--plot", "--dry-run"))

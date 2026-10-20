@@ -82,6 +82,40 @@ class Bins:
         """Find the bin a value falls in (its lower edge counts as in it)."""
         return bisect.bisect_right(self.edges, value)
 
+    def position(self, value: float) -> tuple[float, bool]:
+        """Place a value along the bins, drawn side by side one unit apart.
+
+        Bin ``i`` is centred on ``i``, so the edge between bins ``i`` and ``i + 1``
+        is at ``i + 0.5``. A value inside a bin between two edges is placed in
+        proportion between them. The first and last bins are open-ended, with no
+        width to measure against, so values inside them go in their middle.
+
+        Parameters
+        ----------
+        value : float
+            The value.
+
+        Returns
+        -------
+        position : float
+            Where the value goes.
+        exact : bool
+            Whether the position is exact (``False`` inside an open-ended bin).
+
+        Examples
+        --------
+        >>> bins = Bins((10, 100, 1000))
+        >>> [bins.position(value) for value in (10, 55, 1000, 5, 5000)]
+        [(0.5, True), (1.0, True), (2.5, True), (0, False), (3, False)]
+        """
+        if value in self.edges:
+            return self.edges.index(value) + 0.5, True
+        index = self.index(value)
+        if index == 0 or index == len(self.edges):
+            return index, False
+        low, high = self.edges[index - 1], self.edges[index]
+        return index - 0.5 + (value - low) / (high - low), True
+
 
 @dataclass(frozen=True)
 class Histogram:

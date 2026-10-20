@@ -19,6 +19,7 @@ from zabgrab.services.plotting import (
     HistogramSpec,
     Line,
     PlotSpec,
+    Reference,
     Segment,
 )
 from zabgrab.ui import plot
@@ -134,21 +135,47 @@ def test_draw_histogram() -> None:
     top, bottom = figure.axes
     assert figure.get_suptitle() == "data.h5"
     assert len(top.patches) == 6  # 2 items x 3 bins
-    # Items' bars sit side by side, centred on each bin.
+    # Sideways: items' bars sit side by side, centred on each bin, lowest at the
+    # bottom.
     bars: list[Any] = list(top.patches)  # Rectangles
-    centres = sorted(round(bar.get_x() + bar.get_width() / 2, 2) for bar in bars)
+    centres = sorted(round(bar.get_y() + bar.get_height() / 2, 2) for bar in bars)
     assert centres == [-0.2, 0.2, 0.8, 1.2, 1.8, 2.2]
-    assert [t.get_text() for t in top.get_xticklabels()] == HISTOGRAM.bins
-    assert (top.get_ylabel(), top.get_xlabel()) == ("Count", "Value [#]")
-    assert bottom.get_xlabel() == "Value"
-    assert top.get_yscale() == "linear"
+    assert [t.get_text() for t in top.get_yticklabels()] == HISTOGRAM.bins
+    assert (top.get_xlabel(), top.get_ylabel()) == ("Count", "Value [#]")
+    assert bottom.get_ylabel() == "Value"
+    assert top.get_xscale() == "linear"
 
 
 def test_histogram_log_scale_and_no_title() -> None:
     spec = HistogramSpec(HISTOGRAM.bins, HISTOGRAM.axes[1:], log_y=True)
     figure = plot.draw_histogram(spec)
     assert figure.get_suptitle() == ""
-    assert figure.axes[0].get_yscale() == "log"
+    # The counts, along the bottom.
+    assert figure.axes[0].get_xscale() == "log"
+
+
+def test_references() -> None:
+    references = [Reference(f"r{n}", float(n)) for n in range(5)]
+    spec = PlotSpec([Axis("#", SPEC.axes[0].lines, references)])
+    (subplot,) = plot.draw(spec, None).axes
+    drawn = subplot.get_lines()[-5:]
+    assert [line.get_label() for line in drawn] == ["r0", "r1", "r2", "r3", "r4"]
+    heights: list[Any] = [line.get_ydata() for line in drawn[:2]]
+    assert [list(height) for height in heights] == [[0, 0], [1, 1]]
+    # Dashed differently, the fifth like the first.
+    styles = [line.get_linestyle() for line in drawn]
+    assert len(set(styles[:3])) == 3
+    assert styles[4] == styles[0]
+    legend = subplot.get_legend()
+    assert legend is not None
+    assert "r0" in [t.get_text() for t in legend.get_texts()]
+    histogram = HistogramSpec(
+        ["< 1", "≥ 1"], [BarAxis("", [Bars("c", [1, 2])], [Reference("x", 0.5)])]
+    )
+    (subplot,) = plot.draw_histogram(histogram).axes
+    (line,) = subplot.get_lines()
+    height: Any = line.get_ydata()
+    assert (line.get_label(), list(height)) == ("x", [0.5, 0.5])
 
 
 def test_save_histogram(tmp_path: Path) -> None:
