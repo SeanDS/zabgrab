@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from ..errors import ZabgrabError
-from ..services.plotting import PlotSpec
+from ..services.plotting import HistogramSpec, PlotSpec
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -117,15 +117,71 @@ def draw(spec: PlotSpec, tz: tzinfo | None, *, interactive: bool = False) -> Fig
     return cast("Figure", figure)
 
 
+def draw_histogram(spec: HistogramSpec, *, interactive: bool = False) -> Figure:
+    """Draw a histogram.
+
+    The bins are drawn the same width, labelled with their ranges: the first and
+    last are open-ended, and the others' real widths can differ by orders of
+    magnitude. Each series' bars sit side by side in each bin.
+
+    Parameters
+    ----------
+    spec : HistogramSpec
+        What to draw (see :func:`zabgrab.services.plotting.histogram_spec`).
+    interactive : bool, optional
+        Whether the figure will be shown in a window.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        One subplot per axis in ``spec``, sharing the bins.
+    """
+    plt = _pyplot(interactive=interactive)
+    figure, subplots = plt.subplots(
+        len(spec.axes),
+        1,
+        sharex=True,
+        squeeze=False,
+        figsize=(10, 2.5 + 2.5 * len(spec.axes)),
+        layout="constrained",
+    )
+    colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    positions = range(len(spec.bins))
+    for axis, (subplot,) in zip(spec.axes, subplots, strict=True):
+        # The bars of a bin share 80% of its width, leaving a gap between bins.
+        width = 0.8 / len(axis.bars)
+        for number, bars in enumerate(axis.bars):
+            offset = (number - (len(axis.bars) - 1) / 2) * width
+            subplot.bar(
+                [position + offset for position in positions],
+                bars.counts,
+                width,
+                label=bars.label,
+                color=colours[number % len(colours)],
+            )
+        subplot.set_ylabel("Count")
+        if spec.log_y:
+            # Empty bins can't be shown on a log scale; leave them out.
+            subplot.set_yscale("log", nonpositive="mask")
+        subplot.grid(alpha=0.3, axis="y")
+        subplot.legend(loc="best", fontsize="small")
+        subplot.set_xticks(list(positions), spec.bins)
+        subplot.tick_params(axis="x", labelbottom=True)
+        subplot.set_xlabel(f"Value [{axis.units}]" if axis.units else "Value")
+    if spec.title:
+        figure.suptitle(spec.title)
+    return cast("Figure", figure)
+
+
 def show_or_save(
-    spec: PlotSpec, tz: tzinfo | None, outputs: Sequence[Path] = ()
+    spec: PlotSpec | HistogramSpec, tz: tzinfo | None, outputs: Sequence[Path] = ()
 ) -> None:
     """Show a plot in a window, or save it to files.
 
     Parameters
     ----------
-    spec : PlotSpec
-        What to draw.
+    spec : PlotSpec or HistogramSpec
+        What to draw: lines over time, or a histogram.
     tz : tzinfo or None
         The time zone to show times in (``None`` for local time).
     outputs : sequence of Path, optional
@@ -139,7 +195,11 @@ def show_or_save(
         If matplotlib isn't installed, or a file can't be written.
     """
     interactive = not outputs
-    figure = draw(spec, tz, interactive=interactive)
+    figure = (
+        draw_histogram(spec, interactive=interactive)
+        if isinstance(spec, HistogramSpec)
+        else draw(spec, tz, interactive=interactive)
+    )
     plt = _pyplot(interactive=interactive)
     try:
         if interactive:

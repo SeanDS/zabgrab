@@ -18,6 +18,7 @@ from ..adapters.formats import hdf5
 from ..errors import ZabgrabError
 from ..model.item import ItemSpec
 from ..model.itemspec import EXAMPLE
+from ..services.binning import Bins
 from ..services.dataset import Dataset, filter_dataset, merge, select_groups
 from .app import AppContext
 from .discovery import ItemSpecType
@@ -78,6 +79,46 @@ def selection_options(function: F) -> F:
     ):
         function = option(function)
     return function
+
+
+def _bins(
+    ctx: click.Context, param: click.Parameter, value: tuple[str, ...]
+) -> Bins | None:
+    """Read ``--bin``'s edges."""
+    if not value:
+        return None
+    try:
+        return Bins.parse(value)
+    except ValueError as exc:
+        raise click.BadParameter(f"{exc}.") from None
+
+
+def bin_option(function: F) -> F:
+    """Add the ``--bin`` option.
+
+    Parameters
+    ----------
+    function : callable
+        The click command to add it to.
+
+    Returns
+    -------
+    callable
+        The command, taking a ``bins`` argument (a
+        :class:`~zabgrab.services.binning.Bins`, or ``None``).
+    """
+    return click.option(
+        "--bin",
+        "bins",
+        multiple=True,
+        metavar="EDGES",
+        callback=_bins,
+        help="Count the values in bins with these edges, in increasing order, "
+        "e.g. '10,100,1000' (or repeat --bin). N edges make N+1 bins: below the "
+        "first, between each pair, and from the last up. Each bin includes its "
+        "lower edge but not its upper one, as numpy's do. Hourly trends' averages "
+        "are counted; text items are left out.",
+    )(function)
 
 
 def read_dataset(

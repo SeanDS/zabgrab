@@ -12,8 +12,10 @@ from ..errors import EXIT_PARTIAL, ZabgrabError
 from ..model.config import Agg, Resolution
 from ..model.item import ItemSpec
 from ..model.itemspec import EXAMPLE
+from ..model.series import Series
+from ..services.binning import Bins, histograms
 from ..services.listing import SORT_KEYS, ListingOptions, Section, listing
-from ..ui.listing import listing_lines
+from ..ui.listing import histogram_lines, listing_lines
 from .app import AppContext, global_options, pass_app
 from .discovery import ItemSpecType
 from .fetch import (
@@ -23,7 +25,7 @@ from .fetch import (
     settings_values,
     show_equivalent,
 )
-from .reading import nothing_selected, read_dataset
+from .reading import bin_option, nothing_selected, read_dataset
 
 
 def _pattern(
@@ -151,6 +153,7 @@ def _pattern(
     is_flag=True,
     help="Show text values in full, over several lines, rather than on one line.",
 )
+@bin_option
 @click.option(
     "--no-pager", is_flag=True, help="Print everything, without a pager (less)."
 )
@@ -177,6 +180,7 @@ def show_command(
     above: float | None,
     below: float | None,
     wrap: bool,
+    bins: Bins | None,
     no_pager: bool,
 ) -> None:
     """List data points: from FILE (.mat or .h5), or fetched from Zabbix.
@@ -187,8 +191,19 @@ def show_command(
     but not saved.
 
     Points are listed in time order, or with --sort value, each item's points by
-    value. In a terminal, the list opens in a pager ($PAGER, or less).
+    value. With --bin, each item's values are counted in bins instead. In a
+    terminal, the list opens in a pager ($PAGER, or less).
     """
+    if bins is not None:
+        _not_with_bins(
+            {
+                "--sort": sort != "time",
+                "--desc": desc,
+                "--limit": limit is not None,
+                "--offset": offset != 0,
+                "--wrap": wrap,
+            }
+        )
     options = ListingOptions(
         sort=sort,
         descending=desc,
@@ -240,8 +255,9 @@ def show_command(
         app.ui.success(fetch_summary(result, query) + ".")
         series, tz, failed = result.series, query.tz, bool(result.failed)
 
-    sections = listing(series, options)
-    if sections:
+    if bins is not None:
+        _show_bins(app, series, bins, options, pager=not no_pager)
+    elif sections := listing(series, options):
         lines = listing_lines(
             sections, tz, headings=sort != "time", offset=offset, wrap=wrap
         )
@@ -257,6 +273,38 @@ def show_command(
         show_equivalent(app, query, templates=False)
     if failed:
         click.get_current_context().exit(EXIT_PARTIAL)
+
+
+def _not_with_bins(given: dict[str, bool]) -> None:
+    """Refuse the ordering and slicing options, which don't apply to bins."""
+    for option, value in given.items():
+        if value:
+            raise click.UsageError(f"{option} doesn't apply with --bin.")
+
+
+def _show_bins(
+    app: AppContext,
+    series: list[Series],
+    bins: Bins,
+    options: ListingOptions,
+    *,
+    pager: bool,
+) -> None:
+    """List how many of each item's values fall in each bin."""
+    counted = histograms(series, bins, options)
+    for one in series:
+        if not one.item.value_type.numeric:
+            item = one.item
+            app.ui.info(
+                f"Not counting item {item.itemid} ({item.host}: {item.name}), a "
+                f"{item.value_type.label} item; only numbers can be binned."
+            )
+    if not counted:
+        raise ZabgrabError(
+            "There are no numeric items to count.",
+            hint="Only numbers can be binned; list text items without --bin.",
+        )
+    app.ui.page(histogram_lines(counted, bins), pager=pager)
 
 
 def _only_when(when: str, given: dict[str, object]) -> None:

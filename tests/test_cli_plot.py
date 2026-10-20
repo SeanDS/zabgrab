@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from zabgrab.errors import EXIT_ERROR
-from zabgrab.services.plotting import PlotSpec
+from zabgrab.services.plotting import HistogramSpec, PlotSpec
 
 from .cli_support import CONFIG, Servers, run
 from .fakezabbix import FakeZabbix, seeded
@@ -27,18 +27,28 @@ LATE = ("--from", "2025-10-09T08:01:30Z", "--to", "now")
 class Shown:
     """Plots shown or saved, instead of drawing them."""
 
-    calls: list[tuple[PlotSpec, tzinfo | None, Sequence[Path]]] = field(
+    calls: list[tuple[PlotSpec | HistogramSpec, tzinfo | None, Sequence[Path]]] = field(
         default_factory=list
     )
 
     def __call__(
-        self, spec: PlotSpec, tz: tzinfo | None, outputs: Sequence[Path] = ()
+        self,
+        spec: PlotSpec | HistogramSpec,
+        tz: tzinfo | None,
+        outputs: Sequence[Path] = (),
     ) -> None:
         self.calls.append((spec, tz, outputs))
 
     @property
     def spec(self) -> PlotSpec:
         (call,) = self.calls
+        assert isinstance(call[0], PlotSpec)
+        return call[0]
+
+    @property
+    def histogram(self) -> HistogramSpec:
+        (call,) = self.calls
+        assert isinstance(call[0], HistogramSpec)
         return call[0]
 
 
@@ -94,6 +104,24 @@ class TestPlot:
         ((spec, tz, outputs),) = shown.calls
         assert spec.title == "data.h5"
         assert (tz, outputs) == (None, ())
+
+    def test_histogram(self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown) -> None:
+        data = tmp_path / "data.h5"
+        ok(run("fetch", "-t", "particles", "-o", str(data)))
+        ok(run("plot", str(data), "--bin", "2,3", "--log-y"))
+        spec = shown.histogram
+        assert (spec.bins, spec.title, spec.log_y) == (
+            ["< 2", "2 to 3", "≥ 3"],
+            "data.h5",
+            True,
+        )
+        assert [bars.counts for bars in spec.axes[0].bars] == [[1, 1, 1], [0, 0, 1]]
+
+    def test_saves_a_histogram(self, zabbix: FakeZabbix, tmp_path: Path) -> None:
+        data, image = tmp_path / "data.h5", tmp_path / "bins.png"
+        ok(run("fetch", "-t", "particles", "-o", str(data)))
+        ok(run("plot", str(data), "--bin", "2", "-o", str(image)))
+        assert image.read_bytes().startswith(b"\x89PNG")
 
     def test_log_scale(self, zabbix: FakeZabbix, tmp_path: Path, shown: Shown) -> None:
         data = tmp_path / "data.h5"

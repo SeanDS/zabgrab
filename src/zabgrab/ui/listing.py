@@ -13,6 +13,7 @@ from typing import Any
 
 from ..model.config import Resolution
 from ..model.series import Series
+from ..services.binning import Bins, Histogram
 from ..services.listing import STATISTICS, Row, Section
 
 #: A line of output and its style: ``""``, ``"bold"`` or ``"dim"``.
@@ -204,3 +205,54 @@ def _text(value: Any, wrap: bool) -> str:
         return ""
     text = str(value).replace("\r\n", "\n").replace("\t", " ")
     return text if wrap else text.replace("\n", NEWLINE)
+
+
+def histogram_lines(histograms: Sequence[Histogram], bins: Bins) -> list[Line]:
+    """Lay out bin counts: a section per item, with a line per bin.
+
+    Parameters
+    ----------
+    histograms : sequence of Histogram
+        Each item's counts (see :func:`zabgrab.services.binning.histograms`).
+    bins : Bins
+        The bins, for their labels.
+
+    Returns
+    -------
+    list of Line
+        The lines, without line breaks, and how to style each.
+    """
+    lines: list[Line] = []
+    for number, histogram in enumerate(histograms):
+        if number:
+            lines.append(("", ""))
+        total = histogram.total
+        heading = (
+            f"{label(histogram.series)}: {total:,} value{'' if total == 1 else 's'}"
+        )
+        lines.append((heading, "bold"))
+        rows = [
+            [name, f"{count:,}", f"{count / total:.1%}" if total else ""]
+            for name, count in zip(bins.labels, histogram.counts, strict=True)
+        ]
+        lines += _aligned(["Bin", "Count", "Share"], rows, right=[False, True, True])
+    return lines
+
+
+def _aligned(
+    headings: list[str], rows: list[list[str]], *, right: list[bool]
+) -> list[Line]:
+    """Lay out cells in aligned columns, under a bold heading line."""
+    widths = [
+        max(len(cell) for cell in column)
+        for column in zip(headings, *rows, strict=True)
+    ]
+
+    def join(cells: list[str]) -> str:
+        padded = [
+            cell.rjust(width) if align else cell.ljust(width)
+            for cell, width, align in zip(cells, widths, right, strict=True)
+        ]
+        return GAP.join(padded).rstrip()
+
+    return [(join(headings), "bold"), *((join(row), "") for row in rows)]

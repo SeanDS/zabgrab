@@ -8,10 +8,11 @@ import click
 
 from ..errors import ZabgrabError
 from ..model.item import ItemSpec
-from ..services.plotting import plot_spec
+from ..services.binning import Bins
+from ..services.plotting import histogram_spec, plot_spec
 from ..ui import plot
 from .app import AppContext, global_options, pass_app
-from .reading import nothing_selected, read_dataset, selection_options
+from .reading import bin_option, nothing_selected, read_dataset, selection_options
 
 
 @click.command("plot")
@@ -27,6 +28,7 @@ from .reading import nothing_selected, read_dataset, selection_options
     "showing it. Repeat to save it to several files, e.g. in several formats.",
 )
 @click.option("--log-y", is_flag=True, help="Use log scales for the vertical axes.")
+@bin_option
 @global_options
 @pass_app
 def plot_command(
@@ -39,6 +41,7 @@ def plot_command(
     groups: tuple[str, ...],
     outputs: tuple[Path, ...],
     log_y: bool,
+    bins: Bins | None,
 ) -> None:
     """Plot the data in FILE (.mat or .h5).
 
@@ -46,6 +49,9 @@ def plot_command(
     no fetch covered. Items share an axis when they have the same units. Hourly
     trends are drawn as the average, with the minimum and maximum as a band. Text
     items can't be plotted.
+
+    With --bin, a histogram is drawn instead: how many of each item's values fall in
+    each bin, with items side by side.
 
     Needs matplotlib: pip install 'zabgrab[plot]'.
     """
@@ -61,8 +67,12 @@ def plot_command(
     )
     if not dataset.series:
         raise ZabgrabError("Nothing to plot.", hint=nothing_selected(file))
-    spec = plot_spec(
-        dataset.series, dataset.coverage, app.ui, title=file.name, log_y=log_y
+    spec = (
+        histogram_spec(dataset.series, bins, app.ui, title=file.name, log_y=log_y)
+        if bins is not None
+        else plot_spec(
+            dataset.series, dataset.coverage, app.ui, title=file.name, log_y=log_y
+        )
     )
     plot.show_or_save(spec, tz, outputs)
     if outputs:

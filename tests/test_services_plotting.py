@@ -12,7 +12,8 @@ from zabgrab.model.config import Resolution, ServerConfig
 from zabgrab.model.series import Series
 from zabgrab.model.server import Server
 from zabgrab.model.zabbix import Item, ValueType
-from zabgrab.services.plotting import Segment, plot_spec
+from zabgrab.services.binning import Bins
+from zabgrab.services.plotting import Bars, Segment, histogram_spec, plot_spec
 
 from .fakes import RecordingUI
 
@@ -179,3 +180,41 @@ class TestLogScale:
         plot_spec([raw([1], [0.5])], EVERYTHING, ui, log_y=True)
         plot_spec([raw([1], [0])], EVERYTHING, ui)
         assert ui.levels("warning") == []
+
+
+class TestHistograms:
+    def test_one_axis_per_unit_with_bars_per_item(self) -> None:
+        ui = RecordingUI()
+        series = [
+            raw([1, 2, 3], [5.0, 50.0, 500.0], item(1, name="a")),
+            raw([1], [20.0], item(2, name="b", units="%")),
+            raw([1, 2], [1.0, 99.0], item(3, name="c")),
+            raw([1], ["boot"], item(4, name="Syslog", value_type=ValueType.LOG)),
+        ]
+        spec = histogram_spec(series, Bins((10, 100)), ui, title="t", log_y=True)
+        assert spec.bins == ["< 10", "10 to 100", "≥ 100"]
+        assert (spec.title, spec.log_y) == ("t", True)
+        assert [(axis.units, axis.bars) for axis in spec.axes] == [
+            ("#", [Bars("demo1: a [#]", [1, 1, 1]), Bars("demo1: c [#]", [1, 1, 0])]),
+            ("%", [Bars("demo1: b [%]", [0, 1, 0])]),
+        ]
+        assert ui.messages == [
+            (
+                "warning",
+                "Not plotting item 4 (demo1: Syslog), a log item; text items can't "
+                "be plotted.",
+            )
+        ]
+
+    def test_servers_are_named_when_there_are_several(self) -> None:
+        series = [raw([1], [1.0], item(1, name="a")), raw([1], [1.0], server=LAB)]
+        spec = histogram_spec(series, Bins((10,)), RecordingUI())
+        assert [bars.label for bars in spec.axes[0].bars] == [
+            "demo1: a [#] (server: demo)",
+            "demo1: Particles [#] (server: lab)",
+        ]
+
+    def test_only_text(self) -> None:
+        text = raw([1], ["boot"], item(5, name="Syslog", value_type=ValueType.LOG))
+        with pytest.raises(ZabgrabError, match="text items can't be plotted"):
+            histogram_spec([text], Bins((10,)), RecordingUI())

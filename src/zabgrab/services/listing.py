@@ -157,21 +157,21 @@ def listing(series: Sequence[Series], options: ListingOptions) -> list[Section]:
     ZabgrabError
         If the sort key doesn't apply to a series (see :func:`value_column`).
     """
-    matching = [(one, _matching(one, options)) for one in series]
+    found = [(one, matching(one, options)) for one in series]
     if options.sort == "time":
         entries = [
             (one.columns["time"][index], order, index)
-            for order, (one, indices) in enumerate(matching)
+            for order, (one, indices) in enumerate(found)
             for index in indices
         ]
         # Ties in time keep the items' order, then the points'.
         chosen = _take(entries, lambda entry: entry, options)
-        shown = [one for one, indices in matching if indices]
-        rows = [Row(matching[order][0], index) for _, order, index in chosen]
+        shown = [one for one, indices in found if indices]
+        rows = [Row(found[order][0], index) for _, order, index in chosen]
         return [Section(shown, rows, len(entries))] if entries else []
 
     sections = []
-    for one, indices in matching:
+    for one, indices in found:
         if not indices:
             continue
         values = one.columns[value_column(one, options.sort)]
@@ -189,8 +189,22 @@ def listing(series: Sequence[Series], options: ListingOptions) -> list[Section]:
     return sections
 
 
-def _matching(series: Series, options: ListingOptions) -> list[int]:
-    """Find the positions of a series' points that pass the filters."""
+def matching(series: Series, options: ListingOptions) -> list[int]:
+    """Find the positions of a series' points that pass the filters.
+
+    Parameters
+    ----------
+    series : Series
+        The series.
+    options : ListingOptions
+        The filters (``grep``, ``above`` and ``below``), and the sort key, which
+        picks the value compared for hourly trends (see :func:`value_column`).
+
+    Returns
+    -------
+    list of int
+        The positions, in time order.
+    """
     values = series.columns[value_column(series, options.sort)]
     thresholds = options.above is not None or options.below is not None
     if thresholds and not series.item.value_type.numeric:

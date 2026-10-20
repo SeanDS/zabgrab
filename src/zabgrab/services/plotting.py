@@ -15,6 +15,7 @@ from ..errors import ZabgrabError
 from ..model.config import Resolution
 from ..model.series import Series
 from ..model.server import Server
+from .binning import Bins, histograms
 from .ports import UI
 
 
@@ -127,6 +128,126 @@ def plot_spec(
     ZabgrabError
         If there's nothing numeric to plot (no series, or only text items).
     """
+    numeric = _numeric(series, ui)
+
+    # Name the server in labels only when there's more than one.
+    servers = len({one.server.url for one in numeric}) > 1
+    axes: dict[str, Axis] = {}
+    for one in numeric:
+        units = one.item.units
+        axis = axes.setdefault(units, Axis(units))
+        line = Line(
+            _label(one, one.server if servers else None), _segments(one, coverage)
+        )
+        axis.lines.append(line)
+        if log_y and _has_non_positive(line):
+            ui.warning(
+                f"{line.label} has values of zero or less, which a log scale can't "
+                "show; they're left out."
+            )
+    return PlotSpec(list(axes.values()), title, log_y)
+
+
+@dataclass
+class Bars:
+    """One series' counts in a histogram.
+
+    Attributes
+    ----------
+    label : str
+        The legend entry, ``host: name [units]``.
+    counts : list of int
+        How many values fall in each bin.
+    """
+
+    label: str
+    counts: list[int]
+
+
+@dataclass
+class BarAxis:
+    """A histogram's subplot, shared by the series with the same units.
+
+    Attributes
+    ----------
+    units : str
+        The units of the values counted (empty for none).
+    bars : list of Bars
+        Each series' counts, drawn side by side in each bin.
+    """
+
+    units: str
+    bars: list[Bars] = field(default_factory=list)
+
+
+@dataclass
+class HistogramSpec:
+    """A histogram to draw: counts of values in bins.
+
+    Attributes
+    ----------
+    bins : list of str
+        The bins' labels, e.g. ``< 10``.
+    axes : list of BarAxis
+        One subplot per distinct unit, in the order the units first appear.
+    title : str
+        The figure title (may be empty).
+    log_y : bool
+        Whether the counts use a log scale.
+    """
+
+    bins: list[str]
+    axes: list[BarAxis]
+    title: str = ""
+    log_y: bool = False
+
+
+def histogram_spec(
+    series: Sequence[Series],
+    bins: Bins,
+    ui: UI,
+    *,
+    title: str = "",
+    log_y: bool = False,
+) -> HistogramSpec:
+    """Work out a histogram of each numeric series' values.
+
+    Parameters
+    ----------
+    series : sequence of Series
+        The data.
+    bins : Bins
+        The bins (see :class:`zabgrab.services.binning.Bins`).
+    ui : UI
+        Warns about text items that are left out.
+    title : str, optional
+        The figure title.
+    log_y : bool, optional
+        Use log scales for the counts.
+
+    Returns
+    -------
+    HistogramSpec
+        One subplot per unit, each with a set of bars per numeric series.
+
+    Raises
+    ------
+    ZabgrabError
+        If there's nothing numeric to count (no series, or only text items).
+    """
+    numeric = _numeric(series, ui)
+    servers = len({one.server.url for one in numeric}) > 1
+    axes: dict[str, BarAxis] = {}
+    for histogram in histograms(numeric, bins):
+        one = histogram.series
+        axis = axes.setdefault(one.item.units, BarAxis(one.item.units))
+        label = _label(one, one.server if servers else None)
+        axis.bars.append(Bars(label, histogram.counts))
+    return HistogramSpec(bins.labels, list(axes.values()), title, log_y)
+
+
+def _numeric(series: Sequence[Series], ui: UI) -> list[Series]:
+    """Pick the numeric series, warning about text ones (or failing if all are)."""
     numeric = [one for one in series if one.item.value_type.numeric]
     text = [one for one in series if not one.item.value_type.numeric]
     if not numeric:
@@ -145,23 +266,7 @@ def plot_spec(
         )
     for one in text:
         ui.warning(f"Not plotting {_name(one)}, a {_kind(one)}; {_TEXT_RULE}.")
-
-    # Name the server in labels only when there's more than one.
-    servers = len({one.server.url for one in numeric}) > 1
-    axes: dict[str, Axis] = {}
-    for one in numeric:
-        units = one.item.units
-        axis = axes.setdefault(units, Axis(units))
-        line = Line(
-            _label(one, one.server if servers else None), _segments(one, coverage)
-        )
-        axis.lines.append(line)
-        if log_y and _has_non_positive(line):
-            ui.warning(
-                f"{line.label} has values of zero or less, which a log scale can't "
-                "show; they're left out."
-            )
-    return PlotSpec(list(axes.values()), title, log_y)
+    return numeric
 
 
 def _has_non_positive(line: Line) -> bool:

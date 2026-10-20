@@ -196,3 +196,52 @@ class TestFetchShow:
         result = ok(run("fetch", "-t", "particles", "--show", "-o", str(path)))
         assert len(values(result.stdout)) == 4
         assert path.exists()
+
+
+class TestBins:
+    def test_counts_per_item(self, data: Path) -> None:
+        result = ok(run("show", str(data), "--bin", "2,3"))
+        assert result.stdout.splitlines()[:5] == [
+            "demo1: Particles 0.3um [#/m3]: 3 values",
+            "Bin     Count  Share",
+            "< 2         1  33.3%",
+            "2 to 3      1  33.3%",
+            "≥ 3         1  33.3%",
+        ]
+        assert "demo1: Particles 0.5um [#/m3]: 1 value" in result.stdout
+        assert (
+            "Not counting item 20005 (demo1: Syslog), a log item; only numbers can "
+            "be binned."
+        ) in result.stderr
+
+    def test_filters_apply_first(self, data: Path) -> None:
+        result = ok(run("show", str(data), "-i", "20001", "--bin", "3", "--below", "3"))
+        assert result.stdout.splitlines()[2:] == [
+            "< 3      2  100.0%",
+            "≥ 3      0    0.0%",
+        ]
+
+    def test_only_text(self, data: Path) -> None:
+        result = run("show", str(data), "-i", "20005", "--bin", "1")
+        assert result.exit_code == EXIT_ERROR
+        assert "There are no numeric items to count." in result.stderr
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["--sort", "value"],
+            ["--desc"],
+            ["--limit", "1"],
+            ["--offset", "1"],
+            ["--wrap"],
+        ],
+    )
+    def test_not_with_ordering(self, data: Path, args: list[str]) -> None:
+        result = run("show", str(data), "--bin", "1", *args)
+        assert result.exit_code == 2
+        assert f"{args[0]} doesn't apply with --bin." in result.stderr
+
+    def test_invalid_edges(self, data: Path) -> None:
+        result = run("show", str(data), "--bin", "10,5")
+        assert result.exit_code == 2
+        assert "the edges must increase, e.g. 10,100,1000." in result.stderr

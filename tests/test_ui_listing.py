@@ -10,8 +10,9 @@ from zoneinfo import ZoneInfo
 from zabgrab.model.config import Resolution
 from zabgrab.model.series import Series
 from zabgrab.model.zabbix import Item, ValueType
+from zabgrab.services.binning import Bins, Histogram
 from zabgrab.services.listing import ListingOptions, listing
-from zabgrab.ui.listing import Line, label, listing_lines
+from zabgrab.ui.listing import Line, histogram_lines, label, listing_lines
 
 from .test_services_listing import DEMO
 
@@ -180,4 +181,24 @@ def test_hourly_statistics() -> None:
     ) == [
         "Time                     Min  Avg   Max  Count",
         "1970-01-01 00:00:00 UTC  1.0  2.5  10.0  60",
+    ]
+
+
+def test_histograms() -> None:
+    hist = [
+        Histogram(LOAD, [1, 1, 0]),
+        Histogram(SPEED, [0, 0, 0]),
+    ]
+    assert text(histogram_lines(hist, Bins((10, 100)))) == [
+        "demo1: Item 1 [%]: 2 values",
+        "Bin        Count  Share",
+        "< 10           1  50.0%",
+        "10 to 100      1  50.0%",
+        "≥ 100          0   0.0%",
+        "",
+        "demo1: Item 2: 0 values",
+        "Bin        Count  Share",
+        "< 10           0",
+        "10 to 100      0",
+        "≥ 100          0",
     ]
