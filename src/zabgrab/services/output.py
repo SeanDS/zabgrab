@@ -80,9 +80,9 @@ class SaveOptions:
         ``--in-place``: append without copying the file first.
     allow_large_text : bool
         ``--allow-large-text``.
-    plot : bool
-        ``--plot``: the data will be plotted, so without ``--output`` it's neither
-        saved nor asked about.
+    displayed : bool
+        ``--plot`` or ``--show``: the data will be plotted or shown, so without
+        ``--output`` it's neither saved nor asked about.
     """
 
     format: Format | None = None
@@ -91,7 +91,7 @@ class SaveOptions:
     group: str | None = None
     in_place: bool = False
     allow_large_text: bool = False
-    plot: bool = False
+    displayed: bool = False
 
     def check(self, outputs: Sequence[str]) -> None:
         """Reject options that don't make sense together.
@@ -199,7 +199,7 @@ def targets(
     # The formats to use unless --format or a file extension says otherwise.
     known: Sequence[Format] = query.formats
     if not outputs:
-        if options.plot:
+        if options.displayed:
             return []
         if not ui.interactive:
             ui.warning("The data wasn't saved; pass --output to save it.")

@@ -88,7 +88,9 @@ Conventions
   server (``tests/fakezabbix.py``) and fake UI, clock and keyring
   (``tests/fakes.py``); command line tests use ``tests/cli_support.py``.
 - Record design decisions in ``PLAN.md``, and user-visible changes in ``CHANGELOG.rst``
-  under the next version's heading (``(unreleased)``).
+  under the next version's heading (``(unreleased)``). Raise that version if the
+  change needs it (see :ref:`version-numbers`): a new feature makes a patch heading
+  such as ``1.0.1`` the next minor version, ``1.1.0``.
 
 MATLAB files
 ------------

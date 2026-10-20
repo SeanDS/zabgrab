@@ -32,6 +32,7 @@ from ..model.server import Server
 from ..services.collect import Plan, collect
 from ..services.dataset import overlaps
 from ..services.fetch import fetch, stored_end
+from ..services.listing import ListingOptions, listing
 from ..services.metadata import build_metadata
 from ..services.output import (
     STRUCTURED,
@@ -46,6 +47,7 @@ from ..services.resolve import CliRequest, resolve_query
 from ..services.retention import warn_beyond_retention
 from ..services.templates import equivalent_command, template_table
 from ..ui import plot
+from ..ui.listing import listing_lines
 from ..ui.render import explain_table, format_time, plan_table, requests_table
 from .app import AppContext, global_options, pass_app
 from .config import EDIT_TARGETS, edit_target_path
@@ -149,6 +151,13 @@ from .discovery import ItemSpecType
 @click.option(
     "--log-y", is_flag=True, help="With --plot: use log scales for the vertical axes."
 )
+@click.option(
+    "--show",
+    "show_",
+    is_flag=True,
+    help="List the data (without saving it, unless --output is given). zabgrab "
+    "show sorts and filters data too.",
+)
 @click.option("-y", "--yes", is_flag=True, help="Fetch however many items match.")
 @click.option("--dry-run", is_flag=True, help="Show what would be fetched, then stop.")
 @click.option(
@@ -192,6 +201,7 @@ def fetch_command(
     allow_large_text: bool,
     plot_: bool,
     log_y: bool,
+    show_: bool,
     yes: bool,
     dry_run: bool,
     explain: bool,
@@ -204,23 +214,20 @@ def fetch_command(
     Settings come from the command line, then the template, then [defaults] in
     your config. Anything missing is asked for.
     """
-    given = {
-        "from": from_,
-        "to": to,
-        "resolution": resolution,
-        "agg": list(agg) or None,
-        "format": format_,
-        "output_dir": output_dir,
-        "output_pattern": output_pattern,
-        "timezone": timezone,
-        "jobs": jobs,
-        "max_items": max_items,
-    }
-    values = {key: value for key, value in given.items() if value is not None}
-    try:
-        FetchSettings.model_validate(values)
-    except ValidationError as exc:
-        raise click.UsageError("; ".join(format_validation_errors(exc))) from None
+    values = settings_values(
+        {
+            "from": from_,
+            "to": to,
+            "resolution": resolution,
+            "agg": list(agg) or None,
+            "format": format_,
+            "output_dir": output_dir,
+            "output_pattern": output_pattern,
+            "timezone": timezone,
+            "jobs": jobs,
+            "max_items": max_items,
+        }
+    )
 
     save = SaveOptions(
         format=Format(format_) if format_ else None,
@@ -229,7 +236,7 @@ def fetch_command(
         group=group,
         in_place=in_place,
         allow_large_text=allow_large_text,
-        plot=plot_,
+        displayed=plot_ or show_,
     )
     if log_y and not plot_:
         raise click.UsageError("--log-y only applies with --plot.")
@@ -241,6 +248,93 @@ def fetch_command(
         app, loaded.config, save_template, save_to, force=force
     )
     now = app.clock.now()
+    cli, query = resolve_request(
+        app, templates=templates, items=items, servers=servers, values=values, now=now
+    )
+
+    partial = False
+    if explain:
+        app.ui.print_data(explain_table(query))
+        app.ui.print_data(requests_table(query))
+    else:
+        partial = _fetch_and_save(
+            app,
+            query,
+            loaded.config,
+            outputs=outputs,
+            options=save,
+            yes=yes,
+            dry_run=dry_run,
+            now=now,
+            plot_=plot_,
+            log_y=log_y,
+            show=show_,
+        )
+
+    if template_target is not None:
+        _save_template(app, template_target, cli, query, loaded.config)
+    elif query.answers:
+        show_equivalent(app, query)
+    if partial:
+        click.get_current_context().exit(EXIT_PARTIAL)
+
+
+def settings_values(given: dict[str, Any]) -> dict[str, Any]:
+    """Check fetch settings given on the command line.
+
+    Parameters
+    ----------
+    given : dict
+        The options' values, by setting name (``None`` where not given).
+
+    Returns
+    -------
+    dict
+        The settings given.
+
+    Raises
+    ------
+    click.UsageError
+        If a value isn't valid.
+    """
+    values = {key: value for key, value in given.items() if value is not None}
+    try:
+        FetchSettings.model_validate(values)
+    except ValidationError as exc:
+        raise click.UsageError("; ".join(format_validation_errors(exc))) from None
+    return values
+
+
+def resolve_request(
+    app: AppContext,
+    *,
+    templates: tuple[str, ...],
+    items: tuple[ItemSpec, ...],
+    servers: tuple[str, ...],
+    values: dict[str, Any],
+    now: datetime,
+) -> tuple[CliRequest, Query]:
+    """Work out what to fetch from the command line, the template and the config.
+
+    Parameters
+    ----------
+    app : AppContext
+        For the config and the UI (anything missing is asked for).
+    templates, items, servers : tuple
+        ``--template``, ``--item`` and ``--server``.
+    values : dict
+        The other settings given (see :func:`settings_values`).
+    now : datetime
+        The start of the command, for relative times.
+
+    Returns
+    -------
+    CliRequest
+        The command line's request.
+    Query
+        What to fetch, and where each setting came from.
+    """
+    loaded = app.config()
 
     def parse(text: str, tz: tzinfo | None) -> datetime:
         """Parse a time relative to the start of the command."""
@@ -261,30 +355,7 @@ def fetch_command(
         parse_time=parse,
         defaults_source=lambda key: loaded.source_of("defaults", key),
     )
-
-    partial = False
-    if explain:
-        app.ui.print_data(explain_table(query))
-        app.ui.print_data(requests_table(query))
-    else:
-        partial = _fetch_and_save(
-            app,
-            query,
-            loaded.config,
-            outputs=outputs,
-            options=save,
-            yes=yes,
-            dry_run=dry_run,
-            now=now,
-            log_y=log_y,
-        )
-
-    if template_target is not None:
-        _save_template(app, template_target, cli, query, loaded.config)
-    elif query.answers:
-        _show_equivalent(app, query)
-    if partial:
-        click.get_current_context().exit(EXIT_PARTIAL)
+    return cli, query
 
 
 def _one(values: tuple[str, ...], option: str, reason: str) -> str | None:
@@ -357,13 +428,75 @@ def _save_template(
     app.ui.info(f"Run it again with `zabgrab fetch -t {target.name}`.")
 
 
-def _show_equivalent(app: AppContext, query: Query) -> None:
-    """Show the command that repeats this fetch without its questions."""
+def show_equivalent(app: AppContext, query: Query, *, templates: bool = True) -> None:
+    """Show the command that repeats this command without its questions.
+
+    Parameters
+    ----------
+    app : AppContext
+        For the UI.
+    query : Query
+        The query, with the answers given to questions.
+    templates : bool, optional
+        Whether the command can save templates (``--save-template``).
+    """
     equivalent = equivalent_command(sys.argv[1:], query.answers)
     app.ui.info(f"Next time: {equivalent.command}")
     for note in equivalent.notes:
         app.ui.info(note)
-    app.ui.info("Or add --save-template NAME to save it as a template.")
+    if templates:
+        app.ui.info("Or add --save-template NAME to save it as a template.")
+
+
+def fetch_summary(result: FetchResult, query: Query) -> str:
+    """Describe what was fetched, e.g. ``Fetched 2 items (4 points) from ...``.
+
+    Parameters
+    ----------
+    result : FetchResult
+        The data (with at least one series).
+    query : Query
+        The query, for the time range and time zone.
+
+    Returns
+    -------
+    str
+        The description, without a full stop.
+    """
+    count = len(result.series)
+    return (
+        f"Fetched {count} item{'' if count == 1 else 's'} ({result.points:,} points) "
+        f"from {result.series[0].server.display}, "
+        f"{format_time(query.start, query.tz)} to {format_time(query.end, query.tz)}"
+    )
+
+
+def download(app: AppContext, query: Query, *, yes: bool) -> FetchResult:
+    """Find the items and download their data, reporting any problems.
+
+    Parameters
+    ----------
+    app : AppContext
+        For the UI and the connections.
+    query : Query
+        What to fetch.
+    yes : bool
+        ``--yes``: fetch however many items match.
+
+    Returns
+    -------
+    FetchResult
+        The data, with at least one series.
+
+    Raises
+    ------
+    ZabgrabError
+        If there are no items, or nothing could be fetched.
+    """
+    result = asyncio.run(_download(app, query, yes=yes, dry_run=False))
+    assert result is not None  # only dry runs give none
+    report_problems(app, result)
+    return result
 
 
 def _fetch_and_save(
@@ -376,7 +509,9 @@ def _fetch_and_save(
     yes: bool,
     dry_run: bool,
     now: datetime,
+    plot_: bool = False,
     log_y: bool = False,
+    show: bool = False,
 ) -> bool:
     """Download and save the data; return whether some items failed."""
     result = asyncio.run(_download(app, query, yes=yes, dry_run=dry_run))
@@ -403,18 +538,16 @@ def _fetch_and_save(
         notes += _overlap_notes(target, data, query)
         saved.append(save_target(target, data, metadata, query, options))
 
-    count = len(result.series)
-    summary = (
-        f"Fetched {count} item{'' if count == 1 else 's'} ({result.points:,} points) "
-        f"from {server.display}, "
-        f"{format_time(query.start, query.tz)} to {format_time(query.end, query.tz)}"
-    )
+    summary = fetch_summary(result, query)
     if saved:
         summary += "; saved to " + ", ".join(saved)
     app.ui.success(summary + ".")
     for note in notes:
         app.ui.info(note)
-    if options.plot:
+    if show:
+        sections = listing(result.series, ListingOptions())
+        app.ui.page(listing_lines(sections, query.tz, headings=False))
+    if plot_:
         # The whole requested range was fetched, so lines join up across it.
         coverage = [(query.start.timestamp(), stored_end(query))]
         spec = plot_spec(result.series, coverage, app.ui, log_y=log_y)

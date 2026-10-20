@@ -1,6 +1,16 @@
 Changelog
 =========
 
+1.1.0 (unreleased)
+------------------
+
+- New ``zabgrab show`` command listing data points, from a file or fetched from
+  Zabbix: in time order, or each item's by value (``--sort``, ``--desc``), sliced
+  with ``--limit`` and ``--offset``, filtered with ``--grep`` (a regular
+  expression), ``--above`` and ``--below``, and paged in a terminal. Useful for
+  text and log items, which can't be plotted, and for finding the highest values.
+- New ``fetch --show`` option to list the fetched data.
+
 1.0.0 (2026-10-15)
 ------------------
 

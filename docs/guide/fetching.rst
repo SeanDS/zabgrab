@@ -190,12 +190,18 @@ Two options show what a fetch would do, without fetching:
    zabgrab fetch -t particles --explain
    zabgrab fetch -t particles --from "2 days ago" --to now --dry-run
 
-Plotting straight away
-----------------------
+Plotting or listing straight away
+---------------------------------
 
-``--plot`` plots the data when it's fetched (with the ``plot`` extra installed). The
-data is then only saved if ``--output`` is given too; ``--log-y`` uses log scales.
+``--plot`` plots the data when it's fetched (with the ``plot`` extra installed);
+``--log-y`` uses log scales. ``--show`` lists it, in time order (see
+:doc:`showing`). Either way, the data is then only saved if ``--output`` is given
+too.
 
 .. code-block:: bash
 
    zabgrab fetch -t particles --from "6 hours ago" --to now --plot
+   zabgrab fetch -t particles --from "6 hours ago" --to now --show -o recent.h5
+
+To sort or filter the values, use ``zabgrab show``, which can also fetch them
+first.

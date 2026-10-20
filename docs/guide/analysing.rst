@@ -26,8 +26,8 @@ holds each point once.
 Choosing items, times and groups
 --------------------------------
 
-``zabgrab info``, ``plot`` and ``export`` choose what to use from a file the same way,
-so ``info`` shows what ``plot`` or ``export`` would use:
+``zabgrab info``, ``plot``, ``export`` and ``show`` choose what to use from a file
+the same way, so ``info`` shows what the others would use:
 
 ``--item SPEC`` (``-i``)
    Items selected by an :ref:`item spec <item-specs>`, just as when fetching: an
@@ -57,8 +57,8 @@ given.
    zabgrab plot particles.h5 --item "*0.3um" --from "2 days ago"
    zabgrab export particles.h5 -o recent.csv --match "*0.5um" --from "1 week ago"
 
-If nothing matches, ``plot`` and ``export`` say so, and suggest ``zabgrab info`` to
-see what the file holds.
+If nothing matches, ``plot``, ``export`` and ``show`` say so, and suggest ``zabgrab
+info`` to see what the file holds.
 
 Plotting
 --------
@@ -83,7 +83,8 @@ up, and gaps show where data is missing. Text items can't be plotted.
 Choose what to plot with ``--item``, ``--match``, ``--from``, ``--to`` and
 ``--group`` (see :ref:`choosing-items`).
 
-``zabgrab fetch --plot`` plots data as it's fetched (see :doc:`fetching`).
+``zabgrab fetch --plot`` plots data as it's fetched (see :doc:`fetching`). Text
+items can't be plotted, but ``zabgrab show`` lists them (see :doc:`showing`).
 
 MATLAB
 ------
