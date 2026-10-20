@@ -72,7 +72,7 @@ shows a file's data in a window, or saves the figure:
    zabgrab plot particles.h5 -o particles.png        # or .pdf, .svg, ...
    zabgrab plot particles.h5 -o plot.png -o plot.pdf # several formats
    zabgrab plot particles.h5 --item "*0.3um" --from "2 days ago"
-   zabgrab plot particles.h5 --log-y                 # log scales
+   zabgrab plot particles.h5 --log                   # log scales
 
 All of a file's groups are plotted as one dataset. Items with the same units share an
 axis, and times are shown in your local time (or the ``timezone`` setting). Hourly
@@ -85,6 +85,117 @@ Choose what to plot with ``--item``, ``--match``, ``--from``, ``--to`` and
 
 ``zabgrab fetch --plot`` plots data as it's fetched (see :doc:`fetching`). Text
 items can't be plotted, but ``zabgrab show`` lists them (see :doc:`showing`).
+
+.. _histograms:
+
+Histograms
+~~~~~~~~~~
+
+``--bin`` draws a histogram instead: how many of each item's values fall in each
+bin, for edges you choose (in increasing order):
+
+.. code-block:: bash
+
+   zabgrab plot particles.h5 --bin 10,100,1000
+   zabgrab plot particles.h5 --bin 10,100,1000 --log        # log scale counts
+   zabgrab plot particles.h5 --bin 10,100,1000 -o bins.png
+
+.. image:: histogram.png
+   :alt: Bars showing how many values of two particle counts and a temperature
+         fall in the bins below 10, 10 to 100, 100 to 1000 and 1000 and above,
+         with a horizontal line at a count of 1000 and a vertical alarm line at a
+         value of 800.
+
+N edges make N + 1 bins, the first and last open-ended, and each bin includes its
+lower edge but not its upper one, as numpy's do (see :ref:`bins` for the details).
+
+The bins go along the bottom, lowest on the left, with the counts up the side;
+``--log`` puts the counts on a log scale. The bins are drawn the same width and
+labelled with their ranges, since the open bins have no width and the others can
+differ by orders of magnitude. Each item's bars sit side by side in each bin, items
+with different units get a plot each, hourly trends' averages are counted, and text
+items are left out. ``--hline`` and ``--vline`` mark counts and values on them (see
+:ref:`reference-lines`).
+
+.. _reference-lines:
+
+Reference lines
+~~~~~~~~~~~~~~~
+
+``--hline`` and ``--vline`` draw horizontal and vertical lines, such as limits,
+alarm levels or events, each with a label in the legend. Each marks a position on
+its axis, in that axis's terms:
+
+=============== ============================ =====================================
+Plot            ``--hline`` (horizontal)     ``--vline`` (vertical)
+=============== ============================ =====================================
+Over time       a value, e.g. a limit        a time, e.g. a maintenance visit
+Histogram       a count, e.g. most allowed   a value among the bins, e.g. a limit
+=============== ============================ =====================================
+
+Repeat either option for as many lines as you like:
+
+.. code-block:: bash
+
+   zabgrab plot particles.h5 --hline 1000
+   zabgrab plot particles.h5 --hline "ISO 5 limit=1000" --hline "Alarm=800"
+   zabgrab plot particles.h5 --hline "Alarm=800 #/m3" --hline "Max temp=23 °C"
+   zabgrab plot particles.h5 --vline "Filter change=2026-10-14 10:00"
+   zabgrab plot particles.h5 --bin 10,100,1000 --hline "Most allowed=1000" \
+       --vline "Alarm=800 #/m3"
+
+Quote each line that has spaces, so the shell keeps it together.
+
+Lines at a number
+^^^^^^^^^^^^^^^^^
+
+``--hline``, and ``--vline`` with ``--bin``, are written ``[LABEL=]VALUE [UNITS]``:
+
+``LABEL=``
+   The name in the legend: everything before the last ``=``, so a label can
+   contain ``=`` itself. Without a label, the line is labelled with its value, as
+   written (e.g. ``1000``).
+``VALUE``
+   Where the line goes, e.g. ``800``, ``-2.5`` or ``1e3``: in the data's units, or
+   for ``--hline`` on a histogram, a count.
+``UNITS``
+   After the value and a space: draw the line only on the plot of items with
+   exactly these units, as shown in their labels (e.g. ``#/m3`` or ``°C``).
+   Without units, the line is drawn on every plot. A line whose units no plotted
+   item has isn't drawn, with a warning.
+
+Lines at a time
+^^^^^^^^^^^^^^^
+
+``--vline`` on plots over time is written ``[LABEL=]TIME``, with the time in any
+form ``--from`` takes (e.g. ``2026-10-14 10:00``, ``14/10/2026`` or ``yesterday``),
+in your local time or the ``timezone`` setting. Times can contain spaces, so they
+take no units: the line is drawn on every plot. Without a label, the line is
+labelled with its time, as written.
+
+.. image:: hlines.png
+   :alt: Particle counts with lines at the ISO 5 limit (1000) and alarm level
+         (800), a temperature with a line at its maximum (23), and a vertical
+         line at a filter change.
+
+How they're drawn
+^^^^^^^^^^^^^^^^^
+
+The lines are dark grey, each with its own dash pattern, the same on every plot,
+so they're told apart from the data and from each other. A line beyond the data
+stretches the axis to include it, showing how far the data is from it. On a log
+scale (``--log``), lines at zero or below can't be drawn, and are left out with a
+warning.
+
+On histograms, an ``--hline`` crosses the bars at its count, showing which bins
+exceed it, and a ``--vline`` goes among the bins at its value:
+
+- at an edge, exactly between the two bins it separates;
+- inside a bin between two edges, in proportion between them: with ``--bin
+  10,100,1000``, ``--vline 550`` goes halfway across the ``100 to 1000`` bin;
+- inside the first or last bin, which are open-ended and have no width to
+  measure against, across the bin's middle, with a warning. Add the value to
+  ``--bin`` to put the line on an edge instead.
 
 MATLAB
 ------

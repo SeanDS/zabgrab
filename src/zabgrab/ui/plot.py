@@ -5,13 +5,13 @@ matplotlib is imported only when a plot is drawn, so zabgrab works without it.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, tzinfo
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from ..errors import ZabgrabError
-from ..services.plotting import PlotSpec
+from ..services.plotting import Axis, BarAxis, HistogramSpec, PlotSpec, Reference
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -71,6 +71,7 @@ def draw(spec: PlotSpec, tz: tzinfo | None, *, interactive: bool = False) -> Fig
         layout="constrained",
     )
     colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    styles = _reference_styles(spec.axes)
     for axis, (subplot,) in zip(spec.axes, subplots, strict=True):
         for number, line in enumerate(axis.lines):
             colour = colours[number % len(colours)]
@@ -110,6 +111,13 @@ def draw(spec: PlotSpec, tz: tzinfo | None, *, interactive: bool = False) -> Fig
             # Values of zero or less can't be shown; leave them out of the lines.
             subplot.set_yscale("log", nonpositive="mask")
         subplot.grid(alpha=0.3)
+        _references(
+            subplot,
+            axis.hlines,
+            axis.vlines,
+            styles=styles,
+            across=lambda t: _wall_clock(t, tz),
+        )
         subplot.legend(loc="best", fontsize="small")
     subplots[-1][0].set_xlabel(f"Time ({_zone_name(tz)})")
     if spec.title:
@@ -117,15 +125,113 @@ def draw(spec: PlotSpec, tz: tzinfo | None, *, interactive: bool = False) -> Fig
     return cast("Figure", figure)
 
 
+def draw_histogram(spec: HistogramSpec, *, interactive: bool = False) -> Figure:
+    """Draw a histogram: bins along the bottom, counts up the side.
+
+    The bins are drawn the same width, labelled with their ranges, lowest on the
+    left: the first and last are open-ended, and the others' real widths can differ
+    by orders of magnitude. Each series' bars sit side by side in each bin. Values
+    run along the bottom, so vertical reference lines are drawn across the bins at
+    values, and horizontal ones through the bars at counts.
+
+    Parameters
+    ----------
+    spec : HistogramSpec
+        What to draw (see :func:`zabgrab.services.plotting.histogram_spec`).
+    interactive : bool, optional
+        Whether the figure will be shown in a window.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        One subplot per axis in ``spec``.
+    """
+    plt = _pyplot(interactive=interactive)
+    figure, subplots = plt.subplots(
+        len(spec.axes),
+        1,
+        squeeze=False,
+        figsize=(10, 2.5 + 2.5 * len(spec.axes)),
+        layout="constrained",
+    )
+    colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    styles = _reference_styles(spec.axes)
+    positions = range(len(spec.bins))
+    for axis, (subplot,) in zip(spec.axes, subplots, strict=True):
+        # The bars of a bin share 80% of its width, leaving a gap between bins.
+        width = 0.8 / len(axis.bars)
+        for number, bars in enumerate(axis.bars):
+            offset = (number - (len(axis.bars) - 1) / 2) * width
+            subplot.bar(
+                [position + offset for position in positions],
+                bars.counts,
+                width,
+                label=bars.label,
+                color=colours[number % len(colours)],
+            )
+        subplot.set_ylabel("Count")
+        if spec.log_y:
+            # The log scale is for the counts; empty bins can't be shown on it.
+            subplot.set_yscale("log", nonpositive="mask")
+        subplot.grid(alpha=0.3, axis="y")
+        subplot.set_xticks(list(positions), spec.bins)
+        subplot.set_xlabel(f"Value [{axis.units}]" if axis.units else "Value")
+        _references(subplot, axis.hlines, axis.vlines, styles=styles)
+        subplot.legend(loc="best", fontsize="small")
+    if spec.title:
+        figure.suptitle(spec.title)
+    return cast("Figure", figure)
+
+
+#: Dash patterns for reference lines, so several are told apart in the legend.
+REFERENCE_STYLES = ["--", ":", "-.", (0, (8, 3, 2, 3, 2, 3))]
+
+
+def _reference_styles(axes: Sequence[Axis | BarAxis]) -> dict[str, Any]:
+    """Give each reference line (by label) a dash pattern, the same on every plot."""
+    labels = [line.label for axis in axes for line in (*axis.hlines, *axis.vlines)]
+    return {
+        label: REFERENCE_STYLES[number % len(REFERENCE_STYLES)]
+        for number, label in enumerate(dict.fromkeys(labels))
+    }
+
+
+def _references(
+    subplot: Any,
+    hlines: Sequence[Reference],
+    vlines: Sequence[Reference],
+    *,
+    styles: dict[str, Any],
+    across: Callable[[float], Any] = lambda at: at,
+) -> None:
+    """Draw reference lines across a subplot, in a grey that data lines don't use.
+
+    Horizontal lines go at their positions up the side, vertical ones at their
+    positions along the bottom, converted by ``across`` (e.g. times to the
+    wall-clock times the axis shows). ``styles`` gives each its dash pattern.
+    """
+    drawn = [(subplot.axhline, line.at, line.label) for line in hlines] + [
+        (subplot.axvline, across(line.at), line.label) for line in vlines
+    ]
+    for draw_line, at, label in drawn:
+        draw_line(
+            at,
+            color="0.25",
+            linewidth=1.2,
+            linestyle=styles[label],
+            label=label,
+        )
+
+
 def show_or_save(
-    spec: PlotSpec, tz: tzinfo | None, outputs: Sequence[Path] = ()
+    spec: PlotSpec | HistogramSpec, tz: tzinfo | None, outputs: Sequence[Path] = ()
 ) -> None:
     """Show a plot in a window, or save it to files.
 
     Parameters
     ----------
-    spec : PlotSpec
-        What to draw.
+    spec : PlotSpec or HistogramSpec
+        What to draw: lines over time, or a histogram.
     tz : tzinfo or None
         The time zone to show times in (``None`` for local time).
     outputs : sequence of Path, optional
@@ -139,7 +245,11 @@ def show_or_save(
         If matplotlib isn't installed, or a file can't be written.
     """
     interactive = not outputs
-    figure = draw(spec, tz, interactive=interactive)
+    figure = (
+        draw_histogram(spec, interactive=interactive)
+        if isinstance(spec, HistogramSpec)
+        else draw(spec, tz, interactive=interactive)
+    )
     plt = _pyplot(interactive=interactive)
     try:
         if interactive:

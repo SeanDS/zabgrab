@@ -12,7 +12,16 @@ import matplotlib.pyplot as plt
 import pytest
 
 from zabgrab.errors import ZabgrabError
-from zabgrab.services.plotting import Axis, Line, PlotSpec, Segment
+from zabgrab.services.plotting import (
+    Axis,
+    BarAxis,
+    Bars,
+    HistogramSpec,
+    Line,
+    PlotSpec,
+    Reference,
+    Segment,
+)
 from zabgrab.ui import plot
 
 T0 = datetime(
@@ -109,3 +118,95 @@ def test_matplotlib_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ZabgrabError, match="Plotting needs matplotlib") as exc_info:
         plot.draw(SPEC, None)
     assert exc_info.value.hint == "Install it with: pip install 'zabgrab[plot]'"
+
+
+HISTOGRAM = HistogramSpec(
+    ["< 10", "10 to 100", "≥ 100"],
+    [
+        BarAxis("#", [Bars("a [#]", [1, 0, 5]), Bars("b [#]", [2, 3, 4])]),
+        BarAxis("", [Bars("c", [7, 0, 0])]),
+    ],
+    title="data.h5",
+)
+
+
+def test_draw_histogram() -> None:
+    figure = plot.draw_histogram(HISTOGRAM)
+    top, bottom = figure.axes
+    assert figure.get_suptitle() == "data.h5"
+    assert len(top.patches) == 6  # 2 items x 3 bins
+    # Items' bars sit side by side, centred on each bin, lowest on the left.
+    bars: list[Any] = list(top.patches)  # Rectangles
+    centres = sorted(round(bar.get_x() + bar.get_width() / 2, 2) for bar in bars)
+    assert centres == [-0.2, 0.2, 0.8, 1.2, 1.8, 2.2]
+    assert [t.get_text() for t in top.get_xticklabels()] == HISTOGRAM.bins
+    assert (top.get_ylabel(), top.get_xlabel()) == ("Count", "Value [#]")
+    assert bottom.get_xlabel() == "Value"
+    assert top.get_yscale() == "linear"
+
+
+def test_histogram_log_scale_and_no_title() -> None:
+    spec = HistogramSpec(HISTOGRAM.bins, HISTOGRAM.axes[1:], log_y=True)
+    figure = plot.draw_histogram(spec)
+    assert figure.get_suptitle() == ""
+    # The counts, up the side.
+    assert figure.axes[0].get_yscale() == "log"
+
+
+def _xdata(line: Any) -> list[Any]:
+    return list(line.get_xdata())
+
+
+def _ydata(line: Any) -> list[Any]:
+    return list(line.get_ydata())
+
+
+def test_references() -> None:
+    hlines = [Reference(f"h{n}", float(n)) for n in range(4)]
+    noon = datetime(2026, 7, 1, 11, tzinfo=UTC).timestamp()
+    vlines = [Reference("v", noon)]
+    spec = PlotSpec([Axis("#", SPEC.axes[0].lines, hlines, vlines)])
+    (subplot,) = plot.draw(spec, ZoneInfo("Europe/London")).axes
+    drawn = subplot.get_lines()[-5:]
+    assert [line.get_label() for line in drawn] == ["h0", "h1", "h2", "h3", "v"]
+    assert [_ydata(line) for line in drawn[:2]] == [[0, 0], [1, 1]]
+    # Times are drawn at the wall-clock times the axis shows.
+    wall_clock = datetime(2026, 7, 1, 12, tzinfo=UTC).replace(tzinfo=None)
+    assert _xdata(drawn[4]) == [wall_clock] * 2
+    # Each dashed differently, the fifth like the first.
+    styles = [line.get_linestyle() for line in drawn]
+    assert len(set(styles[:3])) == 3
+    assert styles[4] == styles[0]
+    legend = subplot.get_legend()
+    assert legend is not None
+    assert {"h0", "v"} <= {t.get_text() for t in legend.get_texts()}
+
+
+def test_reference_styles_are_the_same_on_every_plot() -> None:
+    lines = SPEC.axes[0].lines
+    top = Axis("#", lines, [Reference("only on top", 1.0)], [Reference("both", 0.0)])
+    bottom = Axis("%", lines, [], [Reference("both", 0.0)])
+    figure = plot.draw(PlotSpec([top, bottom]), None)
+    upper, lower = (
+        next(line for line in subplot.get_lines() if line.get_label() == "both")
+        for subplot in figure.axes
+    )
+    # The second line in the figure, so not the first pattern, on both plots.
+    assert upper.get_linestyle() == lower.get_linestyle() != "--"
+
+
+def test_histogram_references() -> None:
+    # Horizontal lines at counts, vertical ones at positions along the bins.
+    axis = BarAxis("", [Bars("c", [1, 2])], [Reference("count", 1.5)])
+    axis.vlines.append(Reference("value", 0.5))
+    (subplot,) = plot.draw_histogram(HistogramSpec(["< 1", "≥ 1"], [axis])).axes
+    count, value = subplot.get_lines()
+    assert (count.get_label(), _ydata(count)) == ("count", [1.5, 1.5])
+    assert (value.get_label(), _xdata(value)) == ("value", [0.5, 0.5])
+
+
+def test_save_histogram(tmp_path: Path) -> None:
+    path = tmp_path / "histogram.png"
+    plot.show_or_save(HISTOGRAM, None, [path])
+    assert path.read_bytes().startswith(b"\x89PNG")
+    assert plt.get_fignums() == []

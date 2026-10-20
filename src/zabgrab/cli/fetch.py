@@ -52,6 +52,7 @@ from ..ui.render import explain_table, format_time, plan_table, requests_table
 from .app import AppContext, global_options, pass_app
 from .config import EDIT_TARGETS, edit_target_path
 from .discovery import ItemSpecType
+from .reading import log_option, use_log
 
 
 @click.command("fetch")
@@ -148,9 +149,7 @@ from .discovery import ItemSpecType
     help="Plot the data (without saving it, unless --output is given). Needs "
     "matplotlib: pip install 'zabgrab[plot]'.",
 )
-@click.option(
-    "--log-y", is_flag=True, help="With --plot: use log scales for the vertical axes."
-)
+@log_option("With --plot: use log scales for the values.")
 @click.option(
     "--show",
     "show_",
@@ -200,6 +199,7 @@ def fetch_command(
     in_place: bool,
     allow_large_text: bool,
     plot_: bool,
+    log: bool,
     log_y: bool,
     show_: bool,
     yes: bool,
@@ -238,8 +238,9 @@ def fetch_command(
         allow_large_text=allow_large_text,
         displayed=plot_ or show_,
     )
-    if log_y and not plot_:
-        raise click.UsageError("--log-y only applies with --plot.")
+    log = use_log(app, log, log_y)
+    if log and not plot_:
+        raise click.UsageError("--log only applies with --plot.")
     if not explain:
         save.check(outputs)
 
@@ -267,7 +268,7 @@ def fetch_command(
             dry_run=dry_run,
             now=now,
             plot_=plot_,
-            log_y=log_y,
+            log_y=log,
             show=show_,
         )
 

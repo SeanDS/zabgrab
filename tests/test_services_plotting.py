@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -12,7 +13,15 @@ from zabgrab.model.config import Resolution, ServerConfig
 from zabgrab.model.series import Series
 from zabgrab.model.server import Server
 from zabgrab.model.zabbix import Item, ValueType
-from zabgrab.services.plotting import Segment, plot_spec
+from zabgrab.services.binning import Bins
+from zabgrab.services.plotting import (
+    Bars,
+    Reference,
+    RefLine,
+    Segment,
+    histogram_spec,
+    plot_spec,
+)
 
 from .fakes import RecordingUI
 
@@ -179,3 +188,140 @@ class TestLogScale:
         plot_spec([raw([1], [0.5])], EVERYTHING, ui, log_y=True)
         plot_spec([raw([1], [0])], EVERYTHING, ui)
         assert ui.levels("warning") == []
+
+
+class TestHistograms:
+    def test_one_axis_per_unit_with_bars_per_item(self) -> None:
+        ui = RecordingUI()
+        series = [
+            raw([1, 2, 3], [5.0, 50.0, 500.0], item(1, name="a")),
+            raw([1], [20.0], item(2, name="b", units="%")),
+            raw([1, 2], [1.0, 99.0], item(3, name="c")),
+            raw([1], ["boot"], item(4, name="Syslog", value_type=ValueType.LOG)),
+        ]
+        spec = histogram_spec(series, Bins((10, 100)), ui, title="t", log_y=True)
+        assert spec.bins == ["< 10", "10 to 100", "≥ 100"]
+        assert (spec.title, spec.log_y) == ("t", True)
+        assert [(axis.units, axis.bars) for axis in spec.axes] == [
+            ("#", [Bars("demo1: a [#]", [1, 1, 1]), Bars("demo1: c [#]", [1, 1, 0])]),
+            ("%", [Bars("demo1: b [%]", [0, 1, 0])]),
+        ]
+        assert ui.messages == [
+            (
+                "warning",
+                "Not plotting item 4 (demo1: Syslog), a log item; text items can't "
+                "be plotted.",
+            )
+        ]
+
+    def test_servers_are_named_when_there_are_several(self) -> None:
+        series = [raw([1], [1.0], item(1, name="a")), raw([1], [1.0], server=LAB)]
+        spec = histogram_spec(series, Bins((10,)), RecordingUI())
+        assert [bars.label for bars in spec.axes[0].bars] == [
+            "demo1: a [#] (server: demo)",
+            "demo1: Particles [#] (server: lab)",
+        ]
+
+    def test_only_text(self) -> None:
+        text = raw([1], ["boot"], item(5, name="Syslog", value_type=ValueType.LOG))
+        with pytest.raises(ZabgrabError, match="text items can't be plotted"):
+            histogram_spec([text], Bins((10,)), RecordingUI())
+
+
+class TestHLines:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("500", RefLine("500", 500.0)),
+            (" 500 #/m3 ", RefLine("500 #/m3", 500.0, "#/m3")),
+            ("Max value=500", RefLine("Max value", 500.0)),
+            ("a=b limit = -2.5 °C", RefLine("a=b limit", -2.5, "°C")),
+            ("=7", RefLine("7", 7.0)),
+        ],
+    )
+    def test_parse(self, text: str, expected: RefLine) -> None:
+        assert RefLine.parse(text) == expected
+
+    @pytest.mark.parametrize(
+        ("text", "message"),
+        [
+            ("Max=", "'Max=' has no value"),
+            ("Max=lots", "'lots' isn't a number"),
+            ("nan", "'nan' isn't a finite number"),
+        ],
+    )
+    def test_invalid(self, text: str, message: str) -> None:
+        with pytest.raises(ValueError, match=re.escape(message)):
+            RefLine.parse(text)
+
+    SERIES: ClassVar[list[Series]] = [
+        raw([1, 2], [5.0, 50.0], item(1, name="a")),
+        raw([1], [20.0], item(2, name="b", units="°C")),
+    ]
+
+    def test_every_axis_or_those_with_the_units(self) -> None:
+        ui = RecordingUI()
+        hlines = [
+            RefLine("All", 10.0),
+            RefLine("Hot", 26.0, "°C"),
+            RefLine("Nowhere", 1.0, "V"),
+        ]
+        vlines = [RefLine("Maintenance", 1.5), RefLine("Off", 2.0, "V")]
+        spec = plot_spec(self.SERIES, EVERYTHING, ui, hlines=hlines, vlines=vlines)
+        assert [axis.hlines for axis in spec.axes] == [
+            [Reference("All", 10.0)],
+            [Reference("All", 10.0), Reference("Hot", 26.0)],
+        ]
+        # Times, on every axis (unless given units).
+        assert [axis.vlines for axis in spec.axes] == [
+            [Reference("Maintenance", 1.5)],
+            [Reference("Maintenance", 1.5)],
+        ]
+        assert ui.messages == [
+            (
+                "warning",
+                "Nothing plotted has units 'V', so --hline 'Nowhere' isn't drawn.",
+            ),
+            ("warning", "Nothing plotted has units 'V', so --vline 'Off' isn't drawn."),
+        ]
+
+    def test_log_scale(self) -> None:
+        ui = RecordingUI()
+        hlines = [RefLine("Zero", 0.0), RefLine("Ten", 10.0)]
+        spec = plot_spec(self.SERIES[:1], EVERYTHING, ui, log_y=True, hlines=hlines)
+        assert spec.axes[0].hlines == [Reference("Ten", 10.0)]
+        assert ui.messages == [
+            (
+                "warning",
+                "--hline 'Zero' is at 0, which a log scale can't show; it isn't drawn.",
+            )
+        ]
+
+    def test_histograms(self) -> None:
+        ui = RecordingUI()
+        # Horizontal lines at counts; vertical ones at values, placed among bins.
+        hlines = [RefLine("Most", 1.0), RefLine("None", 0.0)]
+        vlines = [
+            RefLine("Edge", 100.0),
+            RefLine("Inside", 55.0),
+            RefLine("Low", 5.0, "°C"),
+        ]
+        spec = histogram_spec(
+            self.SERIES, Bins((10, 100)), ui, log_y=True, hlines=hlines, vlines=vlines
+        )
+        assert [axis.hlines for axis in spec.axes] == [[Reference("Most", 1.0)]] * 2
+        assert [axis.vlines for axis in spec.axes] == [
+            [Reference("Edge", 1.5), Reference("Inside", 1.0)],
+            [Reference("Edge", 1.5), Reference("Inside", 1.0), Reference("Low", 0)],
+        ]
+        assert ui.messages == [
+            (
+                "warning",
+                "--hline 'None' is at 0, which a log scale can't show; it isn't drawn.",
+            ),
+            (
+                "warning",
+                "--vline 'Low' (5) is inside the open-ended bin '< 10', so it's drawn "
+                "across the bin's middle; add 5 to --bin to put it on an edge.",
+            ),
+        ]

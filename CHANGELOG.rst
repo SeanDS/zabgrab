@@ -10,6 +10,16 @@ Changelog
   expression), ``--above`` and ``--below``, and paged in a terminal. Useful for
   text and log items, which can't be plotted, and for finding the highest values.
 - New ``fetch --show`` option to list the fetched data.
+- New ``--bin`` option for ``show`` and ``plot``, counting each item's values in
+  bins with the given edges (e.g. ``--bin 10,100,1000``): ``show`` lists each
+  bin's count and share, and ``plot`` draws a histogram.
+- New ``plot --hline`` and ``--vline`` options to draw reference lines, such as
+  limits or events: ``--hline 'Max value=500'`` at a value, optionally only on
+  the plots of items with given units (``--hline 'Max=26 °C'``), and ``--vline
+  'Filter change=2026-10-14 10:00'`` at a time. On histograms, ``--hline`` marks
+  a count and ``--vline`` a value. Repeat them for several.
+- ``plot --log-y`` and ``fetch --log-y`` are now ``--log``. ``--log-y`` still
+  works, with a warning, until 2.0.
 
 1.0.0 (2026-10-15)
 ------------------

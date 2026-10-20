@@ -174,6 +174,61 @@ Filters apply before sorting and limiting, so ``--limit`` counts matching values
    zabgrab show particles.h5 --above 100 --below 500     # between 100 and 500
    zabgrab show year.h5 --sort max --above 5000          # hours peaking over 5000
 
+.. _bins:
+
+Counting values in bins
+-----------------------
+
+``--bin`` counts how many of each item's values fall in ranges you choose, given by
+their edges in increasing order:
+
+.. code-block:: text
+
+   $ zabgrab show particles.h5 --item "*0.3um" --bin 10,100,1000
+   lab1: Particles 0.3um [#/m3]: 2,880 values
+   Bin          Count  Share
+   < 10            12   0.4%
+   10 to 100      803  27.9%
+   100 to 1000  1,950  67.7%
+   ≥ 1000         115   4.0%
+
+How the bins are made:
+
+- **N edges make N + 1 bins.** The first bin holds everything below the first
+  edge, and the last everything from the last edge up, so every value is counted:
+  ``--bin 10,100,1000`` makes four bins.
+- **Each bin includes its lower edge, but not its upper one**, as numpy's
+  ``histogram`` does. With ``--bin 10,100``, a value of exactly 10 is in
+  ``10 to 100``, and exactly 100 is in ``≥ 100``.
+- **Hourly trends' averages are counted.** Text items have no size, so they're
+  left out, with a note.
+
+Give the edges as one comma-separated list, or repeat ``--bin``. Quote the list if
+it has spaces, since the shell would otherwise split it:
+
+.. code-block:: bash
+
+   zabgrab show particles.h5 --bin 10,100,1000
+   zabgrab show particles.h5 --bin 10 --bin 100 --bin 1000     # the same
+   zabgrab show particles.h5 --bin "10, 100, 1000"             # the same
+   zabgrab show particles.h5 --bin 0.5                         # below and above 0.5
+
+``--grep``, ``--above`` and ``--below`` narrow the values before they're counted,
+and ``--from`` and ``--to`` choose the time range. The ordering and slicing
+options (``--sort``, ``--desc``, ``--limit``, ``--offset``) don't apply to bins.
+
+.. code-block:: bash
+
+   zabgrab show particles.h5 --bin 100,1000 --from "1 week ago"
+   zabgrab show -s lab -i "host=lab1,name=Particles *" --from "30 days ago" \
+       --to now --bin 10,100,1000
+
+The counts are numbers of values, which match lengths of time only when Zabbix
+collects values at a steady rate.
+
+``zabgrab plot --bin`` draws the same counts as a histogram (see
+:ref:`histograms`).
+
 Combining them
 --------------
 
