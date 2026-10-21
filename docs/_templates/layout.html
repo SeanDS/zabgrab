@@ -1,6 +1,8 @@
 {#- Alabaster's layout, plus a banner on the development docs. -#}
 {% extends "!layout.html" %}
-{%- block document %}
+{#- Above the top links, in the content column: Alabaster's document block also
+    holds the fixed sidebar, and a banner outside the column lies under it. -#}
+{%- block relbar_top %}
   {%- if development %}
   <div class="admonition warning">
     <p class="admonition-title">Development version</p>
