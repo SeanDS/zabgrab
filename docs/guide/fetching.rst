@@ -127,7 +127,7 @@ Format                  Use it for
 zabgrab asks for the format if it can't tell from the file name, ``--format`` or the
 ``format`` setting. Every file starts with metadata describing exactly what was
 fetched: from which server, by which command, the items, the time range, and where
-each setting came from. See :doc:`analysing` for the files' layouts.
+each setting came from. See :doc:`files` for what the files hold.
 
 Automatic file names
 ~~~~~~~~~~~~~~~~~~~~

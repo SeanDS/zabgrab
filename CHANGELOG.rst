@@ -1,6 +1,12 @@
 Changelog
 =========
 
+1.1.2 (unreleased)
+------------------
+
+- New documentation page, "Files zabgrab writes", describing the ``.h5``, ``.mat``,
+  TSV and CSV files in full, including every metadata key.
+
 1.1.1 (2026-10-20)
 ------------------
 
