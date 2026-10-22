@@ -33,8 +33,11 @@ macOS and Windows:
 The tests need 100% coverage (branches included) to pass. Use ``# pragma: no cover``
 only for lines that genuinely can't be tested.
 
-CI's last job, *CI passed*, passes only if every other job did; it's the one check
-``main``'s branch rules require.
+CI runs on pull requests (testing the branch merged into ``main``), on pushes to
+``main`` and on tags. A branch without a pull request isn't tested until it gets
+one, but CI can be run on it by hand (*Actions* → *CI* → *Run workflow*). CI's last
+job, *CI passed*, passes only if every other job did; it's the one check ``main``'s
+branch rules require, and only a pull request's own run can report it.
 
 The tests run in UK time, which their expected local times are written in. On Linux
 and macOS they set it themselves; Windows can't change a running process's time

@@ -260,8 +260,8 @@ strings).
 TSV and CSV files start with the metadata as ``#`` comment lines, then a header row,
 then the data: a time column and a value column for each item (or ``min``, ``avg``,
 ``max`` and ``count`` columns for hourly trends), named after the item, as in
-``lab1: Particles 0.3um time``. Times are ISO 8601, in local time (or the
-``timezone`` setting). Read them with pandas:
+``lab1: Particles 0.3um time`` (see :doc:`files`). Times are ISO 8601, in local time
+(or the ``timezone`` setting). Read them with pandas:
 
 .. code-block:: python
 
@@ -276,36 +276,8 @@ such as ``numpy.loadtxt`` don't.
 File layout
 -----------
 
-``.h5`` and ``.mat`` files share one layout. Each fetch is a group:
-
-.. code-block:: text
-
-   /fetch_0001
-       meta                  the metadata, as JSON text
-       t_from, t_to          the time range fetched (POSIX seconds, UTC)
-       items/
-           item_41207/
-               itemid, hostid, host, host_name, name, key, units, value_type,
-               server, server_name
-               time          N values, POSIX seconds (UTC)
-               value         N values (raw data)
-               min, avg, max, count            (hourly trends)
-               log_time, source, severity, event_id   (log items)
-           item_41208/ ...
-   /fetch_0002 ...
-
-The metadata records the zabgrab version, when and how the fetch was made (the
-command line), the server, the template and item specs, every matched item, the
-time range, resolution and statistics, and where each setting came from. It never
-includes passwords or tokens.
-
-Each group's metadata also records the version of the file layout it was written
-with, as ``zabgrab.format_version`` (currently 1), next to the zabgrab version
-(``zabgrab.version``). The layout stays the same within a format version, so
-scripts reading the files can check it. If a later zabgrab changes the layout, it
-increases the format version; older versions of zabgrab and ``zabgrab_load`` then
-refuse those groups (and won't add to their files), asking you to upgrade, rather
-than misread them.
+:doc:`files` describes the files in full: the layout of ``.h5`` and ``.mat`` files,
+the columns of TSV and CSV files, and everything the metadata records.
 
 Exporting and converting
 ------------------------

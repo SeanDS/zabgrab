@@ -41,6 +41,7 @@ New to zabgrab? Start with :doc:`installation` and the :doc:`quickstart`.
    guide/updating
    guide/showing
    guide/analysing
+   guide/files
    guide/automation
    configuration
    cli

@@ -985,6 +985,12 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   for the tag's version before uploading, since PyPI never takes a version twice.
   Run by hand, the workflow uploads a development build (without the local
   `+g...` suffix, which PyPI refuses) to TestPyPI, to try the setup out first.
+- CI tests pull requests themselves (merged into `main`), plus pushes to `main`
+  and tags, rather than testing every push and skipping pull requests from this
+  repository's branches. Branch rules only take the required `CI passed` check
+  from a run tied to the pull request, so when GitHub dropped a branch's push
+  event, nothing could report it and the pull request was stuck. Branches without
+  a pull request aren't tested unless CI is run by hand.
 - Tests run in UK time, which their expected local times are written in. Windows
   can't change a running process's time zone, so there the system time zone must
   be UK time (CI sets it with `tzutil`), and the tests stop with an error otherwise.
