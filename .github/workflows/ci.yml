@@ -1,9 +1,14 @@
 name: CI
 
-# Every push to this repository's branches runs CI. Pull requests run it too, but
-# only from forks: a branch here has already run it on push.
+# CI tests pull requests (merged into their base), main and tags. Other branches
+# are tested once they have a pull request, or by hand. Pull requests are tested
+# themselves, rather than relying on the branch's push run: branch rules only take
+# a required check from a run tied to the pull request, and if GitHub drops the
+# push event, nothing would report it.
 on:
   push:
+    branches: [main]
+    tags: ["*"]
   pull_request:
   workflow_dispatch:
 
@@ -17,8 +22,6 @@ concurrency:
 jobs:
   lint:
     name: Lint and type check
-    # Pull requests from this repository's branches already ran CI on push.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -37,8 +40,6 @@ jobs:
 
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
-    # Pull requests from this repository's branches already ran CI on push.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -83,8 +84,6 @@ jobs:
 
   docs:
     name: Build the documentation
-    # Pull requests from this repository's branches already ran CI on push.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -105,8 +104,6 @@ jobs:
 
   smoke:
     name: Build and smoke test
-    # Pull requests from this repository's branches already ran CI on push.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -139,13 +136,10 @@ jobs:
 
   passed:
     # The one check for branch rules to require: it fails unless every job above
-    # passed, so the rules needn't change when the jobs do.
-    #
-    # Pull requests from this repository's branches skip CI (it ran on push), and
-    # rules count a skipped check as passing, so there it's named differently: a
-    # skipped "CI passed" would stand in for the push run's result.
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'CI (ran on push)' || 'CI passed' }}
-    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
+    # passed, so the rules needn't change when the jobs do. It runs even when they
+    # fail or are cancelled, so it's never skipped (which rules count as passing).
+    name: CI passed
+    if: always()
     needs: [lint, test, docs, smoke]
     runs-on: ubuntu-latest
     steps:

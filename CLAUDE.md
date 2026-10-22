@@ -27,8 +27,10 @@ Run all of these before committing:
 and, when the docs change, `.venv/bin/sphinx-build --fail-on-warning -b html docs
 docs/_build/html`.
 
-CI (`.github/workflows/ci.yml`) runs the same checks on every push, on Linux (Python
-3.11 to 3.14), macOS and Windows, fails below 100% coverage, and builds the docs.
+CI (`.github/workflows/ci.yml`) runs the same checks on pull requests, pushes to
+`main` and tags, on Linux (Python 3.11 to 3.14), macOS and Windows, fails below 100%
+coverage, and builds the docs. Its last job, `CI passed`, is the check `main`'s
+branch rules require.
 `.github/workflows/docs.yml` publishes the latest release's docs to GitHub Pages at
 the root, and `main`'s at `/dev/`. `.github/workflows/publish.yml` uploads each
 published GitHub release to PyPI (trusted publishing), or, run by hand, a
