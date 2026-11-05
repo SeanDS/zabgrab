@@ -206,7 +206,7 @@ def migrate_command(
     )
     hdf5.rewrite_fetches(file, changed)
     _note_template(app, groups, plan)
-    app.ui.success(f"Migrated {file}: {_summary(plan)}.")
+    app.ui.success(f"Changed {file}: {_summary(plan)}.")
 
 
 def _mapped_server(

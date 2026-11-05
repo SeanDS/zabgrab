@@ -295,7 +295,15 @@ The keys are:
    The servers fetched from: their names in your config, and URLs.
 ``items``
    Every item fetched: its details as in the file, its ``tags``, which ``requests``
-   matched it, which ``columns`` were saved, and how many ``points``.
+   matched it, which ``columns`` were saved, and how many ``points``. After
+   ``zabgrab migrate`` (see :ref:`migrating`), an item can also have:
+
+   ``history``
+      Where it was before each migration that moved it, oldest first: its
+      ``server`` (URL), ``server_name``, ``itemid`` and ``hostid``, and ``until``,
+      when it moved.
+   ``retired``
+      If it's retired (``update`` doesn't fetch it): ``at``, when it was retired.
 ``skipped``
    Items that matched but weren't fetched, with the ``reason`` (e.g. binary items,
    or text items when fetching hourly trends, which Zabbix only keeps for numbers).
@@ -303,6 +311,18 @@ The keys are:
    Items whose download failed, with the error as the ``reason``.
 ``update_of``
    In groups added by ``zabgrab update``: the group it continued from.
+``resume``
+   Only in the last group, after ``zabgrab migrate --unretire`` brings back an
+   item that group doesn't list: the item's entry, so that ``update`` fetches it
+   again.
+``migrations``
+   After ``zabgrab migrate``: a log of every migration, oldest first, kept in every
+   group (``update`` carries it into new ones). Each entry has ``at`` (when),
+   ``command``, the ``zabgrab`` version, the ``servers`` items moved ``from`` and
+   ``to`` (or ``null`` when the server didn't change), and the items ``moved``
+   (each with its ``label``, ``from`` and ``to`` server, name, item and host ID,
+   and ``how``: ``"matched"`` by host and key, or ``"given"``), ``retired`` (with
+   the ``reason``) and ``unretired``.
 ``export``
    Only in files written by ``zabgrab export``: the ``source`` file, the ``groups``
    read from it, the selection ``filters`` used (``items``, ``match``, ``from``,
@@ -310,6 +330,26 @@ The keys are:
    rest of an export's metadata is the last group's, with ``items``, ``start`` and
    ``end`` describing the exported data, so the export can be updated like the
    original.
+
+For example, an item moved from ``lab`` to ``labnew`` (its other keys left out):
+
+.. code-block:: json
+
+   {
+     "server": "https://zabbix2.example.org",
+     "itemid": 90311,
+     "host": "lab1",
+     "name": "Particles 0.3um",
+     "history": [
+       {
+         "server": "https://zabbix.example.org",
+         "server_name": "lab",
+         "itemid": 41207,
+         "hostid": 10584,
+         "until": "2026-11-05T10:12:40.513000+00:00"
+       }
+     ]
+   }
 
 The metadata never includes passwords, API tokens or other credentials. It doesn't
 record who ran zabgrab, or on which computer, though the command line and paths in

@@ -1,9 +1,9 @@
 """What a file's metadata records about its items beyond the data.
 
 ``zabgrab migrate`` marks items as retired, gives moved items a history of their
-earlier servers and IDs, and logs each migration (see :mod:`.migrate`). These
-helpers read those records for ``update``, ``info`` and ``export``, and carry them
-into the groups and files written later.
+earlier servers and IDs, and logs each migration (see
+:mod:`zabgrab.services.migrate`). These helpers read those records for ``update``,
+``info`` and ``export``, and carry them into the groups and files written later.
 
 Items are identified by their server's URL and item ID, as in the file
 (:data:`Identity`).

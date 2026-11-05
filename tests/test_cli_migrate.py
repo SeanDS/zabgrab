@@ -80,7 +80,7 @@ class TestMoveServer:
             ["20002", "demo1: Particles 0.5um", "retire (not found on 'lab')"],
         ]
         assert "1 item will be retired: its data stays in the file" in result.stderr
-        assert f"Migrated {data}: moved 1 item to 'lab', retired 1." in result.stderr
+        assert f"Changed {data}: moved 1 item to 'lab', retired 1." in result.stderr
 
         (group,) = read_fetches(data)
         moved, retired = group.series
@@ -256,7 +256,7 @@ class TestSameServer:
         assert table_rows(result.stdout) == [
             ["20002", "demo1: Particles 0.5um", "→ 20003 (given)"]
         ]
-        assert f"Migrated {data}: moved 1 item." in result.stderr
+        assert f"Changed {data}: moved 1 item." in result.stderr
         assert items(data) == [(DEMO, 20001), (DEMO, 20003)]
         metadata = read_fetches(data)[0].metadata
         assert metadata["migrations"][0]["servers"] == {"from": [], "to": None}
@@ -290,7 +290,7 @@ class TestRetire:
         assert table_rows(result.stdout) == [
             ["20002", "demo1: Particles 0.5um", "retire (--retire)"]
         ]
-        assert f"Migrated {data}: retired 1." in result.stderr
+        assert f"Changed {data}: retired 1." in result.stderr
         assert zabbix.by_url[DEMO].calls == []  # no server needed
         assert items(data) == [(DEMO, 20001), (DEMO, 20002)]  # nothing moved
 
