@@ -19,6 +19,7 @@ from ..model.series import FORMAT_VERSION, FetchResult, Series, Skipped
 from ..model.server import Server
 from ..model.zabbix import Item
 from .dataset import Dataset
+from .records import carry_records
 
 
 def build_metadata(
@@ -173,6 +174,8 @@ def export_metadata(
     query["start"] = _iso(dataset.coverage[0][0])
     query["end"] = _iso(dataset.coverage[-1][1])
     metadata["items"] = [_series(series) for series in dataset.series]
+    # Keep items' histories and retired marks (see zabgrab migrate).
+    carry_records(metadata["items"], dataset.records)
     metadata["skipped"] = []
     metadata["failed"] = []
     metadata["export"] = {

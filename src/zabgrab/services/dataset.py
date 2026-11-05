@@ -20,6 +20,7 @@ from ..model.choice import Choice
 from ..model.item import ItemSpec
 from ..model.series import Series
 from .ports import UI
+from .records import Identity, latest_entries
 
 #: Gaps between fetched ranges up to this long (seconds) still count as covered,
 #: since each update starts just after the previous fetch's end.
@@ -54,12 +55,16 @@ class Dataset:
         The names of the groups merged.
     last_metadata : dict
         The metadata of the last group (the most recent query).
+    records : dict of Identity to dict
+        Each item's latest metadata entry, for what it records beyond one fetch
+        (its history and whether it's retired; see :mod:`.records`).
     """
 
     series: list[Series]
     coverage: list[tuple[float, float]]
     groups: list[str]
     last_metadata: dict[str, Any] = field(default_factory=dict)
+    records: dict[Identity, dict[str, Any]] = field(default_factory=dict)
 
 
 def merge(groups: Sequence[Group], ui: UI) -> Dataset:
@@ -135,6 +140,7 @@ def merge(groups: Sequence[Group], ui: UI) -> Dataset:
         coverage=_union([(g.t_from, g.t_to) for g in groups]),
         groups=[g.name for g in groups],
         last_metadata=groups[-1].metadata,
+        records=latest_entries(groups),
     )
 
 
@@ -322,7 +328,9 @@ def filter_dataset(
         for a, b in dataset.coverage
         if a <= last and b >= first
     ]
-    return Dataset(series, coverage, dataset.groups, dataset.last_metadata)
+    return Dataset(
+        series, coverage, dataset.groups, dataset.last_metadata, dataset.records
+    )
 
 
 def select(

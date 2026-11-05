@@ -15,7 +15,7 @@ ITEM_SORT_KEYS : dict
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
 
@@ -36,6 +36,7 @@ from ..model.series import Series
 from ..model.server import Server
 from ..model.zabbix import Host, Item
 from ..services.fetch import Job, skip_reason
+from ..services.migrate import MigrationPlan
 from ..services.retention import format_duration
 from ..services.tokens import CheckResult, CheckState, TokenStatus
 from .console import TomlHighlighter
@@ -623,7 +624,12 @@ def plan_table(jobs: Sequence[Job], resolution: Resolution) -> Table:
     return table
 
 
-def file_items_table(series: Sequence[Series], tz: tzinfo | None) -> Table:
+def file_items_table(
+    series: Sequence[Series],
+    tz: tzinfo | None,
+    *,
+    retired: Collection[tuple[str, int]] = (),
+) -> Table:
     """Make a table of the items in a file, for ``zabgrab info``.
 
     Parameters
@@ -632,6 +638,8 @@ def file_items_table(series: Sequence[Series], tz: tzinfo | None) -> Table:
         The items' merged data.
     tz : tzinfo or None
         The time zone to show times in (``None`` for local time).
+    retired : collection of (str, int), optional
+        Retired items, by server URL and item ID (marked in the *Data* column).
 
     Returns
     -------
@@ -665,7 +673,8 @@ def file_items_table(series: Sequence[Series], tz: tzinfo | None) -> Table:
             one.item.name,
             one.item.key,
             one.item.units,
-            "hourly" if one.resolution is Resolution.HOURLY else "raw",
+            ("hourly" if one.resolution is Resolution.HOURLY else "raw")
+            + (", retired" if (one.server.url, one.item.itemid) in retired else ""),
             f"{len(times):,}",
             start,
             end,
@@ -722,3 +731,87 @@ def file_groups_table(
 def _file_time(time: float, tz: tzinfo | None) -> str:
     """Format POSIX seconds for display."""
     return format_time(datetime.fromtimestamp(time, UTC), tz)
+
+
+def migration_table(plan: MigrationPlan) -> Table:
+    """Make a table of what a migration changes, for ``zabgrab migrate``.
+
+    Parameters
+    ----------
+    plan : MigrationPlan
+        The migration.
+
+    Returns
+    -------
+    rich.table.Table
+        A row per item that moves, retires or comes back.
+    """
+    table = DataTable()
+    table.add_column("Item ID", style="cyan", justify="right")
+    table.add_column("Item", style="bold")
+    table.add_column("Change")
+    for move in plan.moves:
+        where = f" on {move.server.display}" if move.server.url != move.old[0] else ""
+        table.add_row(
+            str(move.old[1]),
+            move.label,
+            f"→ {move.item.itemid}{where} ({move.how})",
+        )
+    for retirement in plan.retirements:
+        table.add_row(
+            str(retirement.item[1]),
+            retirement.label,
+            Text(f"retire ({retirement.reason})", style="yellow"),
+        )
+    for (_, itemid), label in plan.unretired:
+        table.add_row(str(itemid), label, "bring back")
+    return table
+
+
+def migrations_table(log: Sequence[Mapping[str, Any]], tz: tzinfo | None) -> Table:
+    """Make a table of a file's migrations, for ``zabgrab info --migrations``.
+
+    Parameters
+    ----------
+    log : sequence of mapping
+        The ``migrations`` log of the file's last group, oldest first.
+    tz : tzinfo or None
+        The time zone to show times in (``None`` for local time).
+
+    Returns
+    -------
+    rich.table.Table
+        A row per item changed in each migration.
+    """
+    table = DataTable()
+    table.add_column("When")
+    table.add_column("Item", style="bold")
+    table.add_column("Before", style="cyan")
+    table.add_column("After", style="cyan")
+    for migration in log:
+        when = format_time(datetime.fromisoformat(migration["at"]), tz)
+        for move in migration.get("moved", []):
+            table.add_row(
+                when,
+                move.get("label", ""),
+                _place(move["from"]),
+                _place(move["to"]),
+            )
+        for retired in migration.get("retired", []):
+            table.add_row(
+                when,
+                retired.get("label", ""),
+                _place(retired),
+                Text(f"retired ({retired.get('reason', '')})", style="yellow"),
+            )
+        for unretired in migration.get("unretired", []):
+            table.add_row(
+                when, unretired.get("label", ""), "retired", _place(unretired)
+            )
+    return table
+
+
+def _place(where: Mapping[str, Any]) -> str:
+    """Describe where an item was: its ID and server, e.g. ``41207 on lab``."""
+    server = where.get("server_name") or where.get("server", "")
+    return f"{where.get('itemid')} on {server}"

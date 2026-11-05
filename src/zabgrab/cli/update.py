@@ -18,6 +18,7 @@ from ..model.server import Server
 from ..services.collect import Plan, collect
 from ..services.metadata import build_metadata
 from ..services.output import SaveOptions, Target
+from ..services.records import Identity, carry_forward, retired_items
 from ..services.servers import resolve_server
 from ..services.update import (
     UpdatePlan,
@@ -119,7 +120,16 @@ def update_command(
         f"{format_time(query.end, query.tz)}."
     )
 
-    result = asyncio.run(_download(app, plan, rematch=rematch, dry_run=dry_run))
+    result = asyncio.run(
+        _download(
+            app,
+            plan,
+            rematch=rematch,
+            dry_run=dry_run,
+            retired=retired_items(groups),
+            other_server=override is not None,
+        )
+    )
     if result is None:
         return
     report_problems(app, result)
@@ -141,6 +151,8 @@ def update_command(
         query, data, template=template, command=sys.argv, created=now
     )
     metadata["update_of"] = plan.last_group
+    # Keep the file's latest group a full record of migrations (see migrate).
+    carry_forward(groups[-1].metadata, metadata)
     where = save_target(target, data, metadata, query, SaveOptions(in_place=in_place))
 
     count = len(data.series)
@@ -153,7 +165,13 @@ def update_command(
 
 
 async def _download(
-    app: AppContext, plan: UpdatePlan, *, rematch: bool, dry_run: bool
+    app: AppContext,
+    plan: UpdatePlan,
+    *,
+    rematch: bool,
+    dry_run: bool,
+    retired: set[Identity],
+    other_server: bool,
 ) -> FetchResult | None:
     """Find the items to update and fetch their data; ``None`` for a dry run."""
     query = plan.query
@@ -176,8 +194,23 @@ async def _download(
         collected: Plan = await collect(
             query, app.ui, select_server=select, connect=app.connect, yes=True
         )
+        # Retired items stay retired, even if the patterns still find them.
+        kept = [
+            job
+            for job in collected.jobs
+            if (job.server.url, job.item.itemid) not in retired
+        ]
+        if len(kept) < len(collected.jobs):
+            left_out = len(collected.jobs) - len(kept)
+            app.ui.info(
+                f"Leaving out {left_out} retired item{'' if left_out == 1 else 's'} "
+                "(zabgrab migrate --unretire brings an item back)."
+            )
+        collected.jobs = kept
     else:
-        collected = await collect_previous_items(plan, app.ui, connect=app.connect)
+        collected = await collect_previous_items(
+            plan, app.ui, connect=app.connect, other_server=other_server
+        )
 
     return await run_plan(
         app,
