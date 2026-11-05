@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from zabgrab.adapters.formats.hdf5 import (
     next_group_name,
     read_fetches,
     read_metadata,
+    rewrite_fetches,
     text_entries,
     write_fetch,
 )
@@ -376,6 +378,47 @@ def test_large_text_flag(path: Path) -> None:
     assert large_text_accepted(path)
     with h5py.File(path) as file:
         assert file.attrs[LARGE_TEXT_ACCEPTED] == 1
+
+
+class TestRewrite:
+    def test_changes_groups_and_keeps_the_file_format(self, path: Path) -> None:
+        write(path, large_text_accepted=True)
+        write(path, append=True)
+        first, second = read_fetches(path)
+        moved = Series(
+            OTHER,
+            replace(first.series[0].item, itemid=7),
+            Resolution.RAW,
+            first.series[0].columns,
+        )
+        first.series[0] = moved
+        first.metadata["note"] = "rewritten"
+        rewrite_fetches(path, [first, second])
+
+        again = read_fetches(path)
+        assert [g.name for g in again] == ["fetch_0001", "fetch_0002"]
+        assert again[0].series[0].server == OTHER
+        assert again[0].series[0].item.itemid == 7
+        assert again[0].series[0].columns == moved.columns
+        assert again[0].metadata["note"] == "rewritten"
+        assert again[1].series == second.series
+        assert large_text_accepted(path)
+        assert is_mat(path) == (path.suffix == ".mat")
+
+    def test_failed_write_keeps_the_original(
+        self, path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        write(path)
+        original = path.read_bytes()
+
+        def fail(*args: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr("os.replace", fail)
+        with pytest.raises(ZabgrabError, match="disk full"):
+            rewrite_fetches(path, read_fetches(path))
+        assert path.read_bytes() == original
+        assert list(path.parent.glob("*.tmp")) == []
 
 
 def set_meta(path: Path, meta: str) -> None:

@@ -16,7 +16,7 @@ import h5py
 import numpy as np
 import pytest
 
-from zabgrab.adapters.formats.hdf5 import read_fetches
+from zabgrab.adapters.formats.hdf5 import read_fetches, rewrite_fetches
 
 from .matlab.generate import generate
 
@@ -99,3 +99,17 @@ def test_expected_values_match(fresh: Path) -> None:
     assert json.loads((fresh / "expected.json").read_text()) == json.loads(
         (REFERENCE / "expected.json").read_text()
     ) | {"large_entries": 10}
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_rewriting_unchanged_keeps_the_reference_layout(
+    tmp_path: Path, name: str
+) -> None:
+    # zabgrab migrate rewrites whole files: unchanged, they must come out the same,
+    # down to the MATLAB header.
+    path = tmp_path / name
+    path.write_bytes((REFERENCE / name).read_bytes())
+    rewrite_fetches(path, read_fetches(path))
+    assert layout(path) == layout(REFERENCE / name)
+    if name.endswith(".mat"):
+        assert path.read_bytes()[:128] == (REFERENCE / name).read_bytes()[:128]

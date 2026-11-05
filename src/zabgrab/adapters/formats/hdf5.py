@@ -224,6 +224,55 @@ def write_fetch(
     return name
 
 
+def rewrite_fetches(path: Path, groups: Sequence[FetchGroup]) -> None:
+    """Write a file afresh with the given groups, replacing it atomically.
+
+    The file keeps its format (a ``.mat`` file keeps its MATLAB header) and its
+    record of accepted large text; everything else comes from ``groups``. Used to
+    change groups already written (``zabgrab migrate``) with the same writer as
+    new ones, so the layout can't drift.
+
+    Parameters
+    ----------
+    path : Path
+        The existing ``.h5`` or ``.mat`` file.
+    groups : sequence of FetchGroup
+        Every group the file should hold, in order (typically those read with
+        :func:`read_fetches`, changed).
+
+    Raises
+    ------
+    ZabgrabError
+        If the file can't be read or written.
+    """
+    mat = is_mat(path)
+    accepted = large_text_accepted(path)
+    with path.open("rb") as original:
+        header = original.read(USERBLOCK) if mat else b""
+    codec: _Codec = _MatCodec() if mat else _PlainCodec()
+    options: dict[str, Any] = {"track_order": True}
+    if mat:
+        options["userblock_size"] = USERBLOCK
+    with _writing(path, copy=False, direct=False) as target:
+        with h5py.File(target, "w", libver="earliest", **options) as file:
+            for group in groups:
+                _write_group(
+                    file,
+                    codec,
+                    group.name,
+                    FetchResult(series=list(group.series)),
+                    group.metadata,
+                    group.t_from,
+                    group.t_to,
+                )
+            if accepted:
+                file.attrs[LARGE_TEXT_ACCEPTED] = np.uint8(1)
+        if mat:
+            # The original header, so the file still says when it was created.
+            with target.open("r+b") as file:
+                file.write(header)
+
+
 def read_fetches(path: Path) -> list[FetchGroup]:
     """Read every fetch group in a file written by zabgrab.
 
