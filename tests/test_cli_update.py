@@ -232,6 +232,18 @@ class TestErrors:
         assert result.exit_code == EXIT_ERROR
         assert "doesn't have the metadata needed to update it" in result.stderr
 
+    def test_missing_items(self, data: Path) -> None:
+        (group,) = read_fetches(data)
+        metadata = {k: v for k, v in group.metadata.items() if k != "items"}
+        with h5py.File(data, "a") as file:
+            del file["fetch_0001"]["meta"]
+            file["fetch_0001"].create_dataset(
+                "meta", data=json.dumps(metadata), dtype=h5py.string_dtype()
+            )
+        result = run("update", str(data))
+        assert result.exit_code == EXIT_ERROR
+        assert "doesn't have the metadata needed to update it" in result.stderr
+
     def test_newer_file_format(self, data: Path) -> None:
         (group,) = read_fetches(data)
         newer = {**group.metadata, "zabgrab": {"format_version": 99}}

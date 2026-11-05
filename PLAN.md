@@ -780,6 +780,54 @@ be plotted, and for finding extreme values.
 An item is used if any `--item` or `--match` selects it (or neither is given). When
 `plot` or `export` selects nothing, the hint suggests `zabgrab info FILE`.
 
+### Migrating and retiring items (`migrate`)
+
+Items are identified by server URL and item ID (the merge key, `update`'s item
+list, `zabgrab_load.m`'s merge). When a Zabbix server is replaced without its
+history, the same items come back on the new server under new IDs, and a file's
+old and new data would look like different items.
+
+`zabgrab migrate FILE [--server NAME|URL] [--map OLD=NEW]... [--map-file PATH]
+[--no-match] [--retire ID]... [--unretire ID]... [--dry-run] [--yes]`:
+
+- **Rewrites the file:** every group is read and written afresh, with mapped items'
+  `itemid`, `hostid`, `server` and `server_name` (and item group names) changed
+  to the new server's, via a temporary file that then replaces the original. The
+  data and other details are untouched. Rewriting, rather than mapping on read,
+  keeps the merge key, `zabgrab_load.m` and users' own scripts working unchanged,
+  and uses the existing (MATLAB-verified) writer, so the layout doesn't change.
+- **Active items:** the last group's items that aren't retired (what `update`
+  fetches). With `--server`, each is looked up on the new server by host
+  (technical name) and key, which Zabbix keeps unique per host; `--map` and
+  `--map-file` (two columns, old and new ID, separated by a comma, tab or spaces;
+  `#` comments) override or add to that, and `--no-match` turns the lookup off.
+  Active items left unmatched are retired. New IDs are always looked up on the
+  target server (refused if missing). Without `--server`, `--map` changes IDs on
+  the same server and nothing is matched automatically.
+- **Retiring** (`--retire ID`, or unmatched items when changing server): the item
+  keeps its data and identity, and is marked `retired` (`{"at": ...}`) in every
+  group's item entry. `update` skips retired items, and `--rematch` leaves them
+  out even if the patterns find them. `--unretire ID` clears the mark; if the last
+  group no longer lists the item, its entry goes in the last group's `resume`
+  list, which `update` fetches too.
+- **Audit trail (metadata only, so `FORMAT_VERSION` stays 1):** each mapped item's
+  entry gains a `history` list (oldest first) of its earlier `server`,
+  `server_name`, `itemid` and `hostid`, each with `until` (the migration time).
+  Every group gains a `migrations` log (oldest first): time, command, zabgrab
+  version, the source and target servers, each mapping (old and new server and
+  ID, and whether it was matched or given), and the items retired and unretired.
+  `update` carries the log and items' histories into new groups, and `export`
+  keeps them; `info --migrations` lists the log.
+- **Checks:** a new ID taken by two old ones, an ID that isn't in the file, an
+  item both mapped and retired, an old and new item in the same group, and files
+  whose active items come from several servers (with `--server`) are refused.
+  Items selected by ID in stored requests are rewritten too, with a note if the
+  config's template still uses the old IDs.
+- **Confirmation:** the full mapping and the retirements are shown, then asked
+  about (`--yes` skips it; non-interactive runs need it). `--dry-run` only shows.
+- `update --server` is unchanged (it looks the stored IDs up on the given server),
+  but notes `migrate` when some aren't found there.
+
 ### MATLAB helper
 
 `matlab/zabgrab_load.m` is shipped in the repo and documented in the user guide.
@@ -1029,6 +1077,14 @@ Each phase includes its tests and docstrings. The old code is deleted in phase 1
   `tag=` specs work on files. It's an addition older readers ignore, so
   `FORMAT_VERSION` stays 1; tags are as of the fetch, and merged views use the
   latest group's.
+
+- Server migrations rewrite the file's item IDs (`zabgrab migrate`, 1.2.0) rather
+  than mapping IDs when reading, so every reader, including users' own scripts,
+  sees one series per item. The history and the log live in the metadata, not in
+  new item fields, so the layout and `FORMAT_VERSION` are unchanged. Automatic
+  matching by host and key, with explicit maps winning; unmatched items are
+  retired after a warning and confirmation. Retiring works on its own too, for
+  items that are simply gone. `update --server` stays a plain re-pointing.
 
 ## Follow-up tasks
 

@@ -24,6 +24,7 @@ from .collect import Plan
 from .dataset import Group
 from .fetch import Job
 from .ports import UI, ZabbixClient
+from .records import active_entries
 
 
 @dataclass
@@ -105,7 +106,10 @@ def plan_update(
         stored_requests = stored.get("requests", [])
         requests = tuple(_request(r) for r in stored_requests)
         servers_named = [_server_ref(r) for r in stored_requests]
-        entries = last.metadata["items"]
+        if "items" not in last.metadata:
+            raise KeyError("items")
+        # Not retired items, and items brought back with migrate --unretire.
+        entries = active_entries(last.metadata)
     except (KeyError, TypeError, ValueError, ValidationError) as exc:
         raise ZabgrabError(
             f"Group {last.name!r} doesn't have the metadata needed to update it.",
@@ -128,7 +132,9 @@ def plan_update(
             hint="Update it without --server.",
         )
     names = {s.get("url"): s.get("name") for s in last.metadata.get("servers", [])}
-    servers = {url: server or _server(url, names.get(url), config, ui) for url in urls}
+    servers = {
+        url: server or stored_server(url, names.get(url), config, ui) for url in urls
+    }
     items: dict[str, list[tuple[int, tuple[str, ...]]]] = {}
     labels = {}
     for entry in entries:
@@ -177,6 +183,7 @@ async def collect_previous_items(
     ui: UI,
     *,
     connect: Callable[[Server], Awaitable[ZabbixClient]],
+    other_server: bool = False,
 ) -> Plan:
     """Look up the items fetched before, by ID, to download them again.
 
@@ -188,6 +195,9 @@ async def collect_previous_items(
         Warns about items that no longer exist.
     connect : callable
         Returns a logged-in client for a server.
+    other_server : bool, optional
+        The items are looked up on another server than they were fetched from
+        (``--server``): if some aren't there, suggest ``zabgrab migrate``.
 
     Returns
     -------
@@ -195,6 +205,7 @@ async def collect_previous_items(
         The download jobs, with the servers' connections (close it when done).
     """
     result = Plan()
+    missing = False
     try:
         for url, entries in plan.items.items():
             server = plan.servers[url]
@@ -210,6 +221,7 @@ async def collect_previous_items(
                 if itemid in found:
                     result.jobs.append(Job(server, found[itemid], requests))
                 else:
+                    missing = True
                     ui.warning(
                         f"Item {itemid} ({plan.labels[url, itemid]}) no longer "
                         f"exists on {server.display}; its data so far stays in the "
@@ -218,11 +230,33 @@ async def collect_previous_items(
     except BaseException:
         await result.close()
         raise
+    if missing and other_server:
+        ui.info(
+            "If the server was replaced and its items have new IDs, zabgrab migrate "
+            "moves the file to their new IDs (see zabgrab migrate --help)."
+        )
     return result
 
 
-def _server(url: str, name: str | None, config: Config, ui: UI) -> Server:
-    """Get a stored server: the configured one by name, else its URL."""
+def stored_server(url: str, name: str | None, config: Config, ui: UI) -> Server:
+    """Get a server stored in a file: the configured one by name, else its URL.
+
+    Parameters
+    ----------
+    url : str
+        The server's URL, as stored.
+    name : str or None
+        Its name in the config when the data was fetched.
+    config : Config
+        The config.
+    ui : UI
+        Warns if the name isn't in the config any more.
+
+    Returns
+    -------
+    Server
+        The server.
+    """
     if name and name in config.servers:
         return Server(name, config.servers[name])
     if name:

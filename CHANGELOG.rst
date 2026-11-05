@@ -1,9 +1,23 @@
 Changelog
 =========
 
-1.1.2 (unreleased)
+1.2.0 (unreleased)
 ------------------
 
+- New ``zabgrab migrate`` command, for when a Zabbix server is replaced without its
+  history and the same items come back with new IDs. ``migrate FILE --server
+  NEW`` finds each item on the new server by its host and key (``--map`` and
+  ``--map-file`` give or correct IDs), and rewrites the file with the new server
+  and IDs, so the data from before and after reads as one series per item.
+  Items the new server doesn't have are retired, after a warning and
+  confirmation.
+- ``migrate --retire`` stops updating single items (e.g. unplugged sensors),
+  keeping their data, and ``--unretire`` starts again. ``update`` skips retired
+  items, even with ``--rematch``.
+- Each item's earlier servers and IDs, and a log of every migration, are kept in
+  the file's metadata; ``zabgrab info --migrations`` lists the log, and ``zabgrab
+  info`` marks retired items.
+- ``update --server`` suggests ``migrate`` when items aren't found on the server.
 - New documentation page, "Files zabgrab writes", describing the ``.h5``, ``.mat``,
   TSV and CSV files in full, including every metadata key.
 
