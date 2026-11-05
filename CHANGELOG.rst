@@ -15,8 +15,9 @@ Changelog
   keeping their data, and ``--unretire`` starts again. ``update`` skips retired
   items, even with ``--rematch``.
 - Each item's earlier servers and IDs, and a log of every migration, are kept in
-  the file's metadata; ``zabgrab info --migrations`` lists the log, and ``zabgrab
-  info`` marks retired items.
+  the file's metadata; ``zabgrab info --migrations`` lists the log.
+- ``zabgrab info`` leaves retired items out of its list, noting how many it hid;
+  ``--retired`` lists them too, marked as retired.
 - ``update --server`` suggests ``migrate`` when items aren't found on the server.
 - New documentation page, "Files zabgrab writes", describing the ``.h5``, ``.mat``,
   TSV and CSV files in full, including every metadata key.

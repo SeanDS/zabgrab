@@ -159,8 +159,10 @@ Retiring items
 
 When a sensor is unplugged for good, its item usually stays in Zabbix, and
 ``update`` keeps fetching it, adding nothing. Retire it to stop that, without
-changing anything else. Its data stays in the file, and ``zabgrab info`` marks it
-as retired:
+changing anything else. Its data stays in the file, and ``plot``, ``show`` and
+``export`` still use it, but ``zabgrab info`` leaves it out of the list of items,
+noting how many items it hid (``info --retired`` lists them too, marked as
+retired):
 
 .. code-block:: text
 
