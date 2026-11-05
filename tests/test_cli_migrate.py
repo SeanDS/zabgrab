@@ -136,10 +136,40 @@ class TestMoveServer:
         dataset = merge(read_fetches(data), RecordingUI())
         counter = next(s for s in dataset.series if s.item.itemid == 90001)
         assert counter.columns["value"] == [1.5, 2.5, 3.5, 4.5, 5.5]
-        info = ok(run("info", str(data)))
+        info = ok(run("info", str(data), "--retired"))
         rows = table_rows(info.stdout)
         assert [row[:2] for row in rows] == [["lab", "90001"], ["demo", "20002"]]
         assert rows[1][6] == "raw, retired"
+
+
+class TestInfo:
+    def test_retired_items_are_hidden_with_a_note(self, data: Path) -> None:
+        ok(run("migrate", str(data), "--retire", "20002", "-y"))
+        result = ok(run("info", str(data)))
+        assert [row[0] for row in table_rows(result.stdout)] == ["20001"]
+        assert "1 retired item hidden; --retired shows it." in result.stderr
+
+        shown = ok(run("info", str(data), "--retired"))
+        assert [row[0] for row in table_rows(shown.stdout)] == ["20001", "20002"]
+        assert table_rows(shown.stdout)[1][5] == "raw, retired"
+        assert "hidden" not in shown.stderr
+
+    def test_no_note_without_retired_items(self, data: Path) -> None:
+        result = ok(run("info", str(data)))
+        assert len(table_rows(result.stdout)) == 2
+        assert result.stderr == ""
+
+    def test_the_selection_is_all_retired(self, data: Path) -> None:
+        ok(run("migrate", str(data), "--retire", "20001", "--retire", "20002", "-y"))
+        result = ok(run("info", str(data)))
+        assert result.stdout == ""
+        assert (
+            f"All 2 matching items in {data} are retired; --retired shows them."
+        ) in result.stderr
+        one = ok(run("info", str(data), "-i", "20002"))
+        assert (
+            f"The 1 matching item in {data} is retired; --retired shows it."
+        ) in one.stderr
 
     def test_map_overrides_and_adds_to_matches(self, data: Path) -> None:
         result = ok(

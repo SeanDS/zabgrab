@@ -11,8 +11,13 @@ hourly trends, and how many points it has over what time range.
 .. code-block:: bash
 
    zabgrab info particles.h5
+   zabgrab info particles.h5 --retired      # including retired items
    zabgrab info particles.h5 --groups       # the fetch groups instead
    zabgrab info particles.h5 --overlaps     # ... and the points they share
+
+Items retired with ``zabgrab migrate`` (see :ref:`retiring`) are left out of the
+list, with a note saying how many; ``--retired`` lists them too, marked as retired.
+``--migrations`` lists the file's migrations (see :ref:`migrating`).
 
 ``--overlaps`` lists the groups with a *Repeated* column: how many of each group's
 points another group also holds (the same item at the same time), as happens when

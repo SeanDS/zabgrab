@@ -818,6 +818,11 @@ old and new data would look like different items.
   ID, and whether it was matched or given), and the items retired and unretired.
   `update` carries the log and items' histories into new groups, and `export`
   keeps them; `info --migrations` lists the log.
+- **Listing:** `info` leaves retired items out of its item list by default, with
+  an info message giving how many it hid (or saying the whole selection is
+  retired); `--retired` lists them too, marked "retired" in the *Data* column.
+  `--groups` counts, `plot`, `show` and `export` still include retired items'
+  data, which is history like any other.
 - **Checks:** a new ID taken by two old ones, an ID that isn't in the file, an
   item both mapped and retired, an old and new item in the same group, and files
   whose active items come from several servers (with `--server`) are refused.

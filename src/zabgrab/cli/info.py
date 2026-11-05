@@ -44,6 +44,12 @@ from .reading import check_readable, selection_options, time_range
     help="List the file's migrations (zabgrab migrate): each item's earlier and "
     "new IDs and servers, and the items retired or brought back.",
 )
+@click.option(
+    "--retired",
+    "show_retired",
+    is_flag=True,
+    help="Include retired items (zabgrab migrate --retire) in the list of items.",
+)
 @global_options
 @pass_app
 def info_command(
@@ -57,6 +63,7 @@ def info_command(
     by_group: bool,
     overlaps: bool,
     migrations: bool,
+    show_retired: bool,
 ) -> None:
     """List the items in FILE (.mat or .h5).
 
@@ -66,8 +73,9 @@ def info_command(
     select. With --groups, lists the fetch groups instead. With --overlaps, the
     groups list also counts each group's points that another group holds too
     (they're kept once when the file is read; export flattens the file to store
-    them once). Retired items (see zabgrab migrate) are marked, and --migrations
-    lists the file's migrations instead.
+    them once). --migrations lists the file's migrations (see zabgrab migrate)
+    instead. Retired items are left out of the list of items, with a note saying
+    how many; --retired lists them too, marked as retired.
     """
     check_readable(file, ("read", "read"))
     start, end, tz = time_range(app, from_, to)
@@ -107,9 +115,26 @@ def info_command(
         return
 
     dataset = narrow(selected)
+    retired = retired_items(every)
+    shown = [
+        one
+        for one in dataset.series
+        if show_retired or (one.server.url, one.item.itemid) not in retired
+    ]
+    hidden = len(dataset.series) - len(shown)
     if not dataset.series:
         app.ui.info(f"No items in {file} match the selection.")
-        return
-    app.ui.print_data(
-        file_items_table(dataset.series, tz, retired=retired_items(every))
-    )
+    elif not shown:
+        app.ui.info(
+            f"{'The' if hidden == 1 else 'All'} {hidden} matching "
+            f"item{'' if hidden == 1 else 's'} in {file} "
+            f"{'is' if hidden == 1 else 'are'} retired; --retired shows "
+            f"{'it' if hidden == 1 else 'them'}."
+        )
+    else:
+        app.ui.print_data(file_items_table(shown, tz, retired=retired))
+        if hidden:
+            app.ui.info(
+                f"{hidden} retired item{'' if hidden == 1 else 's'} "
+                f"hidden; --retired shows {'it' if hidden == 1 else 'them'}."
+            )
